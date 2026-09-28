@@ -1,0 +1,28 @@
+# Local development services. Production files are rendered by synapsectl (ADR 0012).
+# Create the secrets first: python3 tools/dev_secrets.py
+name: synapse-dev
+
+services:
+  db:
+    build: ./postgres
+    image: synapse-postgres:dev
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_superuser
+    secrets: [postgres_superuser]
+    ports:
+      # Loopback only, and not the default port, so it never collides with a local PostgreSQL.
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+secrets:
+  postgres_superuser:
+    file: ../.dev/secrets/postgres_superuser
+
+volumes:
+  db-data:

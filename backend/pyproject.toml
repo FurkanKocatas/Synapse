@@ -6,7 +6,9 @@ readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "Proprietary" }
 dependencies = [
+    "alembic>=1.20",
     "fastapi>=0.141",
+    "psycopg[binary,pool]>=3.3",
     "pydantic>=2.13",
     "pydantic-settings>=2.15",
     "structlog>=26.1",
@@ -22,6 +24,7 @@ dev = [
     "import-linter>=2.15",
     "mypy>=2.3",
     "pytest>=9.1",
+    "pytest-asyncio>=1.4",
     "pytest-cov>=7.1",
     "ruff>=0.16",
 ]
@@ -66,12 +69,16 @@ plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "--strict-markers --strict-config -ra"
 # Warnings are errors, so deprecations are dealt with when they appear, not years later.
 filterwarnings = ["error"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 
 [tool.coverage.run]
-source = ["synapse"]
+source = ["src/synapse"]
 branch = true
 
 [tool.coverage.report]
@@ -88,6 +95,7 @@ name = "Layered architecture"
 type = "layers"
 layers = [
     "synapse.cli",
-    "synapse.api",
+    "synapse.api | synapse.migrations",
+    "synapse.dbadmin",
     "synapse.kernel",
 ]

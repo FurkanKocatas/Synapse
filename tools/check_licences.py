@@ -49,6 +49,9 @@ REVIEWED = {
     "synapse": "This project itself (proprietary).",
     "@lix-js/sdk-*": "Platform binaries of @lix-js/sdk (MIT); the binary package omits the field.",
     "caniuse-lite": "CC-BY-4.0 browser support data, used only at build time by the CSS tooling.",
+    "psycopg": "LGPL-3.0, used unmodified as a separate package (see docs/licences.md).",
+    "psycopg-binary": "LGPL-3.0, binary distribution of psycopg (see docs/licences.md).",
+    "psycopg-pool": "LGPL-3.0, used unmodified as a separate package (see docs/licences.md).",
 }
 
 

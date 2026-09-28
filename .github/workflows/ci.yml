@@ -40,6 +40,12 @@ jobs:
         run: uv run mypy src tests ../tools/check_file_size.py ../tools/check_licences.py ../eval/corpus/fetch.py
       - name: Module boundaries
         run: uv run lint-imports
+      - name: Test database
+        # The same image and setup as local development (deploy/compose.dev.yml), so database
+        # tests run against the real PostgreSQL build, extensions included.
+        run: |
+          python3 ../tools/dev_secrets.py
+          docker compose -f ../deploy/compose.dev.yml up -d --wait db
       - name: Tests
         run: uv run pytest --cov
 

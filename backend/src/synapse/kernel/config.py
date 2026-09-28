@@ -10,9 +10,12 @@ the same code paths run in development and production (ADR 0006).
 
 from enum import StrEnum
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from synapse.kernel.database import ConnectionSettings
 
 
 class LogFormat(StrEnum):
@@ -32,6 +35,23 @@ class Settings(BaseSettings):
     # Addresses whose X-Forwarded-* headers are trusted: the reverse proxy only. Anything
     # else could spoof client IPs, which feed rate limiting and the audit log.
     trusted_proxy_ips: str = "127.0.0.1"
+
+    # Each process connects as its own role (ADR 0013); the password is read from a file.
+    db_host: str = "127.0.0.1"
+    db_port: int = Field(default=5432, ge=1, le=65535)
+    db_name: str = "synapse"
+    db_user: str = "synapse_api"
+    db_password_file: Path = Path("/run/secrets/db_password")
+
+    def database(self, application_name: str) -> ConnectionSettings:
+        return ConnectionSettings(
+            host=self.db_host,
+            port=self.db_port,
+            dbname=self.db_name,
+            user=self.db_user,
+            password_file=self.db_password_file,
+            application_name=application_name,
+        )
 
 
 @lru_cache(maxsize=1)

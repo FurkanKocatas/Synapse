@@ -16,6 +16,16 @@ BlueOak-1.0.0 and MIT-0 are permissive licences equivalent in effect to MIT for 
 | `caniuse-lite` | CC-BY-4.0 | Frontend build only (CSS tooling) | Allowed: data used at build time, not shipped as a component |
 | `lightningcss` | MPL-2.0 | Frontend build only | Allowed: used unmodified |
 | `pathspec` | MPL-2.0 | Python development tooling | Allowed: used unmodified |
+| `psycopg`, `psycopg-binary`, `psycopg-pool` | LGPL-3.0-only | Backend runtime (database driver; also required by the job queue) | Allowed with conditions, see below |
+
+### psycopg (LGPL-3.0), reviewed 2026-09-28
+
+psycopg is the PostgreSQL driver for the backend ([ADR 0017](adr/0017-data-access.md)), and Procrastinate ([ADR 0004](adr/0004-job-queue.md)) requires it, so there is no practical permissive alternative. The LGPL allows use by proprietary software that links to the library, provided the library itself stays replaceable. Conditions we follow:
+
+1. psycopg is used **unmodified**, installed as its own package from PyPI. If we ever need a change, it goes upstream or into a separately published fork under the LGPL.
+2. Its licence text and a notice (name, version, source location) are shipped with every image and bundle, as part of the third-party notices generated from the SBOM.
+3. Nothing prevents a customer from replacing the installed psycopg with another build: no integrity lock on that package inside the image. (The additional "installation information" duty of LGPL-3.0 applies to consumer products; Synapse appliances are sold to organizations, but we do not rely on that distinction.)
+4. `psycopg-binary` bundles libpq (PostgreSQL licence) and OpenSSL (Apache-2.0), both allowed.
 
 ## Models shipped in bundles
 

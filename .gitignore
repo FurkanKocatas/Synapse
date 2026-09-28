@@ -22,3 +22,6 @@ node_modules/
 
 # Evaluation corpus files (downloaded by eval/corpus/fetch.py, never committed)
 eval/corpus/files/
+
+# Local development secrets (tools/dev_secrets.py)
+.dev/

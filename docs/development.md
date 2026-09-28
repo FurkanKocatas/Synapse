@@ -19,6 +19,21 @@ git config user.name "Furkan Kocataş"
 git config user.email atheron112@gmail.com
 ```
 
+## Database
+
+A local PostgreSQL 18 with pgvector and pg_textsearch, built from [deploy/postgres/Dockerfile](../deploy/postgres/Dockerfile):
+
+```bash
+python3 tools/dev_secrets.py                                # once: random secrets in .dev/secrets/
+docker compose -f deploy/compose.dev.yml up -d --wait db    # listens on 127.0.0.1:55432
+cd backend
+uv run synapse db bootstrap --admin-conninfo-file ../.dev/secrets/admin_conninfo --secrets-dir ../.dev/secrets
+SYNAPSE_DB_PORT=55432 SYNAPSE_DB_USER=synapse_migrator \
+  SYNAPSE_DB_PASSWORD_FILE=../.dev/secrets/db_synapse_migrator uv run synapse db migrate
+```
+
+`bootstrap` is idempotent: it creates the database, the roles and the schema if missing, and resets every role's password from its secret file. Database tests need the same running container; they create and drop their own database, and they fail (not skip) when it is not running.
+
 ## Backend
 
 ```bash
@@ -73,7 +88,6 @@ CI additionally runs the licence check, dependency vulnerability audits, a secre
 These are decided in the ADRs and will be added as the code they apply to lands:
 
 - Route authorization inventory test ([ADR 0007](adr/0007-authorization.md)): needs the first authenticated routes.
-- Tests against a real PostgreSQL service in CI ([ADR 0015](adr/0015-tooling-and-ci.md)): needs the database layer.
 - RAG evaluation gate ([ADR 0010](adr/0010-rag-pipeline.md)): needs the pipeline and the golden set.
 - Container image scanning, SBOM and signing: needs the first images.
 - A check that every test directory is collected by a CI job: needs more than one test tree.
