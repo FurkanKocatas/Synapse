@@ -38,6 +38,7 @@ ALLOWED = {
 }
 
 ALIASES = {
+    "3-Clause BSD License": "BSD-3-Clause",
     "Apache Software License": "Apache-2.0",
     "BSD License": "BSD-3-Clause",
     "ISC License (ISCL)": "ISC",
@@ -59,21 +60,39 @@ REVIEWED = {
     "pillow": "MIT-CMU (HPND), a permissive OSI-approved licence.",
     "pypdfium2": "Apache-2.0 or BSD-3-Clause; the bundled PDFium and its libraries are permissive, "
     "FreeType needs a credit line (see docs/licences.md).",
+    "antlr4-python3-runtime": "BSD-3-Clause (the ANTLR project's licence); the wheel's metadata "
+    "says only BSD. Needed by omegaconf, which RapidOCR uses for its configuration.",
 }
 
 
-def normalise(expression: str) -> list[str]:
-    """Split an expression like "MIT OR Apache-2.0" into normalised identifiers."""
+def normalise(expression: str) -> list[list[str]]:
+    """Split an expression like "MIT OR (Apache-2.0 AND Zlib)" into alternatives, each a list
+    of normalised identifiers that all apply."""
     cleaned = expression.strip()
     if cleaned.startswith("(") and cleaned.endswith(")"):
         cleaned = cleaned[1:-1]
-    parts = re.split(r"\s+OR\s+|;\s*", cleaned)
-    return [ALIASES.get(part.strip(), part.strip()) for part in parts if part.strip()]
+    alternatives = re.split(r"\s+OR\s+|;\s*", cleaned)
+    return [
+        [_identifier(part) for part in re.split(r"\s+AND\s+", option)]
+        for option in alternatives
+        if option.strip()
+    ]
+
+
+def _identifier(part: str) -> str:
+    # Pip spellings can end in a bracket ("Mozilla Public License 2.0 (MPL 2.0)"), so they are
+    # looked up as they are before brackets of an SPDX group are removed.
+    part = part.strip()
+    if part in ALIASES:
+        return ALIASES[part]
+    part = part.strip("() ")
+    return ALIASES.get(part, part)
 
 
 def is_allowed(expression: str) -> bool:
-    # For "A OR B" one allowed option is enough; "A WITH exception" is matched as a whole.
-    return any(identifier in ALLOWED for identifier in normalise(expression))
+    # For "A OR B" one allowed option is enough; for "A AND B" every part must be allowed;
+    # "A WITH exception" is matched as a whole.
+    return any(all(i in ALLOWED for i in option) for option in normalise(expression))
 
 
 def is_reviewed(name: str) -> bool:
