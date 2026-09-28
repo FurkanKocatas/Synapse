@@ -11,6 +11,8 @@ import { fieldText } from "@/lib/forms";
 import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
 
+import { PasskeysSection } from "@/features/passkeys/PasskeysSection";
+
 import { accountApi } from "./accountApi";
 import { describeUserAgent } from "./userAgent";
 
@@ -23,6 +25,7 @@ export function AccountPage() {
       <div className="grid gap-4 md:grid-cols-2">
         <PasswordForm />
         <Sessions />
+        <PasskeysSection />
       </div>
     </AppShell>
   );

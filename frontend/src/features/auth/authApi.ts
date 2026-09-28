@@ -16,7 +16,11 @@ export interface Session {
   auth_level: AuthLevel;
   csrf_token: string;
   user: User | null;
+  // Only while a second factor is pending: the kinds the account has.
+  second_factors?: SecondFactor[] | null;
 }
+
+export type SecondFactor = "totp" | "passkey";
 
 export interface Enrollment {
   secret: string;

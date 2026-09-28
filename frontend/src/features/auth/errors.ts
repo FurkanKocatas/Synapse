@@ -5,6 +5,11 @@ import { m } from "@/paraglide/messages.js";
 
 export function errorMessage(error: unknown): string {
   if (error instanceof NetworkError) return m.error_network();
+  // The browser's WebAuthn API reports a closed prompt, a timeout and an abort alike. Its
+  // errors are DOMExceptions, which are not always instances of Error, so go by the name.
+  const name = errorName(error);
+  if (name === "NotAllowedError" || name === "AbortError") return m.error_passkey_cancelled();
+  if (name === "InvalidStateError") return m.error_passkey_exists();
   if (!(error instanceof ApiError)) return m.error_unexpected();
   switch (error.code) {
     case "invalid_credentials":
@@ -28,6 +33,14 @@ export function errorMessage(error: unknown): string {
       return m.error_password_contains_context();
     case "own_account":
       return m.error_own_account();
+    case "passkey_failed":
+      return m.error_passkey_failed();
+    case "no_passkey":
+      return m.error_no_passkey();
+    case "last_second_factor":
+      return m.error_last_second_factor();
+    case "passkeys_unavailable":
+      return m.error_passkeys_unavailable();
     case "last_administrator":
       return m.error_last_administrator();
     case "conflict":
@@ -39,4 +52,9 @@ export function errorMessage(error: unknown): string {
     default:
       return m.error_unexpected();
   }
+}
+
+function errorName(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("name" in error)) return undefined;
+  return typeof error.name === "string" ? error.name : undefined;
 }

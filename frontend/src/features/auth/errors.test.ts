@@ -16,6 +16,16 @@ describe("errorMessage", () => {
     expect(errorMessage(new NetworkError(null))).toBe(m.error_network());
   });
 
+  it("explains what the browser's passkey prompt reports", () => {
+    const closed = new DOMException(
+      "The operation either timed out or was not allowed.",
+      "NotAllowedError",
+    );
+    expect(errorMessage(closed)).toBe(m.error_passkey_cancelled());
+    expect(errorMessage(new DOMException("", "InvalidStateError"))).toBe(m.error_passkey_exists());
+    expect(errorMessage(new ApiError(400, "passkey_failed", null))).toBe(m.error_passkey_failed());
+  });
+
   it("never shows raw codes for unknown errors", () => {
     expect(errorMessage(new ApiError(500, "something_new", null))).toBe(m.error_unexpected());
     expect(errorMessage(new Error("boom"))).toBe(m.error_unexpected());

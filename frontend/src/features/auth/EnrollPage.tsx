@@ -4,6 +4,7 @@ import { useState, type SubmitEvent } from "react";
 
 import { AuthLayout, FormError } from "@/components/AuthLayout";
 import { Button } from "@/components/ui/button";
+import { registerPasskey, supportsPasskeys } from "@/features/passkeys/passkeyApi";
 import { fieldText } from "@/lib/forms";
 import { m } from "@/paraglide/messages.js";
 
@@ -48,6 +49,20 @@ export function EnrollPage() {
     }
   }
 
+  async function enrollWithPasskey() {
+    setBusy(true);
+    setError(null);
+    try {
+      const registered = await registerPasskey(m.passkey_default_name());
+      // Recovery codes come with the account's first second factor, which this is.
+      setRecoveryCodes(registered.recovery_codes ?? []);
+    } catch (failure) {
+      setError(errorMessage(failure));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function finish() {
     const session = await queryClient.query({ ...sessionQuery, staleTime: 0 });
     await navigate({ to: "/" });
@@ -83,6 +98,22 @@ export function EnrollPage() {
             {busy ? m.auth_working() : m.auth_enroll_submit()}
           </Button>
         </form>
+      )}
+      {supportsPasskeys() && (
+        <section className="mt-6 flex flex-col gap-2 border-t pt-4" aria-labelledby="passkey-title">
+          <h2 id="passkey-title" className="font-medium">
+            {m.auth_enroll_passkey_title()}
+          </h2>
+          <p className="text-sm text-muted-foreground">{m.auth_enroll_passkey_description()}</p>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={() => void enrollWithPasskey()}
+          >
+            {m.passkey_create()}
+          </Button>
+        </section>
       )}
     </AuthLayout>
   );

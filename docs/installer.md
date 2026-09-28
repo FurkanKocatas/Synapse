@@ -27,7 +27,7 @@ docker compose -f /etc/synapse/rendered/compose.yml up -d --wait
 | Section | Keys | Notes |
 |---|---|---|
 | (top level) | `hardware` | `cpu-16`, `cpu-32` or `gpu`; sets memory limits (and later the models). The wizard suggests one from the installed RAM |
-| `[instance]` | `id`, `tenant_id`, `organization`, `slug`, `hostname`, `locale` | IDs are generated once. `tenant_id` is the ID the tenant is created with, so rendering never depends on database state |
+| `[instance]` | `id`, `tenant_id`, `organization`, `slug`, `hostname`, `locale` | IDs are generated once. `tenant_id` is the ID the tenant is created with, so rendering never depends on database state. `hostname` with the HTTPS port becomes `SYNAPSE_PUBLIC_URL`, which passkeys are bound to: **changing it later invalidates every registered passkey** |
 | `[tls]` | `mode`, `email`, `certificate`, `private_key` | `internal` (Caddy's own CA; give its root certificate to the IT team), `provided` (the customer's PKI; files are copied into the secrets), `acme` (public hostnames only) |
 | `[network]` | `http_port`, `https_port`, `subnet` | Change the ports only if 80/443 are taken; change the subnet only if it collides with the site's network |
 | `[paths]` | `secrets_dir`, `render_dir` | Default `/etc/synapse/secrets` and `/etc/synapse/rendered` |

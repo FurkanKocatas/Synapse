@@ -1,17 +1,17 @@
 # Identity: design and API
 
-Status: implemented, 2026-09-28. Decision record: [ADR 0006](../adr/0006-authentication.md). Code: [backend/src/synapse/identity/](../../backend/src/synapse/identity/), routes in [api/auth_routes.py](../../backend/src/synapse/api/auth_routes.py).
+Status: implemented, 2026-09-28. Decision record: [ADR 0006](../adr/0006-authentication.md). Code: [backend/src/synapse/identity/](../../backend/src/synapse/identity/), routes in [api/auth_routes.py](../../backend/src/synapse/api/auth_routes.py) and [api/passkey_routes.py](../../backend/src/synapse/api/passkey_routes.py).
 
 ## Sign-in flow
 
 ```mermaid
 stateDiagram-v2
     [*] --> Password: POST /api/auth/login
-    Password --> full: member, editor, auditor without TOTP
-    Password --> pending_mfa: account has confirmed TOTP
-    Password --> enroll_mfa: admin without TOTP
-    pending_mfa --> full: POST /api/auth/mfa/verify (TOTP or recovery code)
-    enroll_mfa --> full: POST /api/auth/mfa/totp/enroll, then /confirm
+    Password --> full: member, editor, auditor without a second factor
+    Password --> pending_mfa: account has TOTP or a passkey
+    Password --> enroll_mfa: admin without a second factor
+    pending_mfa --> full: POST /api/auth/mfa/verify (TOTP or recovery code) or /mfa/passkey
+    enroll_mfa --> full: TOTP enroll and confirm, or register a passkey
     full --> [*]: POST /api/auth/logout, idle or absolute expiry
 ```
 
@@ -19,8 +19,8 @@ Every step up to `full` **replaces the session token**. A token captured before 
 
 | Level | Lifetime | What it can do |
 |---|---|---|
-| `pending_mfa` | 5 minutes | Only `/mfa/verify`, `/session`, `/logout` |
-| `enroll_mfa` | 15 minutes | Only the TOTP enrollment endpoints, `/session`, `/logout` |
+| `pending_mfa` | 5 minutes | Only `/mfa/verify`, `/mfa/passkey*`, `/session`, `/logout` |
+| `enroll_mfa` | 15 minutes | Only TOTP enrollment, passkey registration, `/session`, `/logout` |
 | `full` | Idle 30 minutes, absolute 12 hours (both configurable) | Everything its role allows |
 
 ## Endpoints
@@ -30,11 +30,15 @@ All under `/api/auth`. Errors are `{"error": "<code>"}` with a stable code that 
 | Method and path | Needs | Success | Errors |
 |---|---|---|---|
 | `POST /login` `{email, password}` | Header `X-Synapse-Client: web` | 200 `{auth_level, csrf_token}` and the session cookie | 401 `invalid_credentials`, 429 `too_many_attempts` (with `Retry-After`), 403 `client_header_missing` |
-| `GET /session` | Any session | 200 `{auth_level, csrf_token, user}`; `user` only at `full` | 401 `not_authenticated` |
+| `GET /session` | Any session | 200 `{auth_level, csrf_token, user, second_factors}`; `user` only at `full`, `second_factors` (`totp`, `passkey`) only at `pending_mfa` | 401 `not_authenticated` |
 | `POST /logout` | Any session, CSRF header | 204, cookie cleared | 401, 403 `csrf_failed` |
 | `POST /mfa/verify` `{code}` | `pending_mfa`, CSRF | 200 `{auth_level: "full", csrf_token}`, new cookie | 401 `invalid_credentials`, 429, 409 `no_second_factor_pending` |
 | `POST /mfa/totp/enroll` | `enroll_mfa` or `full`, CSRF | 200 `{secret, provisioning_uri}` | 409 `totp_already_enrolled`, 403 `second_factor_required` |
 | `POST /mfa/totp/confirm` `{code}` | `enroll_mfa` or `full`, CSRF | 200 `{auth_level, csrf_token, recovery_codes}`, new cookie | 400 `invalid_code` |
+| `POST /passkeys/registration-options` | `enroll_mfa` or `full`, CSRF | 200 WebAuthn creation options | 409 `passkeys_unavailable` |
+| `POST /passkeys` `{credential, name}` | `enroll_mfa` or `full`, CSRF | 201 `{id, recovery_codes, session}`; `session` and a new cookie when it completed enrollment | 400 `passkey_failed` |
+| `POST /mfa/passkey/options` | `pending_mfa`, CSRF | 200 WebAuthn request options | 409 `no_passkey` |
+| `POST /mfa/passkey` `{credential}` | `pending_mfa`, CSRF | 200 `{auth_level: "full", csrf_token}`, new cookie | 401 `passkey_failed`, 429 |
 
 ## Security properties and where they are enforced
 
@@ -45,8 +49,10 @@ All under `/api/auth`. Errors are `{"error": "<code>"}` with a stable code that 
 | Cross-site request forgery | Every state-changing request with a session needs `X-Synapse-CSRF`, an HMAC of the session token under a server key; login needs `X-Synapse-Client`, which forces a CORS preflight that is never granted | `test_state_changing_requests_need_the_csrf_token`, `test_login_requires_the_client_header` |
 | Responses do not reveal whether an account exists | One error for wrong password, unknown and disabled accounts; unknown accounts are verified against a dummy Argon2 hash so timing matches | `test_bad_credentials_get_one_generic_answer` |
 | Password guessing | Per-account backoff after 4 failures (1 s doubling to 15 min); per-IP backoff after 50 (offices share addresses); also for unknown accounts; no permanent lockout | `test_repeated_failures_are_throttled_with_retry_after`, `test_throttle.py` |
-| Admins cannot skip the second factor | Admin without TOTP gets `enroll_mfa`; there is no bypass setting in any environment | `test_admin_enrolls_totp_then_signs_in_with_it` |
+| Admins cannot skip the second factor | Admin without a second factor gets `enroll_mfa`; there is no bypass setting in any environment; an admin cannot remove their last passkey | `test_admin_enrolls_totp_then_signs_in_with_it`, `test_the_last_second_factor_of_an_administrator_stays` |
 | TOTP codes cannot be replayed | The accepted time step is claimed atomically in SQL; the same or an earlier step is rejected | `test_second_factor_is_required_and_codes_cannot_be_replayed` |
+| A passkey response is used at most once | The challenge is bound to the session and purpose and deleted by the first attempt, successful or not | `test_each_challenge_is_consumed_by_the_first_attempt`, `test_a_response_counts_only_for_the_session_that_asked` |
+| Passkeys resist phishing and cloning | The origin and RP ID are checked, user verification is required, a signature counter that does not increase is rejected | `test_responses_for_another_site_or_without_verification_are_rejected`, `test_a_counter_that_does_not_increase_is_rejected` |
 | A TOTP secret copied to another account is useless | AES-256-GCM with the user ID as associated data | `test_cipher_round_trip_is_bound_to_user` |
 | Disabled accounts lose access immediately | Checked on every request, session revoked | `test_disabled_accounts_cannot_sign_in_and_lose_their_sessions` |
 | Tenants cannot see each other's accounts or sessions | Forced row-level security on every identity table | `test_accounts_are_invisible_to_other_tenants` |
@@ -60,7 +66,21 @@ All under `/api/auth`. Errors are `{"error": "<code>"}` with a stable code that 
 
 ## Recovery codes
 
-Ten single-use codes of 16 characters (80 random bits), shown once after TOTP enrollment. They are stored as SHA-256 rather than Argon2 as ADR 0006 says: with 80 bits of entropy guessing is infeasible regardless of hash speed, and a SHA-256 value can be looked up directly instead of checking all ten stored codes with a slow hash on every attempt. Using a recovery code goes through the same throttle as TOTP codes.
+Ten single-use codes of 16 characters (80 random bits), shown once with the account's first second factor (TOTP or passkey); enrolling TOTP later issues a new set. They are stored as SHA-256 rather than Argon2 as ADR 0006 says: with 80 bits of entropy guessing is infeasible regardless of hash speed, and a SHA-256 value can be looked up directly instead of checking all ten stored codes with a slow hash on every attempt. Using a recovery code goes through the same throttle as TOTP codes.
+
+## Passkeys
+
+Code: [passkeys.py](../../backend/src/synapse/identity/passkeys.py). Verification (signatures, origin, RP ID, CBOR, counters) is done by the [`webauthn`](https://github.com/duo-labs/py_webauthn) package; the web page uses [`@simplewebauthn/browser`](https://simplewebauthn.dev).
+
+- **A second factor, not a replacement for the password yet.** A passkey stands in for the TOTP code, on the same pages and with the same throttle. Credentials are created as discoverable where the device allows, so passwordless sign-in can be added later without anyone registering again.
+- **Bound to the address users open.** `SYNAPSE_PUBLIC_URL` (written by the installer from the host name and HTTPS port) gives the RP ID and the expected origin. If it is not set, the passkey endpoints answer 409 `passkeys_unavailable` and the page hides them. If the host name changes, existing passkeys stop working and users fall back to TOTP or a recovery code.
+- **User verification required, no attestation.** The device must check a PIN or biometrics. Synapse does not ask which device model created the passkey: it does not need to know, and asking would reveal it.
+- **Challenges** are 32 random bytes per session and purpose, valid for 5 minutes, and deleted by the first attempt, so a signed response can be used once and only in the session that asked for it.
+- **Management** under `/api/account/passkeys`: `GET` lists name, whether it is synced (backed up in a password manager), creation and last use; `DELETE /{id}` removes one (404 for another user's). An administrator cannot remove their last second factor (409 `last_second_factor`). An administrator's second-factor reset removes passkeys too.
+
+Audit actions: `identity.passkey.register` (with `backed_up`), `identity.passkey.remove`, and `identity.mfa.verify` with `method: passkey`.
+
+Testing: the backend tests use a software authenticator ([tests/soft_authenticator.py](../../backend/tests/soft_authenticator.py)) with real ES256 keys, CBOR and signatures, so the real verification runs. The web flows were also checked in a browser against the real API with an equivalent WebCrypto authenticator installed in the page.
 
 ## Creating the first administrator
 
@@ -71,7 +91,7 @@ synapse tenant create --slug acme --name "Acme"          # prints the tenant ID 
 synapse user create --email admin@acme.example --name "Admin" --role admin
 ```
 
-The password is prompted twice (or read from `--password-file` for automation). At first sign-in the admin is sent through TOTP enrollment.
+The password is prompted twice (or read from `--password-file` for automation). At first sign-in the admin is sent through second-factor enrollment (TOTP or a passkey).
 
 ## Frontend
 
@@ -123,5 +143,5 @@ Every sign-in step, logout and account creation is written to the audit log in t
 
 ## Not in this step
 
-- Passkeys (WebAuthn): planned in the same ADR, after the audit log.
+- Passwordless sign-in with a passkey alone (the credentials are already discoverable).
 - Password reset by email: needs outgoing mail, which on-prem installations may not have; until it exists, an administrator resets the password.
