@@ -12,7 +12,7 @@ import { CodeField } from "./CodeField";
 import { errorMessage } from "./errors";
 import { QrCode } from "./QrCode";
 import { RecoveryCodes } from "./RecoveryCodes";
-import { sessionQuery } from "./session";
+import { applyAccountLocale, sessionQuery } from "./session";
 
 export function EnrollPage() {
   const navigate = useNavigate();
@@ -49,8 +49,9 @@ export function EnrollPage() {
   }
 
   async function finish() {
-    await queryClient.invalidateQueries({ queryKey: sessionQuery.queryKey });
+    const session = await queryClient.query({ ...sessionQuery, staleTime: 0 });
     await navigate({ to: "/" });
+    await applyAccountLocale(session);
   }
 
   if (recoveryCodes !== null) {

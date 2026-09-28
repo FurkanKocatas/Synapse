@@ -10,7 +10,7 @@ import { m } from "@/paraglide/messages.js";
 import { verifySecondFactor } from "./authApi";
 import { CodeField } from "./CodeField";
 import { errorMessage } from "./errors";
-import { placeFor, sessionQuery } from "./session";
+import { applyAccountLocale, placeFor, sessionQuery } from "./session";
 
 export function MfaPage() {
   const navigate = useNavigate();
@@ -24,9 +24,10 @@ export function MfaPage() {
     setBusy(true);
     setError(null);
     try {
-      const session = await verifySecondFactor(code);
-      await queryClient.invalidateQueries({ queryKey: sessionQuery.queryKey });
+      await verifySecondFactor(code);
+      const session = await queryClient.query({ ...sessionQuery, staleTime: 0 });
       await navigate({ to: placeFor(session) });
+      await applyAccountLocale(session);
     } catch (failure) {
       setError(errorMessage(failure));
     } finally {
