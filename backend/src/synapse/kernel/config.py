@@ -55,8 +55,13 @@ class Settings(BaseSettings):
     audit_signing_key_file: Path = Path("/run/secrets/audit_signing_key")
     session_idle_minutes: int = Field(default=30, ge=5, le=24 * 60)
     session_absolute_hours: int = Field(default=12, ge=1, le=24 * 30)
+    # The address users open, such as https://synapse.example.org. Passkeys are bound to its
+    # host name, so they stop working if it changes; unset means passkeys are unavailable.
+    public_url: str | None = Field(
+        default=None, pattern=r"^(https://[^/:?#]+(:\d+)?|http://localhost(:\d+)?)$"
+    )
 
-    @field_validator("tenant_id", mode="before")
+    @field_validator("tenant_id", "public_url", mode="before")
     @classmethod
     def _empty_means_unset(cls, value: object) -> object:
         # Environment files commonly carry "NAME=" for a value not filled in yet.

@@ -235,7 +235,26 @@ async def revoke_user_sessions(
     )
 
 
-# TOTP and recovery codes
+# Second factors: TOTP, passkeys and recovery codes
+
+
+async def has_second_factor(connection: AsyncConnection, user_id: UUID) -> bool:
+    """A confirmed TOTP authenticator or a passkey (migration 0007)."""
+    cursor = await connection.execute("SELECT user_has_second_factor(%s)", (user_id,))
+    return bool(_required(await cursor.fetchone())[0])
+
+
+async def has_passkey(connection: AsyncConnection, user_id: UUID) -> bool:
+    cursor = await connection.execute(
+        "SELECT EXISTS (SELECT 1 FROM passkeys WHERE user_id = %s)", (user_id,)
+    )
+    return bool(_required(await cursor.fetchone())[0])
+
+
+async def delete_second_factors(connection: AsyncConnection, user_id: UUID) -> None:
+    await connection.execute("DELETE FROM totp_credentials WHERE user_id = %s", (user_id,))
+    await connection.execute("DELETE FROM passkeys WHERE user_id = %s", (user_id,))
+    await connection.execute("DELETE FROM recovery_codes WHERE user_id = %s", (user_id,))
 
 
 async def totp_for_user(connection: AsyncConnection, user_id: UUID) -> TotpRecord | None:

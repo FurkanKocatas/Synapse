@@ -91,6 +91,7 @@ services:
       SYNAPSE_AUDIT_SIGNING_KEY_FILE: /run/secrets/audit_signing_key
       # Only the web front on the internal network may set X-Forwarded-For.
       SYNAPSE_TRUSTED_PROXY_IPS: ${SYNAPSE_STACK_SUBNET:-172.29.0.0/24}
+      SYNAPSE_PUBLIC_URL: http://localhost:${SYNAPSE_STACK_PORT:-8480}
     secrets: [db_synapse_api, csrf_key, totp_key, audit_signing_key]
     depends_on:
       migrate: { condition: service_completed_successfully }

@@ -71,6 +71,17 @@ def test_the_tenant_and_tier_are_applied(config: SynapseConfig) -> None:
     assert big["db"]["mem_limit"] == "6g"
 
 
+def test_the_api_knows_the_address_users_open(config: SynapseConfig) -> None:
+    api = render.compose(config)["services"]["api"]["environment"]
+    assert api["SYNAPSE_PUBLIC_URL"] == "https://synapse.demo.local"
+    moved = config.model_copy(
+        update={"network": config.network.model_copy(update={"https_port": 8443})}
+    )
+    services = render.compose(moved)["services"]
+    assert services["api"]["environment"]["SYNAPSE_PUBLIC_URL"] == "https://synapse.demo.local:8443"
+    assert services["web"]["environment"]["SYNAPSE_SITE_ADDRESS"] == "synapse.demo.local:8443"
+
+
 @pytest.mark.parametrize(
     ("tls", "directive"),
     [

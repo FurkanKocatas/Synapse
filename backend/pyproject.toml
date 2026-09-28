@@ -16,6 +16,7 @@ dependencies = [
     "pyotp>=2.10",
     "structlog>=26.1",
     "uvicorn[standard]>=0.54",
+    "webauthn>=3.0.1",
 ]
 
 [project.scripts]
@@ -116,6 +117,7 @@ type = "forbidden"
 source_modules = ["synapse.accounts_cli", "synapse.api", "synapse.cli"]
 forbidden_modules = [
     "synapse.identity.accounts",
+    "synapse.identity.passkeys",
     "synapse.identity.passwords",
     "synapse.identity.profile",
     "synapse.identity.recovery",

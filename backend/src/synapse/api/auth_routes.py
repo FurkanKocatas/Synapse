@@ -46,6 +46,8 @@ class SessionView(BaseModel):
     auth_level: AuthLevel
     csrf_token: str
     user: UserView | None = None
+    # While a second factor is pending: which kinds the account has, so the page can offer them.
+    second_factors: list[str] | None = None
 
 
 class EnrollmentView(BaseModel):
@@ -57,7 +59,7 @@ class EnrollmentConfirmedView(SessionView):
     recovery_codes: list[str]
 
 
-def _set_session_cookie(response: Response, issued: IssuedSession) -> None:
+def set_session_cookie(response: Response, issued: IssuedSession) -> None:
     max_age = max(0, int((issued.expires_at - datetime.now(UTC)).total_seconds()))
     response.set_cookie(
         SESSION_COOKIE,
@@ -70,13 +72,13 @@ def _set_session_cookie(response: Response, issued: IssuedSession) -> None:
     )
 
 
-def _reject(rejected: LoginRejected) -> ApiError:
+def reject(rejected: LoginRejected, *, invalid: str = "invalid_credentials") -> ApiError:
     if rejected.reason == "throttled":
         seconds = max(1, int(rejected.retry_after.total_seconds())) if rejected.retry_after else 1
         return ApiError(
             status.HTTP_429_TOO_MANY_REQUESTS, "too_many_attempts", {"Retry-After": str(seconds)}
         )
-    return ApiError(status.HTTP_401_UNAUTHORIZED, "invalid_credentials")
+    return ApiError(status.HTTP_401_UNAUTHORIZED, invalid)
 
 
 def _user_view(session: CurrentSession) -> UserView:
@@ -100,8 +102,8 @@ async def login(
         user_agent=request.headers.get("user-agent"),
     )
     if isinstance(result, LoginRejected):
-        raise _reject(result)
-    _set_session_cookie(response, result)
+        raise reject(result)
+    set_session_cookie(response, result)
     return SessionView(auth_level=result.auth_level, csrf_token=result.csrf_token)
 
 
@@ -111,6 +113,9 @@ async def current_session(session: AnySession, identity: Identity) -> SessionVie
         auth_level=session.auth_level,
         csrf_token=identity.csrf_token_for(session),
         user=_user_view(session) if session.auth_level == "full" else None,
+        second_factors=(
+            await identity.second_factors(session) if session.auth_level == "pending_mfa" else None
+        ),
     )
 
 
@@ -137,8 +142,8 @@ async def verify_second_factor(
         user_agent=request.headers.get("user-agent"),
     )
     if isinstance(result, LoginRejected):
-        raise _reject(result)
-    _set_session_cookie(response, result)
+        raise reject(result)
+    set_session_cookie(response, result)
     return SessionView(auth_level=result.auth_level, csrf_token=result.csrf_token)
 
 
@@ -166,7 +171,7 @@ async def confirm_totp_enrollment(
     )
     if completed is None:
         raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_code")
-    _set_session_cookie(response, completed.session)
+    set_session_cookie(response, completed.session)
     return EnrollmentConfirmedView(
         auth_level=completed.session.auth_level,
         csrf_token=completed.session.csrf_token,

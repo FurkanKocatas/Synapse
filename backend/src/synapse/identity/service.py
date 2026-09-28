@@ -181,10 +181,8 @@ class IdentityService:
             if passwords.needs_rehash(user.password_hash or ""):
                 new_hash = await asyncio.to_thread(passwords.hash_password, password)
                 await repository.set_password_hash(connection, user.id, new_hash)
-            credential = await repository.totp_for_user(connection, user.id)
-            has_mfa = credential is not None and credential.confirmed_at is not None
             level: AuthLevel
-            if has_mfa:
+            if await repository.has_second_factor(connection, user.id):
                 level, lifetime = "pending_mfa", PENDING_MFA_LIFETIME
             elif user.role == "admin":
                 level, lifetime = "enroll_mfa", ENROLL_MFA_LIFETIME
@@ -335,15 +333,7 @@ class IdentityService:
             accepted = await self._accept_second_factor(connection, session.user_id, code)
             if accepted:
                 await repository.clear_failures(connection, subject)
-                await repository.revoke_session(connection, session.session_id, "upgraded", now)
-                issued = await self._issue(
-                    connection,
-                    session.user_id,
-                    "full",
-                    now + self._policy.absolute_lifetime,
-                    client_ip,
-                    user_agent,
-                )
+                issued = await self.upgrade_session(connection, session, now, client_ip, user_agent)
                 await audit.record(
                     connection,
                     self._tenant_id,
@@ -368,6 +358,45 @@ class IdentityService:
             return LoginRejected("invalid")
         log.info("identity.mfa.succeeded", user_id=str(session.user_id))
         return issued
+
+    async def upgrade_session(
+        self,
+        connection: AsyncConnection,
+        session: CurrentSession,
+        now: datetime,
+        client_ip: str | None,
+        user_agent: str | None,
+    ) -> IssuedSession:
+        """Replace a session that has passed its second factor with a new, full one.
+
+        The token changes at this moment, so a token captured before the second factor is
+        useless. Runs in the caller's transaction, next to the check that allowed it.
+        """
+        await repository.revoke_session(connection, session.session_id, "upgraded", now)
+        return await self._issue(
+            connection,
+            session.user_id,
+            "full",
+            now + self._policy.absolute_lifetime,
+            client_ip,
+            user_agent,
+        )
+
+    async def issue_recovery_codes(self, connection: AsyncConnection, user_id: UUID) -> list[str]:
+        """New recovery codes, replacing any earlier ones. Only their hashes are stored."""
+        codes = recovery.new_codes()
+        await repository.replace_recovery_codes(
+            connection, self._tenant_id, user_id, [recovery.hash_code(c) for c in codes]
+        )
+        return codes
+
+    async def second_factors(self, session: CurrentSession) -> list[str]:
+        """The kinds of second factor the account has: ``totp`` and/or ``passkey``."""
+        async with self._db.tenant_transaction(self._tenant_id) as connection:
+            credential = await repository.totp_for_user(connection, session.user_id)
+            passkey = await repository.has_passkey(connection, session.user_id)
+        kinds = ["totp"] if credential is not None and credential.confirmed_at is not None else []
+        return [*kinds, "passkey"] if passkey else kinds
 
     async def _accept_second_factor(
         self, connection: AsyncConnection, user_id: UUID, code: str
@@ -428,19 +457,8 @@ class IdentityService:
                     now,
                 )
                 return None
-            codes = recovery.new_codes()
-            await repository.replace_recovery_codes(
-                connection, self._tenant_id, session.user_id, [recovery.hash_code(c) for c in codes]
-            )
-            await repository.revoke_session(connection, session.session_id, "upgraded", now)
-            issued = await self._issue(
-                connection,
-                session.user_id,
-                "full",
-                now + self._policy.absolute_lifetime,
-                client_ip,
-                user_agent,
-            )
+            codes = await self.issue_recovery_codes(connection, session.user_id)
+            issued = await self.upgrade_session(connection, session, now, client_ip, user_agent)
             await audit.record(
                 connection,
                 self._tenant_id,

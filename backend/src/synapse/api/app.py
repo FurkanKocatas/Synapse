@@ -12,13 +12,15 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from synapse import __version__
-from synapse.api import account_routes, admin_routes, audit_routes, auth_routes
+from synapse.api import account_routes, admin_routes, audit_routes, auth_routes, passkey_routes
 from synapse.api.deps import ApiError, public_endpoint
 from synapse.dbadmin import migrate
 from synapse.identity.public import (
     AccountService,
     IdentityService,
+    PasskeyService,
     ProfileService,
+    RelyingParty,
     SessionPolicy,
     TotpCipher,
 )
@@ -58,7 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await database.open()
         app.state.database = database
         app.state.tenant_id = settings.tenant_id
-        app.state.identity = IdentityService(
+        identity = IdentityService(
             database,
             tenant_id=settings.tenant_id,
             csrf_key=read_key(settings.csrf_key_file),
@@ -67,6 +69,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 idle_timeout=timedelta(minutes=settings.session_idle_minutes),
                 absolute_lifetime=timedelta(hours=settings.session_absolute_hours),
             ),
+        )
+        app.state.identity = identity
+        app.state.passkeys = (
+            PasskeyService(
+                database,
+                tenant_id=settings.tenant_id,
+                identity=identity,
+                relying_party=RelyingParty.from_url(settings.public_url),
+            )
+            if settings.public_url
+            else None
         )
         app.state.accounts = AccountService(database, tenant_id=settings.tenant_id)
         app.state.profile = ProfileService(database, tenant_id=settings.tenant_id)
@@ -89,6 +102,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(audit_routes.router)
     app.include_router(admin_routes.router)
     app.include_router(account_routes.router)
+    app.include_router(passkey_routes.router)
 
     @app.exception_handler(ApiError)
     async def api_error(_: Request, error: ApiError) -> JSONResponse:

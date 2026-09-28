@@ -56,8 +56,7 @@ def _utc_now() -> datetime:
 
 _ACCOUNT_SELECT = (
     "SELECT u.id, u.email, u.display_name, u.role, u.status, u.locale, "
-    "(t.confirmed_at IS NOT NULL) AS has_mfa, u.created_at "
-    "FROM users u LEFT JOIN totp_credentials t ON t.tenant_id = u.tenant_id AND t.user_id = u.id "
+    "user_has_second_factor(u.id) AS has_mfa, u.created_at FROM users u "
 )
 
 
@@ -146,7 +145,7 @@ class AccountService:
         return True
 
     async def reset_mfa(self, user_id: UUID, *, actor_user_id: UUID) -> bool:
-        """Remove the second factor and recovery codes; False if the account does not exist.
+        """Remove every second factor and the recovery codes; False if the account does not exist.
 
         An account whose role requires a second factor has to enroll again at the next sign-in.
         """
@@ -156,8 +155,7 @@ class AccountService:
         async with self._db.tenant_transaction(self._tenant_id) as connection:
             if await _account(connection, user_id, lock=True) is None:
                 return False
-            await connection.execute("DELETE FROM totp_credentials WHERE user_id = %s", (user_id,))
-            await connection.execute("DELETE FROM recovery_codes WHERE user_id = %s", (user_id,))
+            await repository.delete_second_factors(connection, user_id)
             await repository.clear_failures(connection, f"mfa:{user_id}")
             await repository.revoke_user_sessions(connection, user_id, "mfa_reset", now)
             await self._audit(connection, "identity.mfa.reset", actor_user_id, user_id, now)

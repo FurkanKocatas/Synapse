@@ -6,6 +6,14 @@ from synapse.identity.accounts import (
     LastAdministratorError,
     OwnAccountError,
 )
+from synapse.identity.passkeys import (
+    LastSecondFactorError,
+    Passkey,
+    PasskeyError,
+    PasskeyRegistered,
+    PasskeyService,
+    RelyingParty,
+)
 from synapse.identity.passwords import PasswordPolicyError
 from synapse.identity.profile import (
     Locale,
@@ -38,12 +46,18 @@ __all__ = [
     "IdentityService",
     "IssuedSession",
     "LastAdministratorError",
+    "LastSecondFactorError",
     "Locale",
     "LoginRejected",
     "NewAccount",
     "OwnAccountError",
+    "Passkey",
+    "PasskeyError",
+    "PasskeyRegistered",
+    "PasskeyService",
     "PasswordPolicyError",
     "ProfileService",
+    "RelyingParty",
     "Role",
     "SessionInfo",
     "SessionPolicy",

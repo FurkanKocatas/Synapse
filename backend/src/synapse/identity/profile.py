@@ -65,7 +65,7 @@ class ProfileService:
         async with self._db.tenant_transaction(self._tenant_id) as connection:
             blocked = await repository.blocked_subjects(connection, [subject], now)
             user = await repository.user_by_id(connection, session.user_id)
-            credential = await repository.totp_for_user(connection, session.user_id)
+            mfa_enabled = await repository.has_second_factor(connection, session.user_id)
         if blocked:
             raise TooManyAttemptsError(max(1, int((blocked - now).total_seconds())))
         if user is None:  # pragma: no cover  (the session exists, so the user does)
@@ -75,7 +75,7 @@ class ProfileService:
             raise WrongPasswordError
         passwords.validate_password(
             new,
-            mfa_enabled=credential is not None and credential.confirmed_at is not None,
+            mfa_enabled=mfa_enabled,
             context_words=[user.email.split("@")[0], user.display_name],
         )
         new_hash = await asyncio.to_thread(passwords.hash_password, new)

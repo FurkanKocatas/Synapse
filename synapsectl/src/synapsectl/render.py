@@ -126,6 +126,8 @@ def compose(config: SynapseConfig) -> dict[str, Any]:
                     "SYNAPSE_TOTP_KEY_FILE": "/run/secrets/totp_key",
                     "SYNAPSE_AUDIT_SIGNING_KEY_FILE": "/run/secrets/audit_signing_key",
                     "SYNAPSE_TRUSTED_PROXY_IPS": config.network.subnet,
+                    # Passkeys are bound to this address (docs/design/identity.md).
+                    "SYNAPSE_PUBLIC_URL": f"https://{site_address(config)}",
                 },
                 "secrets": ["db_synapse_api", "csrf_key", "totp_key", "audit_signing_key"],
                 "depends_on": {"migrate": {"condition": "service_completed_successfully"}},
@@ -160,6 +162,12 @@ def compose(config: SynapseConfig) -> dict[str, Any]:
     }
 
 
+def site_address(config: SynapseConfig) -> str:
+    """Host name, with the HTTPS port when it is not 443: the address users open."""
+    https = config.network.https_port
+    return config.instance.hostname if https == 443 else f"{config.instance.hostname}:{https}"  # noqa: PLR2004
+
+
 def _web(config: SynapseConfig, memory: str) -> dict[str, Any]:
     http, https = config.network.http_port, config.network.https_port
     service: dict[str, Any] = {
@@ -167,9 +175,7 @@ def _web(config: SynapseConfig, memory: str) -> dict[str, Any]:
         "environment": {
             # The HTTPS port is written into the address when it is not 443, so Caddy listens on
             # it and puts it into redirects (see deploy/web/Caddyfile).
-            "SYNAPSE_SITE_ADDRESS": (
-                config.instance.hostname if https == 443 else f"{config.instance.hostname}:{https}"  # noqa: PLR2004
-            ),
+            "SYNAPSE_SITE_ADDRESS": site_address(config),
             "SYNAPSE_HTTP_PORT": str(http),
         },
         # The same port numbers inside and outside, so Caddy's redirects and certificates use
