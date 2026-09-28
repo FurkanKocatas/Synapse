@@ -9,6 +9,7 @@ dependencies = [
     "alembic>=1.20",
     "argon2-cffi>=25.1",
     "cryptography>=50.0",
+    "defusedxml>=0.7.1",
     "fastapi>=0.141",
     "psycopg[binary,pool]>=3.3",
     "pydantic>=2.13",
@@ -31,6 +32,7 @@ dev = [
     "pytest-asyncio>=1.4",
     "pytest-cov>=7.1",
     "ruff>=0.16",
+    "types-defusedxml>=0.7.0.20260504",
 ]
 
 [build-system]
@@ -105,6 +107,7 @@ layers = [
     "synapse.cli",
     "synapse.accounts_cli | synapse.audit_cli",
     "synapse.api | synapse.migrations",
+    "synapse.knowledge",
     "synapse.identity | synapse.authz | synapse.dbadmin",
     "synapse.audit",
     "synapse.kernel",
@@ -135,6 +138,17 @@ type = "forbidden"
 source_modules = ["synapse.api", "synapse.cli", "synapse.identity"]
 forbidden_modules = ["synapse.authz.checks"]
 # synapse.authz.management is reached through synapse.authz.public.management.
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Knowledge is used only through synapse.knowledge.public"
+type = "forbidden"
+source_modules = ["synapse.api", "synapse.cli"]
+forbidden_modules = [
+    "synapse.knowledge.blobs",
+    "synapse.knowledge.documents",
+    "synapse.knowledge.filetypes",
+]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]

@@ -63,7 +63,8 @@ Open http://localhost:8480 (`SYNAPSE_STACK_PORT` changes the port, `SYNAPSE_STAC
 3. Creates a tenant and an account with the CLI.
 4. Checks the SPA, the security headers and a sign-in through the web front.
 5. Registers a passkey and signs in with it through the web front ([tools/smoke_passkey.py](../tools/smoke_passkey.py), with the backend tests' software authenticator), which also proves `SYNAPSE_PUBLIC_URL` reaches the API.
-6. Verifies the audit chain.
+6. Uploads a document as an editor, lists it and downloads it byte for byte, which proves the blob volume is writable under the read-only container.
+7. Verifies the audit chain.
 
 It then removes everything it created. CI runs it on every push.
 

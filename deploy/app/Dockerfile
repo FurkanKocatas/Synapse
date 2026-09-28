@@ -26,6 +26,9 @@ FROM ${PYTHON}
 RUN python -m pip uninstall --yes pip \
  && groupadd --system --gid 10001 synapse \
  && useradd --system --uid 10001 --gid synapse --no-create-home --shell /usr/sbin/nologin synapse
+# Uploaded files live on a volume mounted here; creating the directory in the image gives a new
+# volume this owner and mode.
+RUN install -d -o 10001 -g 10001 -m 0700 /var/lib/synapse/blobs
 COPY --from=build /app/.venv /app/.venv
 ENV PATH=/app/.venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \

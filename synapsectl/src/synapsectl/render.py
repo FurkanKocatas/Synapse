@@ -130,6 +130,8 @@ def compose(config: SynapseConfig) -> dict[str, Any]:
                     "SYNAPSE_PUBLIC_URL": f"https://{site_address(config)}",
                 },
                 "secrets": ["db_synapse_api", "csrf_key", "totp_key", "audit_signing_key"],
+                # Uploaded files; backed up together with the database (ADR 0003).
+                "volumes": ["blobs:/var/lib/synapse/blobs"],
                 "depends_on": {"migrate": {"condition": "service_completed_successfully"}},
                 "mem_limit": memory["api"],
                 "restart": "unless-stopped",
@@ -158,7 +160,7 @@ def compose(config: SynapseConfig) -> dict[str, Any]:
         "secrets": {
             name: {"file": str(config.paths.secrets_dir / name)} for name in sorted(secret_names)
         },
-        "volumes": {"db-data": {}, "caddy-data": {}},
+        "volumes": {"db-data": {}, "blobs": {}, "caddy-data": {}},
     }
 
 

@@ -93,6 +93,7 @@ services:
       SYNAPSE_TRUSTED_PROXY_IPS: ${SYNAPSE_STACK_SUBNET:-172.29.0.0/24}
       SYNAPSE_PUBLIC_URL: http://localhost:${SYNAPSE_STACK_PORT:-8480}
     secrets: [db_synapse_api, csrf_key, totp_key, audit_signing_key]
+    volumes: [blobs:/var/lib/synapse/blobs]
     depends_on:
       migrate: { condition: service_completed_successfully }
     mem_limit: 768m
@@ -146,3 +147,4 @@ secrets:
 
 volumes:
   db-data:
+  blobs:

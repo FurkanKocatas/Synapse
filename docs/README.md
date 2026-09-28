@@ -7,7 +7,7 @@
 | [deployment.md](deployment.md) | Images, container hardening, the full stack and its smoke test |
 | [installer.md](installer.md) | synapsectl: synapse.toml, secrets, rendering and doctor |
 | [plan/](plan/) | Work plans per phase: [phase-4.md](plan/phase-4.md) (knowledge base and RAG) |
-| [design/](design/) | How implemented parts work: [identity.md](design/identity.md), [audit.md](design/audit.md), [authorization.md](design/authorization.md) |
+| [design/](design/) | How implemented parts work: [identity.md](design/identity.md), [audit.md](design/audit.md), [authorization.md](design/authorization.md), [knowledge-base.md](design/knowledge-base.md) |
 | [research/](research/) | The evidence behind the decisions: market, hardware, RAG, architecture. Start with [00-summary.md](research/00-summary.md) |
 
 ## Architecture decisions

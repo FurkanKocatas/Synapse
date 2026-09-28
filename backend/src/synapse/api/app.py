@@ -12,7 +12,14 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from synapse import __version__
-from synapse.api import account_routes, admin_routes, audit_routes, auth_routes, passkey_routes
+from synapse.api import (
+    account_routes,
+    admin_routes,
+    audit_routes,
+    auth_routes,
+    document_routes,
+    passkey_routes,
+)
 from synapse.api.deps import ApiError, public_endpoint
 from synapse.dbadmin import migrate
 from synapse.identity.public import (
@@ -28,6 +35,7 @@ from synapse.kernel.config import Settings, get_settings
 from synapse.kernel.database import Database
 from synapse.kernel.logging import configure_logging
 from synapse.kernel.secrets import read_key
+from synapse.knowledge.public import DocumentService, LocalBlobStore
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
@@ -58,31 +66,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise StartupError("SYNAPSE_TENANT_ID is not set; the installer writes it")
         database = Database(settings.database(application_name="synapse-api"))
         await database.open()
-        app.state.database = database
-        app.state.tenant_id = settings.tenant_id
-        identity = IdentityService(
-            database,
-            tenant_id=settings.tenant_id,
-            csrf_key=read_key(settings.csrf_key_file),
-            totp_cipher=TotpCipher(read_key(settings.totp_key_file)),
-            policy=SessionPolicy(
-                idle_timeout=timedelta(minutes=settings.session_idle_minutes),
-                absolute_lifetime=timedelta(hours=settings.session_absolute_hours),
-            ),
-        )
-        app.state.identity = identity
-        app.state.passkeys = (
-            PasskeyService(
-                database,
-                tenant_id=settings.tenant_id,
-                identity=identity,
-                relying_party=RelyingParty.from_url(settings.public_url),
-            )
-            if settings.public_url
-            else None
-        )
-        app.state.accounts = AccountService(database, tenant_id=settings.tenant_id)
-        app.state.profile = ProfileService(database, tenant_id=settings.tenant_id)
+        _attach_services(app, settings, database)
         log.info("api.started", version=__version__, schema_revision=expected_revision)
         try:
             yield
@@ -103,6 +87,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(admin_routes.router)
     app.include_router(account_routes.router)
     app.include_router(passkey_routes.router)
+    app.include_router(document_routes.router)
 
     @app.exception_handler(ApiError)
     async def api_error(_: Request, error: ApiError) -> JSONResponse:
@@ -160,6 +145,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 def _not_ready() -> JSONResponse:
     return JSONResponse({"status": "not_ready", "version": __version__}, status_code=503)
+
+
+def _attach_services(app: FastAPI, settings: Settings, database: Database) -> None:
+    """The services every request uses, built once at startup."""
+    tenant_id = settings.tenant_id
+    if tenant_id is None:  # pragma: no cover  (checked by the caller)
+        raise StartupError("SYNAPSE_TENANT_ID is not set")
+    app.state.database = database
+    app.state.tenant_id = tenant_id
+    identity = IdentityService(
+        database,
+        tenant_id=tenant_id,
+        csrf_key=read_key(settings.csrf_key_file),
+        totp_cipher=TotpCipher(read_key(settings.totp_key_file)),
+        policy=SessionPolicy(
+            idle_timeout=timedelta(minutes=settings.session_idle_minutes),
+            absolute_lifetime=timedelta(hours=settings.session_absolute_hours),
+        ),
+    )
+    app.state.identity = identity
+    app.state.passkeys = (
+        PasskeyService(
+            database,
+            tenant_id=tenant_id,
+            identity=identity,
+            relying_party=RelyingParty.from_url(settings.public_url),
+        )
+        if settings.public_url
+        else None
+    )
+    blobs = LocalBlobStore(settings.blob_dir)
+    app.state.blobs = blobs
+    app.state.upload_max_bytes = settings.upload_max_mb * 1024 * 1024
+    app.state.documents = DocumentService(database, blobs, tenant_id=tenant_id)
+    app.state.accounts = AccountService(database, tenant_id=tenant_id)
+    app.state.profile = ProfileService(database, tenant_id=tenant_id)
 
 
 def _expected_revision() -> str:

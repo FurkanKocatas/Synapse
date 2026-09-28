@@ -47,6 +47,9 @@ chmod 644 "$password_file"
 stack run --rm --no-deps -T -v "$password_file:/run/password:ro" api \
   user create --email member@smoke.example --name "Smoke Member" --role member \
   --password-file /run/password >/dev/null
+stack run --rm --no-deps -T -v "$password_file:/run/password:ro" api \
+  user create --email editor@smoke.example --name "Smoke Editor" --role editor \
+  --password-file /run/password >/dev/null
 
 step "Start the API and the web front"
 stack up -d --wait api web
@@ -69,6 +72,24 @@ grep -q '"email":"member@smoke.example"' <<<"$session"
 step "Register a passkey and sign in with it"
 uv run --directory backend python ../tools/smoke_passkey.py \
   "$base" "http://localhost:$port" member@smoke.example "$password_file"
+
+step "Upload a document, list it and download it"
+editor_jar="$(mktemp)"
+json() { python3 -c "import json, sys; print(json.load(sys.stdin)$1)"; }
+csrf="$(curl -fsS -c "$editor_jar" -H 'X-Synapse-Client: web' -H 'Content-Type: application/json' \
+  -X POST "$base/api/auth/login" \
+  -d '{"email": "editor@smoke.example", "password": "a long smoke test passphrase"}' | json "['csrf_token']")"
+editor() { curl -fsS -b "$editor_jar" -H "X-Synapse-CSRF: $csrf" "$@"; }
+collection="$(editor -H 'Content-Type: application/json' -X POST "$base/api/admin/collections" \
+  -d '{"name": "Smoke"}' | json "['id']")"
+sample="$(mktemp)"
+printf '%%PDF-1.7\n%% smoke test document\n%%%%EOF\n' > "$sample"
+document="$(editor -H 'Content-Type: application/octet-stream' --data-binary "@$sample" \
+  -X POST "$base/api/collections/$collection/documents?filename=Karar%202026-35.pdf" | json "['id']")"
+editor "$base/api/collections/$collection/documents" | grep -q '"title":"Karar 2026-35"'
+editor -o "$sample.back" "$base/api/documents/$document/versions/1/file"
+cmp "$sample" "$sample.back"
+rm -f "$editor_jar" "$sample" "$sample.back"
 
 step "Check the audit log recorded the sign-in and is intact"
 report="$(stack exec -T api synapse audit verify | tail -n 1)"
