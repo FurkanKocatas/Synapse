@@ -1,6 +1,11 @@
 """The identity package's public interface. Other packages import from here only."""
 
-from synapse.identity.accounts import Account, AccountService, LastAdministratorError
+from synapse.identity.accounts import (
+    Account,
+    AccountService,
+    LastAdministratorError,
+    OwnAccountError,
+)
 from synapse.identity.passwords import PasswordPolicyError
 from synapse.identity.profile import (
     Locale,
@@ -36,6 +41,7 @@ __all__ = [
     "Locale",
     "LoginRejected",
     "NewAccount",
+    "OwnAccountError",
     "PasswordPolicyError",
     "ProfileService",
     "Role",

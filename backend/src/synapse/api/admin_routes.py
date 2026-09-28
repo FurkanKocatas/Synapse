@@ -24,6 +24,7 @@ from synapse.identity.public import (
     IdentityService,
     LastAdministratorError,
     NewAccount,
+    OwnAccountError,
     PasswordPolicyError,
     Role,
 )
@@ -148,6 +149,36 @@ async def change_user(
     if account is None:
         raise ApiError(status.HTTP_404_NOT_FOUND, "not_found")
     return _account_view(account)
+
+
+class PasswordReset(BaseModel):
+    password: str = Field(max_length=1024)
+
+
+@router.post("/users/{user_id}/password", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_password(
+    user_id: UUID, body: PasswordReset, session: ManageUsers, request: Request
+) -> None:
+    try:
+        found = await _accounts(request).reset_password(
+            user_id, body.password, actor_user_id=session.user_id
+        )
+    except OwnAccountError as error:
+        raise ApiError(status.HTTP_409_CONFLICT, "own_account") from error
+    except PasswordPolicyError as error:
+        raise ApiError(status.HTTP_422_UNPROCESSABLE_CONTENT, error.code) from error
+    if not found:
+        raise ApiError(status.HTTP_404_NOT_FOUND, "not_found")
+
+
+@router.delete("/users/{user_id}/mfa", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_mfa(user_id: UUID, session: ManageUsers, request: Request) -> None:
+    try:
+        found = await _accounts(request).reset_mfa(user_id, actor_user_id=session.user_id)
+    except OwnAccountError as error:
+        raise ApiError(status.HTTP_409_CONFLICT, "own_account") from error
+    if not found:
+        raise ApiError(status.HTTP_404_NOT_FOUND, "not_found")
 
 
 # Groups

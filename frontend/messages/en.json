@@ -104,5 +104,16 @@
   "account_session_end": "End",
   "account_session_last_seen": "Last active: {time}",
   "account_unknown_device": "Unknown device",
-  "error_wrong_password": "The current password is incorrect."
+  "error_wrong_password": "The current password is incorrect.",
+  "admin_field_actions": "Actions",
+  "admin_reset_open": "Reset access",
+  "admin_reset_title": "Reset access: {name}",
+  "admin_reset_password_submit": "Set password",
+  "admin_reset_password_done": "The password was set and the user's sessions were ended. Give the new password to the user through a safe channel.",
+  "admin_reset_mfa_explain": "Removes the authenticator and the recovery codes. Use this only when the user has lost both.",
+  "admin_reset_mfa_submit": "Remove two-step verification",
+  "admin_reset_mfa_confirm": "Yes, remove it",
+  "admin_reset_mfa_done": "Two-step verification was removed and the user's sessions were ended. If the role requires it, the user sets it up again at the next sign-in.",
+  "common_cancel": "Cancel",
+  "error_own_account": "Use My account for your own account."
 }

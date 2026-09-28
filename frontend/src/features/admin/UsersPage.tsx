@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import type { SubmitEvent } from "react";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { useState, type SubmitEvent } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { FormError } from "@/components/AuthLayout";
@@ -7,19 +7,24 @@ import { NativeSelect } from "@/components/NativeSelect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { sessionQuery } from "@/features/auth/session";
 import { fieldText } from "@/lib/forms";
 import { getLocale } from "@/paraglide/runtime.js";
 import { m } from "@/paraglide/messages.js";
 
 import { adminApi, ROLES, type Account, type Role } from "./adminApi";
 import { roleLabel } from "./labels";
+import { ResetPanel } from "./ResetPanel";
 import { useAction } from "@/lib/useAction";
 
 const USERS = ["admin", "users"];
 
 export function UsersPage() {
   const users = useQuery({ queryKey: USERS, queryFn: adminApi.users });
+  const { data: session } = useSuspenseQuery(sessionQuery);
   const { run, error, busy } = useAction();
+  const [resetting, setResetting] = useState<string | null>(null);
+  const selected = users.data?.find((account) => account.id === resetting);
 
   async function create(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -104,6 +109,7 @@ export function UsersPage() {
                 <th className="p-2">{m.admin_field_role()}</th>
                 <th className="p-2">{m.admin_field_status()}</th>
                 <th className="p-2">{m.admin_field_mfa()}</th>
+                <th className="p-2">{m.admin_field_actions()}</th>
               </tr>
             </thead>
             <tbody>
@@ -141,12 +147,28 @@ export function UsersPage() {
                     </NativeSelect>
                   </td>
                   <td className="p-2">{account.has_mfa ? m.mfa_on() : m.mfa_off()}</td>
+                  <td className="p-2">
+                    {account.id !== session?.user?.id && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        aria-pressed={resetting === account.id}
+                        onClick={() => {
+                          setResetting(account.id);
+                        }}
+                      >
+                        {m.admin_reset_open()}
+                      </Button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      {selected && <ResetPanel key={selected.id} account={selected} refresh={[USERS]} />}
     </AppShell>
   );
 }

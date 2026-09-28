@@ -108,7 +108,7 @@ def normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
-def _email_subject(email: str) -> str:
+def email_throttle_subject(email: str) -> str:
     return "email:" + hashlib.sha256(email.encode("utf-8")).hexdigest()
 
 
@@ -136,7 +136,7 @@ class IdentityService:
         self, email: str, password: str, *, client_ip: str | None, user_agent: str | None
     ) -> IssuedSession | LoginRejected:
         email = normalize_email(email)
-        email_subject = _email_subject(email)
+        email_subject = email_throttle_subject(email)
         subjects = [email_subject] + ([f"ip:{client_ip}"] if client_ip else [])
         now = self._now()
 

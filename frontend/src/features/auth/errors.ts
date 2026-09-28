@@ -26,6 +26,8 @@ export function errorMessage(error: unknown): string {
       return m.error_password_too_long();
     case "password_contains_context":
       return m.error_password_contains_context();
+    case "own_account":
+      return m.error_own_account();
     case "last_administrator":
       return m.error_last_administrator();
     case "conflict":

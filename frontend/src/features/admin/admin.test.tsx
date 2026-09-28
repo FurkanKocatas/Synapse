@@ -89,6 +89,45 @@ describe("users page", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(m.error_email_taken());
   });
 
+  it("resets another account and asks before removing its second factor", async () => {
+    window.history.replaceState(null, "", "/admin/users");
+    const other = { ...admin, id: "u1", email: "other@example.org", display_name: "Other" };
+    const calls = fakeApi((call) => {
+      if (call.path === "/api/auth/session") {
+        return { status: 200, body: { auth_level: "full", csrf_token: "c", user: admin } };
+      }
+      if (call.method === "GET") {
+        return {
+          status: 200,
+          body: [
+            { ...admin, status: "active", has_mfa: true },
+            { ...other, status: "active", has_mfa: true },
+          ],
+        };
+      }
+      return { status: 204 };
+    });
+    render(<App />);
+
+    // Offered once: not for one's own account.
+    await userEvent.click(await screen.findByRole("button", { name: m.admin_reset_open() }));
+
+    await userEvent.type(screen.getByLabelText(m.account_new_password()), "a new long passphrase");
+    await userEvent.click(screen.getByRole("button", { name: m.admin_reset_password_submit() }));
+    expect(await screen.findByRole("status")).toHaveTextContent(m.admin_reset_password_done());
+
+    await userEvent.click(screen.getByRole("button", { name: m.admin_reset_mfa_submit() }));
+    expect(calls.some((call) => call.method === "DELETE")).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: m.admin_reset_mfa_confirm() }));
+    expect(await screen.findByText(m.admin_reset_mfa_done())).toBeInTheDocument();
+
+    const changes = calls.filter((call) => call.method !== "GET");
+    expect(changes.map((call) => [call.method, call.path, call.body])).toEqual([
+      ["POST", "/api/admin/users/u1/password", { password: "a new long passphrase" }],
+      ["DELETE", "/api/admin/users/u1/mfa", undefined],
+    ]);
+  });
+
   it("sends members who open an administration page back home", async () => {
     window.history.replaceState(null, "", "/admin/users");
     fakeApi(() => ({

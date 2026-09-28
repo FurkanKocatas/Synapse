@@ -104,5 +104,16 @@
   "account_session_end": "Sonlandır",
   "account_session_last_seen": "Son etkinlik: {time}",
   "account_unknown_device": "Bilinmeyen cihaz",
-  "error_wrong_password": "Mevcut parola hatalı."
+  "error_wrong_password": "Mevcut parola hatalı.",
+  "admin_field_actions": "İşlemler",
+  "admin_reset_open": "Erişimi sıfırla",
+  "admin_reset_title": "Erişimi sıfırla: {name}",
+  "admin_reset_password_submit": "Parolayı ata",
+  "admin_reset_password_done": "Parola atandı ve kullanıcının oturumları kapatıldı. Yeni parolayı kullanıcıya güvenli bir yoldan iletin.",
+  "admin_reset_mfa_explain": "Doğrulama uygulamasını ve kurtarma kodlarını kaldırır. Yalnızca kullanıcı ikisini de kaybettiyse kullanın.",
+  "admin_reset_mfa_submit": "İki adımlı doğrulamayı kaldır",
+  "admin_reset_mfa_confirm": "Evet, kaldır",
+  "admin_reset_mfa_done": "İki adımlı doğrulama kaldırıldı ve kullanıcının oturumları kapatıldı. Rolü gerektiriyorsa kullanıcı bir sonraki girişte yeniden kurar.",
+  "common_cancel": "Vazgeç",
+  "error_own_account": "Kendi hesabınız için Hesabım sayfasını kullanın."
 }

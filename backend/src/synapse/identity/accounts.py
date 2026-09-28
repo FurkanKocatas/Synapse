@@ -3,8 +3,14 @@
 Changing a role or disabling an account ends the account's sessions at once, so new rights (or
 the loss of them) apply to the very next request. The last active administrator cannot be
 demoted or disabled, which would lock the organization out of its own installation.
+
+An administrator can also reset another account's password or second factor, for a user who has
+lost them. Both end the account's sessions. Neither works on the administrator's own account:
+there the current password is required (see ``profile``), so a stolen session alone cannot take
+the account over.
 """
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -16,8 +22,9 @@ from psycopg.rows import class_row
 
 from synapse.audit import public as audit
 from synapse.audit.public import AuditEvent
-from synapse.identity import repository
+from synapse.identity import passwords, repository
 from synapse.identity.repository import Role
+from synapse.identity.service import email_throttle_subject
 from synapse.kernel.database import Database
 
 Status = Literal["active", "disabled"]
@@ -37,6 +44,10 @@ class Account:
 
 class LastAdministratorError(RuntimeError):
     """The change would leave the installation without an active administrator."""
+
+
+class OwnAccountError(ValueError):
+    """Resets are for other accounts; one's own password is changed with the current one."""
 
 
 def _utc_now() -> datetime:
@@ -108,6 +119,70 @@ class AccountService:
                 now,
             )
             return await _account(connection, user_id, lock=False)
+
+    async def reset_password(self, user_id: UUID, password: str, *, actor_user_id: UUID) -> bool:
+        """Set a new password chosen by the administrator; False if the account does not exist."""
+        if user_id == actor_user_id:
+            raise OwnAccountError
+        now = self._now()
+        async with self._db.tenant_transaction(self._tenant_id) as connection:
+            account = await _account(connection, user_id, lock=False)
+        if account is None:
+            return False
+        passwords.validate_password(
+            password,
+            mfa_enabled=account.has_mfa,
+            context_words=[account.email.split("@")[0], account.display_name],
+        )
+        password_hash = await asyncio.to_thread(passwords.hash_password, password)
+        async with self._db.tenant_transaction(self._tenant_id) as connection:
+            if await _account(connection, user_id, lock=True) is None:  # pragma: no cover
+                return False
+            await repository.set_password_hash(connection, user_id, password_hash)
+            await repository.clear_failures(connection, email_throttle_subject(account.email))
+            await repository.clear_failures(connection, f"password:{user_id}")
+            await repository.revoke_user_sessions(connection, user_id, "password_reset", now)
+            await self._audit(connection, "identity.password.reset", actor_user_id, user_id, now)
+        return True
+
+    async def reset_mfa(self, user_id: UUID, *, actor_user_id: UUID) -> bool:
+        """Remove the second factor and recovery codes; False if the account does not exist.
+
+        An account whose role requires a second factor has to enroll again at the next sign-in.
+        """
+        if user_id == actor_user_id:
+            raise OwnAccountError
+        now = self._now()
+        async with self._db.tenant_transaction(self._tenant_id) as connection:
+            if await _account(connection, user_id, lock=True) is None:
+                return False
+            await connection.execute("DELETE FROM totp_credentials WHERE user_id = %s", (user_id,))
+            await connection.execute("DELETE FROM recovery_codes WHERE user_id = %s", (user_id,))
+            await repository.clear_failures(connection, f"mfa:{user_id}")
+            await repository.revoke_user_sessions(connection, user_id, "mfa_reset", now)
+            await self._audit(connection, "identity.mfa.reset", actor_user_id, user_id, now)
+        return True
+
+    async def _audit(
+        self,
+        connection: AsyncConnection,
+        action: str,
+        actor_user_id: UUID,
+        user_id: UUID,
+        now: datetime,
+    ) -> None:
+        await audit.record(
+            connection,
+            self._tenant_id,
+            AuditEvent(
+                action,
+                "success",
+                actor_user_id=actor_user_id,
+                target_type="user",
+                target_id=str(user_id),
+            ),
+            now,
+        )
 
 
 async def _account(connection: AsyncConnection, user_id: UUID, *, lock: bool) -> Account | None:

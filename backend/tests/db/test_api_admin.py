@@ -220,3 +220,67 @@ def test_administration_is_audited(admin: TestClient, setup: Setup) -> None:
         status = auditor_client.get("/api/audit/status").json()
     assert status["ok"] is True
     assert status["events_checked"] > 10
+
+
+def sign_in(client: TestClient, email: str, password: str = PASSWORD) -> dict[str, str]:
+    body: dict[str, str] = client.post(
+        "/api/auth/login",
+        json={"email": email, "password": password},
+        headers={CLIENT_HEADER: "web"},
+    ).json()
+    return body
+
+
+def test_resetting_a_password(admin: TestClient, setup: Setup) -> None:
+    email = f"forgot-{uuid.uuid4().hex[:6]}@example.org"
+    user = admin.post(
+        "/api/admin/users",
+        json={"email": email, "display_name": "Forgot", "role": "member", "password": PASSWORD},
+    ).json()["id"]
+    reset = f"/api/admin/users/{user}/password"
+    new_password = "a brand new long passphrase"
+    with new_client(setup) as target:
+        sign_in(target, email)
+        assert admin.post(reset, json={"password": "short"}).json() == {
+            "error": "password_too_short"
+        }
+        assert admin.post(reset, json={"password": new_password}).status_code == 204
+        assert target.get("/api/auth/session").status_code == 401
+    with new_client(setup) as target:
+        assert sign_in(target, email).get("error") == "invalid_credentials"
+    with new_client(setup) as target:
+        assert sign_in(target, email, new_password)["auth_level"] == "full"
+    missing = f"/api/admin/users/{uuid.uuid4()}/password"
+    assert admin.post(missing, json={"password": new_password}).status_code == 404
+
+
+def test_administrators_cannot_reset_their_own_account(admin: TestClient) -> None:
+    me = admin.get("/api/auth/session").json()["user"]["id"]
+    own = admin.post(f"/api/admin/users/{me}/password", json={"password": "x" * 20})
+    assert own.json() == {"error": "own_account"}
+    assert admin.delete(f"/api/admin/users/{me}/mfa").json() == {"error": "own_account"}
+
+
+def test_resetting_a_second_factor(admin: TestClient, setup: Setup) -> None:
+    email = f"lostphone-{uuid.uuid4().hex[:6]}@example.org"
+    user = admin.post(
+        "/api/admin/users",
+        json={"email": email, "display_name": "Lost", "role": "admin", "password": PASSWORD},
+    ).json()["id"]
+    with new_client(setup) as target:
+        csrf = {CSRF_HEADER: sign_in(target, email)["csrf_token"]}
+        secret = target.post("/api/auth/mfa/totp/enroll", headers=csrf).json()["secret"]
+        target.post(
+            "/api/auth/mfa/totp/confirm", json={"code": pyotp.TOTP(secret).now()}, headers=csrf
+        )
+        assert target.get("/api/auth/session").json()["auth_level"] == "full"
+        listed = {u["id"]: u for u in admin.get("/api/admin/users").json()}
+        assert listed[user]["has_mfa"] is True
+
+        assert admin.delete(f"/api/admin/users/{user}/mfa").status_code == 204
+        assert target.get("/api/auth/session").status_code == 401
+    listed = {u["id"]: u for u in admin.get("/api/admin/users").json()}
+    assert listed[user]["has_mfa"] is False
+    with new_client(setup) as target:
+        assert sign_in(target, email)["auth_level"] == "enroll_mfa"
+    assert admin.delete(f"/api/admin/users/{uuid.uuid4()}/mfa").status_code == 404

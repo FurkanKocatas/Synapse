@@ -61,6 +61,9 @@ export const adminApi = {
   }) => apiRequest<Created>("POST", "/api/admin/users", body),
   changeUser: (id: string, body: { role?: Role; status?: Account["status"] }) =>
     apiRequest<Account>("PATCH", `/api/admin/users/${id}`, body),
+  resetPassword: (id: string, password: string) =>
+    apiRequest<undefined>("POST", `/api/admin/users/${id}/password`, { password }),
+  resetMfa: (id: string) => apiRequest<undefined>("DELETE", `/api/admin/users/${id}/mfa`),
 
   groups: () => apiRequest<Group[]>("GET", "/api/admin/groups"),
   createGroup: (name: string) => apiRequest<Created>("POST", "/api/admin/groups", { name }),

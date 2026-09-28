@@ -90,7 +90,7 @@ Code: [frontend/src/features/auth/](../../frontend/src/features/auth/), routes i
 - The QR code is drawn by React from the code matrix; no generated markup is inserted into the page.
 - While the recovery codes are on screen, leaving or reloading the page asks for confirmation, because they are shown only once.
 - After login the session is fetched again, because the login response carries no account details.
-- Language: after sign-in the interface switches to the account's `locale`; choosing a language while signed in stores it on the account, so it follows the user to every browser. Before sign-in the choice is remembered per browser.
+- Language: when sign-in completes (on the login, second-factor or enrollment page, whichever comes last) the interface switches to the account's `locale`; the session carries the account only at the full level, so each of those pages applies it; choosing a language while signed in stores it on the account, so it follows the user to every browser. Before sign-in the choice is remembered per browser.
 
 ## Own account
 
@@ -111,7 +111,11 @@ Audit actions: `identity.password.change` (success and failure) and `identity.se
 - `POST {email, display_name, role, locale, password}`: creates an account under the password policy. Errors: 409 `email_taken`, 422 with the policy code (for example `password_too_short`).
 - `PATCH /{id} {role?, status?}`: changes role or status. **The account's sessions end at once**, so new rights apply to the next request. The last active administrator cannot be demoted or disabled (409 `last_administrator`); the check runs inside the transaction with the administrator rows locked, so two concurrent changes cannot both pass.
 
-Audit actions: `identity.user.create` (with `via: admin` or `cli`) and `identity.user.update` (with the old and new values).
+- `POST /{id}/password {password}`: sets a password chosen by the administrator, for a user who has forgotten theirs. The policy applies (422 with its code), the account's sign-in throttling is cleared and **its sessions end**. The administrator passes the password on outside the system.
+- `DELETE /{id}/mfa`: removes the authenticator and the recovery codes, for a user who has lost both. **The account's sessions end**; if the role requires a second factor, the next sign-in goes to enrollment. The web page asks for a second click before sending it.
+- Neither reset works on the administrator's own account (409 `own_account`): there the current password is required, so a stolen administrator session alone cannot take the account over. The web page does not offer them on one's own row.
+
+Audit actions: `identity.user.create` (with `via: admin` or `cli`), `identity.user.update` (with the old and new values), `identity.password.reset` and `identity.mfa.reset`.
 
 ## Audit
 
@@ -120,4 +124,4 @@ Every sign-in step, logout and account creation is written to the audit log in t
 ## Not in this step
 
 - Passkeys (WebAuthn): planned in the same ADR, after the audit log.
-- Password reset by email: needs outgoing mail, which on-prem installations may not have; an administrator reset is the planned replacement.
+- Password reset by email: needs outgoing mail, which on-prem installations may not have; until it exists, an administrator resets the password.
