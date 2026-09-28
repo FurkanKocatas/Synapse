@@ -15,12 +15,12 @@ Born-digital PDF pages whose text layer passes the page quality check ([quality.
 ```bash
 uv run --directory backend python ../eval/ocr/prepare.py         # images, truths and real scans in eval/ocr/work/
 docker build -t synapse-ocr-bench eval/ocr                       # the engines, models pinned by checksum
-docker run --rm -v "$PWD/eval/ocr:/bench" synapse-ocr-bench      # all engines, or name some
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/eval/ocr:/bench" synapse-ocr-bench   # all engines, or name some
 uv run --directory backend python ../eval/ocr/score.py           # the table
 uv run --directory backend python ../eval/ocr/score.py --worst ENGINE CONDITION
 ```
 
-`eval/ocr/work/` is git-ignored; it holds rendered pages of corpus documents.
+`eval/ocr/work/` is git-ignored; it holds rendered pages of corpus documents. `--user` matters on Linux: without it the container writes its output as root into the bind-mounted `work/out/` (Docker Desktop on macOS hides this). The image needs no network at run time.
 
 ## Limits
 

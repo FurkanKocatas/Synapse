@@ -1,6 +1,7 @@
 """Run every OCR engine over the benchmark images (inside the synapse-ocr-bench container).
 
-    docker run --rm -v "$PWD/eval/ocr:/bench" synapse-ocr-bench [--real] [ENGINE ...]
+    docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/eval/ocr:/bench" synapse-ocr-bench \
+        [--real] [ENGINE ...]
 
 ``--real`` runs only the real scans in /bench/work/real/ (hand-verified truths in real/).
 
