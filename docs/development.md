@@ -39,8 +39,17 @@ SYNAPSE_DB_PORT=55432 SYNAPSE_DB_USER=synapse_migrator \
 ```bash
 cd backend
 uv sync                  # creates .venv from uv.lock
-uv run synapse api       # API on http://127.0.0.1:8000, health at /healthz
+export SYNAPSE_DB_PORT=55432 SYNAPSE_DB_USER=synapse_api
+export SYNAPSE_DB_PASSWORD_FILE=../.dev/secrets/db_synapse_api
+export SYNAPSE_CSRF_KEY_FILE=../.dev/secrets/csrf_key SYNAPSE_TOTP_KEY_FILE=../.dev/secrets/totp_key
+export SYNAPSE_LOG_FORMAT=console
+uv run synapse tenant create --slug dev --name "Development"   # once; prints the tenant ID
+export SYNAPSE_TENANT_ID=<the printed ID>
+uv run synapse user create --email admin@example.org --name "Admin" --role admin
+uv run synapse api       # API on http://127.0.0.1:8000; /healthz, /readyz, /api/docs
 ```
+
+Sign-in flows and endpoints are described in [design/identity.md](design/identity.md).
 
 Configuration comes from `SYNAPSE_*` environment variables ([kernel/config.py](../backend/src/synapse/kernel/config.py)). For readable logs while developing: `SYNAPSE_LOG_FORMAT=console`.
 

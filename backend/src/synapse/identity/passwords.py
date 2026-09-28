@@ -28,11 +28,27 @@ _MIN_CONTEXT_WORD = 4
 _DUMMY_HASH = _HASHER.hash("synapse-dummy-password-for-timing-equalisation")
 
 
+_DESCRIPTIONS = {
+    "password_too_short": (
+        f"the password must be at least {MIN_LENGTH_SINGLE_FACTOR} characters "
+        f"({MIN_LENGTH_WITH_MFA} with a second factor)"
+    ),
+    "password_too_long": f"the password must be at most {MAX_LENGTH} characters",
+    "password_contains_context": (
+        "the password must not contain the account's email name, display name or organization"
+    ),
+}
+
+
 class PasswordPolicyError(ValueError):
-    """The password does not meet the policy. ``code`` is a stable, translatable identifier."""
+    """The password does not meet the policy.
+
+    ``code`` is a stable identifier that user interfaces translate; ``str()`` gives an English
+    description for operators and logs.
+    """
 
     def __init__(self, code: str) -> None:
-        super().__init__(code)
+        super().__init__(f"{_DESCRIPTIONS[code]} ({code})")
         self.code = code
 
 

@@ -76,3 +76,10 @@ def test_context_words_are_rejected_case_insensitively() -> None:
 
 def test_short_context_words_are_ignored() -> None:
     validate_password("a long passphrase with ab inside", mfa_enabled=False, context_words=["ab"])
+
+
+def test_policy_errors_describe_themselves_for_operators() -> None:
+    with pytest.raises(PasswordPolicyError) as error:
+        validate_password("short", mfa_enabled=False, context_words=[])
+    assert error.value.code == "password_too_short"
+    assert str(error.value).startswith("the password must be at least 15 characters")

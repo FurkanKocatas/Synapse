@@ -74,3 +74,11 @@ def test_extensions_are_installed(test_database: TestDatabase) -> None:
     with test_database.admin() as admin:
         names = {row[0] for row in admin.execute("SELECT extname FROM pg_extension")}
     assert {"vector", "pg_textsearch"} <= names
+
+
+def test_runtime_roles_cannot_change_the_recorded_revision(test_database: TestDatabase) -> None:
+    settings = test_database.settings("synapse_api")
+    with psycopg.connect(settings.conninfo()) as connection:
+        assert connection.execute("SELECT version_num FROM alembic_version").fetchone()
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            connection.execute("UPDATE alembic_version SET version_num = 'forged'")

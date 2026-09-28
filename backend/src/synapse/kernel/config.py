@@ -11,6 +11,7 @@ the same code paths run in development and production (ADR 0006).
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
+from uuid import UUID
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -42,6 +43,13 @@ class Settings(BaseSettings):
     db_name: str = "synapse"
     db_user: str = "synapse_api"
     db_password_file: Path = Path("/run/secrets/db_password")
+
+    # On-prem runs as a single tenant; the installer writes its ID here (ADR 0005).
+    tenant_id: UUID | None = None
+    csrf_key_file: Path = Path("/run/secrets/csrf_key")
+    totp_key_file: Path = Path("/run/secrets/totp_key")
+    session_idle_minutes: int = Field(default=30, ge=5, le=24 * 60)
+    session_absolute_hours: int = Field(default=12, ge=1, le=24 * 30)
 
     def database(self, application_name: str) -> ConnectionSettings:
         return ConnectionSettings(

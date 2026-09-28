@@ -14,11 +14,14 @@ ROOT = Path(__file__).resolve().parent.parent
 SECRETS = ROOT / ".dev" / "secrets"
 DEV_DB_PORT = 55432  # see deploy/compose.dev.yml
 
-ROLE_FILES = (
+# Each file holds 32 random bytes as unpadded base64url text.
+SECRET_FILES = (
     "db_synapse_migrator",
     "db_synapse_api",
     "db_synapse_worker",
     "db_synapse_scheduler",
+    "csrf_key",
+    "totp_key",
 )
 
 
@@ -32,7 +35,7 @@ def write_once(path: Path, value: str) -> None:
 def main() -> int:
     SECRETS.mkdir(parents=True, exist_ok=True)
     write_once(SECRETS / "postgres_superuser", secrets.token_urlsafe(32))
-    for name in ROLE_FILES:
+    for name in SECRET_FILES:
         write_once(SECRETS / name, secrets.token_urlsafe(32))
 
     superuser = (SECRETS / "postgres_superuser").read_text(encoding="utf-8").strip()

@@ -54,6 +54,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"src/synapse/cli.py" = ["T201"]  # command output is the point of the CLI
 "tests/**" = [
     "S101",    # pytest uses assert.
     "S105",    # Test passwords are test data, not secrets.
@@ -100,7 +101,24 @@ name = "Layered architecture"
 type = "layers"
 layers = [
     "synapse.cli",
+    "synapse.accounts_cli",
     "synapse.api | synapse.migrations",
-    "synapse.dbadmin",
+    "synapse.identity | synapse.dbadmin",
     "synapse.kernel",
 ]
+
+# Packages talk to each other only through their public module (ADR 0015).
+[[tool.importlinter.contracts]]
+name = "Identity is used only through synapse.identity.public"
+type = "forbidden"
+source_modules = ["synapse.accounts_cli", "synapse.api", "synapse.cli"]
+forbidden_modules = [
+    "synapse.identity.passwords",
+    "synapse.identity.recovery",
+    "synapse.identity.repository",
+    "synapse.identity.service",
+    "synapse.identity.throttle",
+    "synapse.identity.tokens",
+    "synapse.identity.totp",
+]
+allow_indirect_imports = true

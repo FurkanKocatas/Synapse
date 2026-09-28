@@ -10,9 +10,15 @@ from synapse.kernel.database import ConnectionSettings
 from synapse.kernel.secrets import read_secret
 
 
-def alembic_config(settings: ConnectionSettings) -> Config:
+def script_config() -> Config:
+    """Configuration that locates the migration scripts, without any database credentials."""
     config = Config()
     config.set_main_option("script_location", "synapse:migrations")
+    return config
+
+
+def alembic_config(settings: ConnectionSettings) -> Config:
+    config = script_config()
     url = URL.create(
         "postgresql+psycopg",
         username=settings.user,

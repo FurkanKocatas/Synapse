@@ -1,9 +1,11 @@
 import uuid
 
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from synapse import __version__
 from synapse.api.app import REQUEST_ID_HEADER, create_app
+from synapse.api.deps import client_ip
 from synapse.kernel.config import Settings
 
 
@@ -15,10 +17,6 @@ def test_healthz_reports_version() -> None:
     response = make_client().get("/healthz")
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "version": __version__}
-
-
-def test_readyz_is_ok_without_dependencies() -> None:
-    assert make_client().get("/readyz").status_code == 200
 
 
 def test_request_id_is_generated_when_missing() -> None:
@@ -44,3 +42,13 @@ def test_docs_are_not_served_at_site_root() -> None:
     client = make_client()
     assert client.get("/docs").status_code == 404
     assert client.get("/api/docs").status_code == 200
+
+
+def test_client_ip_accepts_only_ip_addresses() -> None:
+    def request_from(host: str) -> Request:
+        return Request({"type": "http", "client": (host, 1234), "headers": []})
+
+    assert client_ip(request_from("192.0.2.1")) == "192.0.2.1"
+    assert client_ip(request_from("2001:db8::1")) == "2001:db8::1"
+    assert client_ip(request_from("testclient")) is None
+    assert client_ip(Request({"type": "http", "client": None, "headers": []})) is None

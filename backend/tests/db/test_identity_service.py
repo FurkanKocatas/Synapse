@@ -227,3 +227,25 @@ async def test_confirmed_totp_cannot_be_replaced_through_enrollment(
     email, _secret, _ = await enrolled_admin(service)
     pending = await session_of(service, await login(service, email))
     assert await service.start_totp_enrollment(pending) is None  # wrong level
+
+
+async def test_disabled_accounts_cannot_sign_in_and_lose_their_sessions(
+    service: IdentityService, api_db: Database
+) -> None:
+    email = await add_user(service)
+    issued = await login(service, email)
+    async with api_db.tenant_transaction(service._tenant_id) as connection:
+        await connection.execute("UPDATE users SET status = 'disabled' WHERE email = %s", (email,))
+    assert await service.authenticate(issued.token) is None
+    assert await service.login(email, PASSWORD, client_ip=None, user_agent=None) == (
+        LoginRejected("invalid")
+    )
+
+
+async def test_second_factor_calls_require_the_right_session_level(
+    service: IdentityService,
+) -> None:
+    member = await session_of(service, await login(service, await add_user(service)))
+    assert await service.complete_mfa(member, "123456", client_ip=None, user_agent=None) == (
+        LoginRejected("invalid")
+    )
