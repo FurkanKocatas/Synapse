@@ -24,6 +24,8 @@ from uuid import UUID
 import structlog
 from psycopg import AsyncConnection
 
+from synapse.audit import public as audit
+from synapse.audit.public import AuditEvent
 from synapse.identity import passwords, recovery, repository, throttle, tokens, totp
 from synapse.identity.repository import AuthLevel, Role
 from synapse.kernel.database import Database
@@ -77,6 +79,17 @@ class TotpEnrollment:
 
 
 @dataclass(frozen=True)
+class NewAccount:
+    email: str
+    display_name: str
+    role: Role
+    password: str | None
+    locale: str = "tr"
+    # Extra words the password must not contain, such as the organization's name.
+    context_words: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class EnrollmentCompleted:
     session: IssuedSession
     recovery_codes: list[str]
@@ -125,6 +138,18 @@ class IdentityService:
         async with self._db.tenant_transaction(self._tenant_id) as connection:
             blocked = await repository.blocked_subjects(connection, subjects, now)
             user = None if blocked else await repository.user_by_email(connection, email)
+            if blocked:
+                await audit.record(
+                    connection,
+                    self._tenant_id,
+                    AuditEvent(
+                        "identity.login",
+                        "denied",
+                        actor_ip=client_ip,
+                        details={"reason": "throttled", "email_sha256": email_subject[6:]},
+                    ),
+                    now,
+                )
         if blocked:
             log.info("identity.login.throttled")
             return LoginRejected("throttled", retry_after=blocked - now)
@@ -133,7 +158,16 @@ class IdentityService:
         stored_hash = user.password_hash if user else None
         valid = await asyncio.to_thread(passwords.verify_password, stored_hash, password)
         if user is None or not valid or user.status != "active":
-            await self._record_failures(subjects, now)
+            # Known accounts are named in the audit log; for unknown ones only the hash of the
+            # typed address is kept, so typos do not store other people's addresses.
+            failure = AuditEvent(
+                "identity.login",
+                "failure",
+                actor_user_id=user.id if user else None,
+                actor_ip=client_ip,
+                details={"reason": "invalid_credentials", "email_sha256": email_subject[6:]},
+            )
+            await self._record_failures(subjects, now, failure)
             log.info("identity.login.failed", known_account=user is not None)
             return LoginRejected("invalid")
 
@@ -154,11 +188,24 @@ class IdentityService:
             issued = await self._issue(
                 connection, user.id, level, now + lifetime, client_ip, user_agent
             )
+            await audit.record(
+                connection,
+                self._tenant_id,
+                AuditEvent(
+                    "identity.login",
+                    "success",
+                    actor_user_id=user.id,
+                    actor_ip=client_ip,
+                    details={"auth_level": level},
+                ),
+                now,
+            )
         log.info("identity.login.succeeded", user_id=str(user.id), auth_level=level)
         return issued
 
-    async def _record_failures(self, subjects: list[str], now: datetime) -> None:
+    async def _record_failures(self, subjects: list[str], now: datetime, event: AuditEvent) -> None:
         async with self._db.tenant_transaction(self._tenant_id) as connection:
+            await audit.record(connection, self._tenant_id, event, now)
             for subject in subjects:
                 failures = await repository.record_failure(
                     connection, self._tenant_id, subject, now
@@ -241,9 +288,18 @@ class IdentityService:
     def csrf_matches(self, session: CurrentSession, presented: str) -> bool:
         return tokens.csrf_token_matches(self._csrf_key, session.token_hash, presented)
 
-    async def logout(self, session: CurrentSession) -> None:
+    async def logout(self, session: CurrentSession, *, client_ip: str | None = None) -> None:
+        now = self._now()
         async with self._db.tenant_transaction(self._tenant_id) as connection:
-            await repository.revoke_session(connection, session.session_id, "logout", self._now())
+            await repository.revoke_session(connection, session.session_id, "logout", now)
+            await audit.record(
+                connection,
+                self._tenant_id,
+                AuditEvent(
+                    "identity.logout", "success", actor_user_id=session.user_id, actor_ip=client_ip
+                ),
+                now,
+            )
 
     # Second factor
 
@@ -258,6 +314,18 @@ class IdentityService:
         async with self._db.tenant_transaction(self._tenant_id) as connection:
             blocked = await repository.blocked_subjects(connection, [subject], now)
             if blocked:
+                await audit.record(
+                    connection,
+                    self._tenant_id,
+                    AuditEvent(
+                        "identity.mfa.verify",
+                        "denied",
+                        actor_user_id=session.user_id,
+                        actor_ip=client_ip,
+                        details={"reason": "throttled"},
+                    ),
+                    now,
+                )
                 return LoginRejected("throttled", retry_after=blocked - now)
             accepted = await self._accept_second_factor(connection, session.user_id, code)
             if accepted:
@@ -271,8 +339,26 @@ class IdentityService:
                     client_ip,
                     user_agent,
                 )
+                await audit.record(
+                    connection,
+                    self._tenant_id,
+                    AuditEvent(
+                        "identity.mfa.verify",
+                        "success",
+                        actor_user_id=session.user_id,
+                        actor_ip=client_ip,
+                    ),
+                    now,
+                )
         if not accepted:
-            await self._record_failures([subject], now)
+            failure = AuditEvent(
+                "identity.mfa.verify",
+                "failure",
+                actor_user_id=session.user_id,
+                actor_ip=client_ip,
+                details={"reason": "invalid_code"},
+            )
+            await self._record_failures([subject], now, failure)
             log.info("identity.mfa.failed", user_id=str(session.user_id))
             return LoginRejected("invalid")
         log.info("identity.mfa.succeeded", user_id=str(session.user_id))
@@ -324,6 +410,18 @@ class IdentityService:
             if accepted is None or not await repository.claim_totp_step(
                 connection, session.user_id, accepted.step, confirm=True
             ):
+                await audit.record(
+                    connection,
+                    self._tenant_id,
+                    AuditEvent(
+                        "identity.mfa.enroll",
+                        "failure",
+                        actor_user_id=session.user_id,
+                        actor_ip=client_ip,
+                        details={"reason": "invalid_code"},
+                    ),
+                    now,
+                )
                 return None
             codes = recovery.new_codes()
             await repository.replace_recovery_codes(
@@ -338,40 +436,64 @@ class IdentityService:
                 client_ip,
                 user_agent,
             )
+            await audit.record(
+                connection,
+                self._tenant_id,
+                AuditEvent(
+                    "identity.mfa.enroll",
+                    "success",
+                    actor_user_id=session.user_id,
+                    actor_ip=client_ip,
+                    details={"method": "totp"},
+                ),
+                now,
+            )
         log.info("identity.mfa.enrolled", user_id=str(session.user_id))
         return EnrollmentCompleted(session=issued, recovery_codes=codes)
 
     # Accounts
 
-    async def create_user(
-        self,
-        *,
-        email: str,
-        display_name: str,
-        role: Role,
-        password: str | None,
-        locale: str = "tr",
-        context_words: tuple[str, ...] = (),
-    ) -> UUID:
-        """Create an account. The password must satisfy the policy for a single factor."""
-        email = normalize_email(email)
+    async def create_user(self, account: NewAccount, *, actor_user_id: UUID | None = None) -> UUID:
+        """Create an account. The password must satisfy the policy for a single factor.
+
+        ``actor_user_id`` is the administrator doing it; None means the command line on the
+        server (``synapse user create``).
+        """
+        email = normalize_email(account.email)
         password_hash = None
-        if password is not None:
+        if account.password is not None:
             passwords.validate_password(
-                password,
+                account.password,
                 mfa_enabled=False,
-                context_words=[email.split("@")[0], display_name, *context_words],
+                context_words=[email.split("@")[0], account.display_name, *account.context_words],
             )
-            password_hash = await asyncio.to_thread(passwords.hash_password, password)
+            password_hash = await asyncio.to_thread(passwords.hash_password, account.password)
         async with self._db.tenant_transaction(self._tenant_id) as connection:
-            return await repository.insert_user(
+            user_id = await repository.insert_user(
                 connection,
                 repository.NewUser(
                     tenant_id=self._tenant_id,
                     email=email,
-                    display_name=display_name,
-                    role=role,
-                    locale=locale,
+                    display_name=account.display_name,
+                    role=account.role,
+                    locale=account.locale,
                     password_hash=password_hash,
                 ),
             )
+            await audit.record(
+                connection,
+                self._tenant_id,
+                AuditEvent(
+                    "identity.user.create",
+                    "success",
+                    actor_user_id=actor_user_id,
+                    target_type="user",
+                    target_id=str(user_id),
+                    details={
+                        "role": account.role,
+                        "via": "cli" if actor_user_id is None else "admin",
+                    },
+                ),
+                self._now(),
+            )
+        return user_id

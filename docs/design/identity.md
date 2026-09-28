@@ -91,8 +91,11 @@ Code: [frontend/src/features/auth/](../../frontend/src/features/auth/), routes i
 - After login the session is fetched again, because the login response carries no account details.
 - Known gap: the account's `locale` is not yet applied to the interface; the language choice is remembered per browser until the account settings screen exists.
 
+## Audit
+
+Every sign-in step, logout and account creation is written to the audit log in the same transaction; see [audit.md](audit.md).
+
 ## Not in this step
 
 - Passkeys (WebAuthn): planned in the same ADR, after the audit log.
-- Audit entries for sign-in events: added with the audit log ([ADR 0008](../adr/0008-audit-log.md)).
 - Session list and revocation in the UI, password change and reset: with the account settings screens.

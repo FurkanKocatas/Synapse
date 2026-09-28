@@ -22,6 +22,7 @@ SECRET_FILES = (
     "db_synapse_scheduler",
     "csrf_key",
     "totp_key",
+    "audit_signing_key",
 )
 
 

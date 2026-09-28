@@ -10,7 +10,13 @@ import uuid
 from datetime import timedelta
 from pathlib import Path
 
-from synapse.identity.public import IdentityService, Role, SessionPolicy, TotpCipher
+from synapse.identity.public import (
+    IdentityService,
+    NewAccount,
+    Role,
+    SessionPolicy,
+    TotpCipher,
+)
 from synapse.kernel.config import Settings
 from synapse.kernel.database import Database
 from synapse.kernel.secrets import read_key, read_secret
@@ -65,7 +71,9 @@ async def _create_user(
             ),
         )
         return await service.create_user(
-            email=email, display_name=display_name, role=role, password=password, locale=locale
+            NewAccount(
+                email=email, display_name=display_name, role=role, password=password, locale=locale
+            )
         )
     finally:
         await database.close()

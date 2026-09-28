@@ -12,7 +12,7 @@ from pathlib import Path
 
 import uvicorn
 
-from synapse import __version__, accounts_cli
+from synapse import __version__, accounts_cli, audit_cli
 from synapse.dbadmin import bootstrap, migrate
 from synapse.identity.public import PasswordPolicyError
 from synapse.kernel.config import get_settings
@@ -61,6 +61,13 @@ def build_parser() -> argparse.ArgumentParser:
     new_user.add_argument(
         "--password-file", type=Path, help="Read the password from a file instead of prompting"
     )
+
+    audit = commands.add_parser("audit", help="Audit log checks.")
+    audit_commands = audit.add_subparsers(dest="audit_command", required=True)
+    audit_commands.add_parser("verify", help="Recompute the whole hash chain; exit 1 if broken.")
+    audit_commands.add_parser(
+        "checkpoint", help="Print a signed checkpoint of the chain head, for export off the box."
+    )
     return parser
 
 
@@ -70,7 +77,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_api()
     try:
         return _run_admin_command(args)
-    except (accounts_cli.CommandError, PasswordPolicyError) as error:
+    except (accounts_cli.CommandError, audit_cli.AuditCommandError, PasswordPolicyError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
@@ -85,6 +92,12 @@ def _run_admin_command(args: argparse.Namespace) -> int:
             )
         else:
             migrate.upgrade(settings.database(application_name="synapse-migrate"))
+    elif args.command == "audit":
+        if args.audit_command == "verify":
+            intact, report = audit_cli.verify(settings)
+            print(report)
+            return 0 if intact else 1
+        print(audit_cli.checkpoint(settings))
     elif args.command == "tenant":
         print(accounts_cli.create_tenant(settings, args.slug, args.name))
     else:

@@ -114,8 +114,10 @@ async def current_session(session: AnySession, identity: Identity) -> SessionVie
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(session: AnySession, identity: Identity, response: Response) -> None:
-    await identity.logout(session)
+async def logout(
+    session: AnySession, identity: Identity, request: Request, response: Response
+) -> None:
+    await identity.logout(session, client_ip=client_ip(request))
     response.delete_cookie(SESSION_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
 
 

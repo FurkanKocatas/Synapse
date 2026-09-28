@@ -6,12 +6,14 @@ from datetime import UTC, datetime, timedelta
 import pyotp
 import pytest
 
+from synapse.audit.chain import verify as audit_verify
 from synapse.identity.passwords import PasswordPolicyError
 from synapse.identity.service import (
     CurrentSession,
     IdentityService,
     IssuedSession,
     LoginRejected,
+    NewAccount,
 )
 from synapse.identity.totp import TotpCipher
 from synapse.kernel.database import Database
@@ -58,7 +60,9 @@ async def service(api_db: Database, clock: FakeClock) -> IdentityService:
 
 async def add_user(service: IdentityService, role: str = "member") -> str:
     email = f"user-{uuid.uuid4().hex[:8]}@example.org"
-    await service.create_user(email=email, display_name="Test User", role=role, password=PASSWORD)  # type: ignore[arg-type]
+    await service.create_user(
+        NewAccount(email=email, display_name="Test User", role=role, password=PASSWORD)  # type: ignore[arg-type]
+    )
     return email
 
 
@@ -77,7 +81,9 @@ async def session_of(service: IdentityService, issued: IssuedSession) -> Current
 async def test_password_policy_applies_on_creation(service: IdentityService) -> None:
     with pytest.raises(PasswordPolicyError):
         await service.create_user(
-            email="short@example.org", display_name="Short", role="member", password="too short"
+            NewAccount(
+                email="short@example.org", display_name="Short", role="member", password="too short"
+            )
         )
 
 
@@ -249,3 +255,25 @@ async def test_second_factor_calls_require_the_right_session_level(
     assert await service.complete_mfa(member, "123456", client_ip=None, user_agent=None) == (
         LoginRejected("invalid")
     )
+
+
+async def audit_actions(api_db: Database, tenant_id: uuid.UUID) -> list[tuple[str, str]]:
+    async with api_db.tenant_transaction(tenant_id) as connection:
+        cursor = await connection.execute("SELECT action, outcome FROM audit_events ORDER BY seq")
+        rows = await cursor.fetchall()
+        result = await audit_verify(connection, tenant_id)
+    assert result.ok, result.problem
+    return [(str(action), str(outcome)) for action, outcome in rows]
+
+
+async def test_sign_in_events_are_audited(service: IdentityService, api_db: Database) -> None:
+    email = await add_user(service)
+    await service.login(email, "wrong password here!!", client_ip="192.0.2.7", user_agent=None)
+    issued = await login(service, email)
+    await service.logout(await session_of(service, issued))
+    assert await audit_actions(api_db, service._tenant_id) == [
+        ("identity.user.create", "success"),
+        ("identity.login", "failure"),
+        ("identity.login", "success"),
+        ("identity.logout", "success"),
+    ]

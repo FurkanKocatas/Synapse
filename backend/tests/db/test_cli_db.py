@@ -1,5 +1,6 @@
 """The ``synapse db`` commands against the test database."""
 
+import json
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -121,3 +122,50 @@ def test_user_command_needs_a_tenant(
     get_settings.cache_clear()
     assert code == 1
     assert "SYNAPSE_TENANT_ID" in capsys.readouterr().err
+
+
+@pytest.mark.usefixtures("migrator_environment")
+def test_audit_commands(
+    test_database: TestDatabase, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    api = test_database.settings("synapse_api")
+    for name, value in {
+        "SYNAPSE_DB_USER": api.user,
+        "SYNAPSE_DB_PASSWORD_FILE": str(api.password_file),
+        "SYNAPSE_AUDIT_SIGNING_KEY_FILE": str(test_database.secrets_dir / "audit_signing_key"),
+    }.items():
+        monkeypatch.setenv(name, value)
+    get_settings.cache_clear()
+    assert main(["tenant", "create", "--slug", f"aud-{uuid.uuid4().hex[:8]}", "--name", "A"]) == 0
+    tenant_id = capsys.readouterr().out.strip().splitlines()[-1]
+    monkeypatch.setenv("SYNAPSE_TENANT_ID", tenant_id)
+    get_settings.cache_clear()
+
+    assert main(["audit", "checkpoint"]) == 1  # nothing to sign yet
+    assert "empty" in capsys.readouterr().err
+
+    password = test_database.secrets_dir / "db_synapse_api"  # any long random text will do
+    monkeypatch.setenv("SYNAPSE_CSRF_KEY_FILE", str(test_database.secrets_dir / "csrf_key"))
+    monkeypatch.setenv("SYNAPSE_TOTP_KEY_FILE", str(test_database.secrets_dir / "totp_key"))
+    get_settings.cache_clear()
+    create = [
+        "user",
+        "create",
+        "--email",
+        "audit@example.org",
+        "--name",
+        "Audit",
+        "--role",
+        "auditor",
+        "--password-file",
+        str(password),
+    ]
+    assert main(create) == 0
+    capsys.readouterr()
+
+    assert main(["audit", "verify"]) == 0
+    assert '"ok": true' in capsys.readouterr().out
+    assert main(["audit", "checkpoint"]) == 0
+    checkpoint = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert '"seq":1' in checkpoint["payload"]
+    get_settings.cache_clear()

@@ -8,6 +8,7 @@ from synapse.identity.service import (
     IdentityService,
     IssuedSession,
     LoginRejected,
+    NewAccount,
     SessionPolicy,
     TotpEnrollment,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "IdentityService",
     "IssuedSession",
     "LoginRejected",
+    "NewAccount",
     "PasswordPolicyError",
     "Role",
     "SessionPolicy",

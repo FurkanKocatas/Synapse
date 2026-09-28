@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     tenant_id: UUID | None = None
     csrf_key_file: Path = Path("/run/secrets/csrf_key")
     totp_key_file: Path = Path("/run/secrets/totp_key")
+    # Ed25519 seed that signs audit checkpoints (ADR 0008).
+    audit_signing_key_file: Path = Path("/run/secrets/audit_signing_key")
     session_idle_minutes: int = Field(default=30, ge=5, le=24 * 60)
     session_absolute_hours: int = Field(default=12, ge=1, le=24 * 30)
 

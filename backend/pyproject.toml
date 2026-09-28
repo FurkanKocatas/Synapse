@@ -59,6 +59,7 @@ ignore = [
     "S101",    # pytest uses assert.
     "S105",    # Test passwords are test data, not secrets.
     "S106",
+    "RUF001",  # Turkish test data contains letters such as ı and İ on purpose.
     "PLR2004", # Magic values are normal in assertions.
 ]
 
@@ -101,9 +102,10 @@ name = "Layered architecture"
 type = "layers"
 layers = [
     "synapse.cli",
-    "synapse.accounts_cli",
+    "synapse.accounts_cli | synapse.audit_cli",
     "synapse.api | synapse.migrations",
     "synapse.identity | synapse.dbadmin",
+    "synapse.audit",
     "synapse.kernel",
 ]
 
@@ -121,4 +123,17 @@ forbidden_modules = [
     "synapse.identity.tokens",
     "synapse.identity.totp",
 ]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Audit is used only through synapse.audit.public"
+type = "forbidden"
+source_modules = [
+    "synapse.accounts_cli",
+    "synapse.api",
+    "synapse.audit_cli",
+    "synapse.cli",
+    "synapse.identity",
+]
+forbidden_modules = ["synapse.audit.anchor", "synapse.audit.canonical", "synapse.audit.chain"]
 allow_indirect_imports = true
