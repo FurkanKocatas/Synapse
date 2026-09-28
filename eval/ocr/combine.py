@@ -11,17 +11,17 @@ run.py already wrote, what a combination would give:
   (per-page means, worst 10% in brackets). In the product those extra identifiers would be
   search terms, not text shown to a reader or a model.
 
-Usage: uv run --directory backend python ../eval/ocr/combine.py [BASE ...]
+Usage: uv run --directory backend python ../eval/ocr/combine.py [--second ENGINE] [BASE ...]
 """
 
+import argparse
 import json
 import statistics
-import sys
 from collections import Counter
 
 from score import CONDITIONS, REAL_TRUTH, WORK, is_identifier, page_scores, tokens
 
-SECOND = "rapidocr-latin"
+DEFAULT_SECOND = "rapidocr-latin"
 DEFAULT_BASES = ("tesseract-best-tur", "tesseract-best-tur+eng")
 
 
@@ -39,10 +39,14 @@ def cell(values: list[float]) -> str:
 
 
 def main() -> None:
-    bases = sys.argv[1:] or list(DEFAULT_BASES)
+    options = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    options.add_argument("--second", default=DEFAULT_SECOND)
+    options.add_argument("bases", nargs="*", default=list(DEFAULT_BASES))
+    args = options.parse_args()
+    second_engine, bases = args.second, args.bases
     pages = [p["name"] for p in json.loads((WORK / "pages.json").read_text())]
     print(f"{'condition':9} {'base':24} {'agreed: n, precision':22} {'disputed: n, precision':24}")
-    print(f"{'':34} word_f1 / tr_recall / id_recall of base + {SECOND} identifiers")
+    print(f"{'':34} word_f1 / tr_recall / id_recall of base + {second_engine} identifiers")
     for condition in CONDITIONS:
         for base in bases:
             counts: Counter[str] = Counter()
@@ -51,7 +55,10 @@ def main() -> None:
                 truth_text = (WORK / "truth" / f"{page}.txt").read_text()
                 truth = identifiers(truth_text)
                 base_text = output(base, page, condition)
-                first, second = identifiers(base_text), identifiers(output(SECOND, page, condition))
+                first, second = (
+                    identifiers(base_text),
+                    identifiers(output(second_engine, page, condition)),
+                )
                 agreed, disputed = first & second, first - second
                 counts["agreed"] += agreed.total()
                 counts["agreed_right"] += (agreed & truth).total()
@@ -70,17 +77,17 @@ def main() -> None:
                 f"{'':34} {cell(scores['word_f1'])} / {cell(scores['tr_recall'])} / "
                 f"{cell(scores['id_recall'])}"
             )
-    real(bases)
+    real(bases, second_engine)
 
 
-def real(bases: list[str]) -> None:
+def real(bases: list[str], second_engine: str) -> None:
     print()
     print("Real scans: word_f1 / tr_recall / id_recall, base alone -> base + identifiers")
     for truth_file in sorted(REAL_TRUTH.glob("*.txt")):
         truth_text = truth_file.read_text()
         for base in bases:
             base_text = output(base, truth_file.stem, "real")
-            second = identifiers(output(SECOND, truth_file.stem, "real"))
+            second = identifiers(output(second_engine, truth_file.stem, "real"))
             combined = base_text + "\n" + " ".join((second - identifiers(base_text)).elements())
             before, after = page_scores(truth_text, base_text), page_scores(truth_text, combined)
             print(

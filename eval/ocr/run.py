@@ -20,6 +20,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
+from typing import Any
 
 os.environ["OMP_THREAD_LIMIT"] = "1"  # Tesseract: one thread per page
 # RapidOCR (onnxruntime) uses every core by default: about six on a 6-core machine, measured.
@@ -62,25 +63,27 @@ def tesseract(
     return run
 
 
-_rapid = None
+_rapid: dict[int, Any] = {}
 
 
-def rapidocr(image: Path) -> str:
-    global _rapid
-    if _rapid is None:
+def rapidocr(image: Path, batch: int = 6) -> str:
+    """``batch``: lines recognised per call. RapidOCR's default is 6; the lines of a batch are
+    padded to the widest, so the batch size changes what is read, not only how fast."""
+    if batch not in _rapid:
         from rapidocr import LangRec, ModelType, OCRVersion, RapidOCR
 
         # The Latin recogniser exists for PP-OCRv5, in the mobile size only.
-        _rapid = RapidOCR(
+        _rapid[batch] = RapidOCR(
             params={
                 "Rec.lang_type": LangRec.LATIN,
                 "Rec.ocr_version": OCRVersion.PPOCRV5,
                 "Rec.model_type": ModelType.MOBILE,
+                "Rec.rec_batch_num": batch,
                 "Global.log_level": "error",
                 **ONE_THREAD,
             }
         )
-    output = _rapid(str(image))
+    output = _rapid[batch](str(image), use_det=True, use_cls=True, use_rec=True)
     return "\n".join(output.txts or ())
 
 
@@ -96,6 +99,7 @@ ENGINES: dict[str, Callable[[Path], str]] = {
     "tesseract-best-tur": tesseract("/models/best", "tur"),
     "tesseract-best-tur+eng": tesseract("/models/best", "tur+eng"),
     "rapidocr-latin": rapidocr,
+    "rapidocr-latin-batch1": lambda image: rapidocr(image, batch=1),
     "tesseract-best-tur+eng-psm4": tesseract("/models/best", "tur+eng", psm=4),
     "tesseract-best-tur+eng-psm6": tesseract("/models/best", "tur+eng", psm=6),
     "tesseract-best-tur+eng-up300": tesseract("/models/best", "tur+eng", upscale_below_dpi=300),
