@@ -2,6 +2,8 @@
 
 from alembic import command
 from alembic.config import Config
+from alembic.runtime.migration import MigrationContext
+from sqlalchemy import create_engine
 from sqlalchemy.engine import URL
 
 from synapse.kernel.database import ConnectionSettings
@@ -31,9 +33,6 @@ def upgrade(settings: ConnectionSettings, revision: str = "head") -> None:
 
 def current_revision(settings: ConnectionSettings) -> str | None:
     """The revision the database is at, or None if it has never been migrated."""
-    from alembic.runtime.migration import MigrationContext  # noqa: PLC0415  (only needed here)
-    from sqlalchemy import create_engine  # noqa: PLC0415
-
     engine = create_engine(alembic_config(settings).attributes["sqlalchemy_url"])
     try:
         with engine.connect() as connection:

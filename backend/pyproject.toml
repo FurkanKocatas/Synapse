@@ -7,10 +7,13 @@ requires-python = ">=3.14"
 license = { text = "Proprietary" }
 dependencies = [
     "alembic>=1.20",
+    "argon2-cffi>=25.1",
+    "cryptography>=50.0",
     "fastapi>=0.141",
     "psycopg[binary,pool]>=3.3",
     "pydantic>=2.13",
     "pydantic-settings>=2.15",
+    "pyotp>=2.10",
     "structlog>=26.1",
     "uvicorn[standard]>=0.54",
 ]
@@ -53,6 +56,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = [
     "S101",    # pytest uses assert.
+    "S105",    # Test passwords are test data, not secrets.
+    "S106",
     "PLR2004", # Magic values are normal in assertions.
 ]
 

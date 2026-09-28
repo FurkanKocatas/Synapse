@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 
 import pytest
+from alembic.script import ScriptDirectory
 
 from synapse.cli import main
 from synapse.dbadmin import migrate
@@ -47,4 +48,7 @@ def test_db_bootstrap_and_migrate_commands(test_database: TestDatabase) -> None:
 
 
 def test_database_is_at_the_latest_revision(test_database: TestDatabase) -> None:
-    assert migrate.current_revision(test_database.settings(MIGRATOR)) == "0001"
+    settings = test_database.settings(MIGRATOR)
+    head = ScriptDirectory.from_config(migrate.alembic_config(settings)).get_current_head()
+    assert head is not None
+    assert migrate.current_revision(settings) == head
