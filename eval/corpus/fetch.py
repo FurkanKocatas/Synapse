@@ -13,6 +13,7 @@ Usage (from the repository root):
 import argparse
 import csv
 import hashlib
+import ssl
 import sys
 import time
 import urllib.request
@@ -22,6 +23,11 @@ HERE = Path(__file__).resolve().parent
 MANIFEST = HERE / "manifest.csv"
 FILES = HERE / "files"
 CHECKSUMS = FILES / "checksums.csv"
+# Some government servers send their certificate without the intermediate that links it to a
+# trusted root. Browsers fetch it themselves; Python does not. These are the public
+# intermediates those servers are missing (see intermediates/README.md). Verification stays on:
+# an intermediate only helps if it chains to a root the system already trusts.
+INTERMEDIATES = HERE / "intermediates"
 
 EXTENSIONS = {"PDF": ".pdf", "DOCX": ".docx", "DOC": ".doc", "XLSX": ".xlsx", "PPTX": ".pptx"}
 USER_AGENT = "Mozilla/5.0 (compatible; corpus-fetch/1.0; evaluation research)"
@@ -42,11 +48,21 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def tls_context() -> ssl.SSLContext:
+    context = ssl.create_default_context()
+    for certificate in sorted(INTERMEDIATES.glob("*.pem")):
+        context.load_verify_locations(cafile=certificate)
+    return context
+
+
+TLS = tls_context()
+
+
 def download(row: dict[str, str], path: Path) -> None:
     # URLs come from the reviewed manifest, not from user input.
     request = urllib.request.Request(row["source_url"], headers={"User-Agent": USER_AGENT})  # noqa: S310
     partial = path.with_suffix(path.suffix + ".part")
-    with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
+    with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS, context=TLS) as response:  # noqa: S310
         content_type = response.headers.get("Content-Type", "")
         if "text/html" in content_type:
             raise RuntimeError(f"server returned HTML instead of a file ({content_type})")
