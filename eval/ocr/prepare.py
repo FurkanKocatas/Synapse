@@ -13,15 +13,20 @@ per page:
 Pages are drawn from every born-digital PDF (at most two per document, at least 400 letters,
 the broken-encoding doc-083 left out), with a fixed seed so runs are comparable.
 
+It also renders the real scanned pages that have a hand-verified transcription in
+eval/ocr/real/ (``doc-001-p0003.txt`` is page 3 of doc-001), grey, at the resolution of the
+scan embedded in the page, so the OCR engine sees the scanner's pixels and nothing resampled.
+
 Usage (from the repository root):
     uv run --directory backend python ../eval/ocr/prepare.py
-Writes eval/ocr/work/ (git-ignored): images/, truth/ and pages.json.
+Writes eval/ocr/work/ (git-ignored): images/, truth/, pages.json and real/.
 """
 
 import csv
 import io
 import json
 import random
+import re
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -33,6 +38,9 @@ from synapse.knowledge.quality import assess
 ROOT = Path(__file__).resolve().parents[2]
 CORPUS = ROOT / "eval" / "corpus"
 WORK = Path(__file__).resolve().parent / "work"
+REAL_TRUTH = Path(__file__).resolve().parent / "real"
+REAL_NAME = re.compile(r"(doc-\d{3})-p(\d{4})")
+FALLBACK_SCAN_DPI = 200  # a page without an embedded image; the corpus's usual scan resolution
 PER_DOCUMENT = 2
 MIN_LETTERS = 400
 SEED = 20260928
@@ -69,7 +77,32 @@ def poor(image: Image.Image, rng: random.Random) -> Image.Image:
     return Image.open(io.BytesIO(buffer.getvalue())).convert("L")
 
 
+def render_real() -> None:
+    truths = sorted(REAL_TRUTH.glob("*.txt"))
+    # A run that finds nothing would leave the real-scan table empty without saying why.
+    if not truths:
+        raise SystemExit(f"no hand-verified transcriptions in {REAL_TRUTH}")
+    (WORK / "real").mkdir(parents=True, exist_ok=True)
+    for truth in truths:
+        match = REAL_NAME.fullmatch(truth.stem)
+        if not match:
+            raise SystemExit(f"{truth.name}: expected a name like doc-001-p0003.txt")
+        document_id, number = match.group(1), int(match.group(2))
+        document = pdfium.PdfDocument(CORPUS / "files" / f"{document_id}.pdf")
+        page = document[number - 1]
+        scans = [o for o in page.get_objects() if o.type == pdfium.raw.FPDF_PAGEOBJ_IMAGE]
+        width_points, _ = page.get_size()
+        dpi = FALLBACK_SCAN_DPI
+        if scans:
+            dpi = round(scans[0].get_px_size()[0] / (width_points / 72))
+        image = page.render(scale=dpi / 72).to_pil().convert("L")
+        document.close()
+        image.save(WORK / "real" / f"{truth.stem}.real.png")
+        print(f"real scan {truth.stem}: {dpi} dpi, {image.width} x {image.height}")
+
+
 def main() -> None:
+    render_real()
     rng = random.Random(SEED)
     with (CORPUS / "manifest.csv").open(encoding="utf-8") as handle:
         rows = [

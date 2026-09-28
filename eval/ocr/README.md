@@ -13,7 +13,7 @@ Born-digital PDF pages whose text layer passes the page quality check ([quality.
 ## Running it
 
 ```bash
-uv run --directory backend python ../eval/ocr/prepare.py         # images and truths in eval/ocr/work/
+uv run --directory backend python ../eval/ocr/prepare.py         # images, truths and real scans in eval/ocr/work/
 docker build -t synapse-ocr-bench eval/ocr                       # the engines, models pinned by checksum
 docker run --rm -v "$PWD/eval/ocr:/bench" synapse-ocr-bench      # all engines, or name some
 uv run --directory backend python ../eval/ocr/score.py           # the table
