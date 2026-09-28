@@ -163,6 +163,12 @@ def test_the_worker_extracts_pages(world: World, editor: TestClient) -> None:
     assert first[:4] == (1, "page", None, False)
     assert "Karar 2026/35" in first[4]
     assert second[:4] == (2, "page", None, True)  # no text: waits for OCR
+    issues = world.db.execute(
+        "SELECT number, quality_issue FROM synapse.document_pages WHERE version_id = %s "
+        "ORDER BY number",
+        (text_pdf["version_id"],),
+    ).fetchall()
+    assert issues == [(1, None), (2, "no_text")]
 
     assert version_state(world, sheet["version_id"]) == ("parsed", None)
     assert [(n, kind, label) for n, kind, label, _, _ in pages(world, sheet["version_id"])] == [

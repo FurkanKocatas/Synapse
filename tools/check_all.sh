@@ -45,7 +45,8 @@ forbid() {
   local description="$1"
   shift
   local status=0
-  git grep "$@" || status=$?
+  # --untracked: new files count before they are staged; ignored files stay out.
+  git grep --untracked "$@" || status=$?
   case "$status" in
     0) echo "$description found" >&2; exit 1 ;;
     1) ;;

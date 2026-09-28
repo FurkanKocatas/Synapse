@@ -129,9 +129,21 @@ async def _store_pages(
     async with connection.cursor() as cursor:
         await cursor.executemany(
             "INSERT INTO document_pages (tenant_id, version_id, number, kind, label, text, "
-            "needs_ocr) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            "needs_ocr, quality_issue, char_score, artefacts) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             [
-                (tenant_id, version_id, p.number, p.kind, p.label, p.text, p.needs_ocr)
+                (
+                    tenant_id,
+                    version_id,
+                    p.number,
+                    p.kind,
+                    p.label,
+                    p.text,
+                    p.needs_ocr,
+                    p.issue,
+                    p.char_score,
+                    p.artefacts,
+                )
                 for p in parsed.pages
             ],
         )

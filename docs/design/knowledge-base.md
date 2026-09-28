@@ -87,7 +87,7 @@ sequenceDiagram
 
 | Type | Unit | How |
 |---|---|---|
-| PDF | page | PDFium text layer. A page with fewer than 20 visible characters is marked `needs_ocr` |
+| PDF | page | PDFium text layer, then the per-page quality check below |
 | DOCX | document (one unit until Word files are rendered to pages) | Paragraphs and tables in order; headings marked with `#` so chunking can follow them |
 | XLSX | sheet, with its name | Rows as tab-separated values; at most 500,000 cells per sheet |
 | PPTX | slide | Text frames, tables and speaker notes |
@@ -95,7 +95,11 @@ sequenceDiagram
 
 Text is NFC-normalized, with Unix line ends and no control characters. Failures get reason codes: `unreadable`, `encrypted`, `too_many_pages`, `sheet_too_large`, and `suspicious_package` for Office files that expand to more than 1 GiB or more than 200 times their size (zip bombs). PDFium is not thread-safe, so every call into it goes through one lock.
 
-On the evaluation corpus: 97 documents, 5,296 pages, in 8 seconds on the work laptop, with no errors; 241 pages marked for OCR. Three scanned PDFs (doc-004, doc-056, doc-057) carry a noisy OCR text layer from the scanner and pass the character count. Catching those is the job of the per-page Turkish quality check in step 4.
+On the evaluation corpus: 97 documents, 5,296 pages, in 8 seconds on the work laptop, with no errors.
+
+### Page quality
+
+A PDF page goes to OCR (`quality_issue` is set) when it has fewer than 20 visible characters (`no_text`), or when its text layer is unusable ([quality.py](../../backend/src/synapse/knowledge/quality.py)): letters that look like no language the model knows (`not_turkish_like`), or OCR artefacts inside words (`ocr_artefacts`). Case folding goes through [turkish.py](../../backend/src/synapse/knowledge/turkish.py), never `str.lower`. Method, thresholds and results: [page-quality.md](../benchmarks/page-quality.md). In short, 1.8% of clean pages are flagged; 37 of 53 pages of the worst scanned document are caught; and a born-digital PDF with a broken font encoding was found. Score and reason are stored per page.
 
 Found by tests, not by the corpus run: openpyxl refuses a path that does not end in `.xlsx`, and blobs are stored under their hash, so spreadsheets are opened through a file handle.
 

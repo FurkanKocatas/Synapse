@@ -22,6 +22,7 @@ import pypdfium2 as pdfium
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
+from synapse.knowledge import quality
 from synapse.knowledge.filetypes import MediaType
 
 PageKind = Literal["page", "slide", "sheet", "document"]
@@ -39,13 +40,43 @@ MAX_COMPRESSION_RATIO = 200
 _PDFIUM = threading.Lock()
 
 
+QualityIssue = Literal["no_text", "not_turkish_like", "ocr_artefacts"]
+
+
 @dataclass(frozen=True)
 class Page:
     number: int
     kind: PageKind
     text: str
-    needs_ocr: bool = False
     label: str | None = None
+    # Why the text needs OCR; None when the text layer is usable.
+    issue: QualityIssue | None = None
+    char_score: float | None = None
+    artefacts: float | None = None
+
+    @property
+    def needs_ocr(self) -> bool:
+        return self.issue is not None
+
+
+def scanned_page(number: int, kind: PageKind, text: str) -> Page:
+    """A page of a format that can carry an OCR'd text layer: PDF pages and images."""
+    if visible_chars(text) < MIN_TEXT_CHARS:
+        return Page(number, kind, text, issue="no_text")
+    assessed = quality.assess(text)
+    issue: QualityIssue | None = None
+    if assessed.reason == "not_turkish_like":
+        issue = "not_turkish_like"
+    elif assessed.reason == "ocr_artefacts":
+        issue = "ocr_artefacts"
+    return Page(
+        number,
+        kind,
+        text,
+        issue=issue,
+        char_score=assessed.char_score,
+        artefacts=assessed.artefacts,
+    )
 
 
 @dataclass(frozen=True)
@@ -91,7 +122,7 @@ class LightParser:
                 return _pptx(path)
             case MediaType.PNG | MediaType.JPEG | MediaType.TIFF:
                 # An image is one page with no text layer.
-                return Parsed([Page(1, "page", "", needs_ocr=True)])
+                return Parsed([Page(1, "page", "", issue="no_text")])
 
 
 def _pdf(path: Path) -> Parsed:
@@ -111,9 +142,7 @@ def _pdf(path: Path) -> Parsed:
                 text = normalize(textpage.get_text_range())
                 textpage.close()
                 page.close()
-                pages.append(
-                    Page(index + 1, "page", text, needs_ocr=visible_chars(text) < MIN_TEXT_CHARS)
-                )
+                pages.append(scanned_page(index + 1, "page", text))
         finally:
             document.close()
     if not pages:
@@ -154,8 +183,8 @@ def _docx(path: Path) -> Parsed:
 
 def _heading_level(paragraph: Paragraph) -> int:
     name = (paragraph.style.name if paragraph.style is not None else "") or ""
-    # "Heading 2" in English templates, "Ba\u015fl\u0131k 2" in Turkish ones.
-    for prefix in ("Heading ", "Ba\u015fl\u0131k "):
+    # "Heading 2" in English templates, "Başlık 2" in Turkish ones.
+    for prefix in ("Heading ", "Başlık "):
         if name.startswith(prefix) and name[len(prefix) :].isdigit():
             return min(int(name[len(prefix) :]), 6)
     return 1 if name == "Title" else 0
