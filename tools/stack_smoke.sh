@@ -19,6 +19,11 @@ export SYNAPSE_STACK_SUBNET="${SYNAPSE_SMOKE_SUBNET:-172.29.201.0/24}"
 
 stack() { docker compose -p "$project" -f deploy/compose.stack.yml "$@"; }
 cleanup() {
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    printf '\n== Smoke test failed; container logs:\n'
+    stack logs --no-color --tail 60 || true
+  fi
   stack down -v --remove-orphans >/dev/null 2>&1 || true
   rm -f ".dev/$env_name" "$password_file" "$jar"
 }
