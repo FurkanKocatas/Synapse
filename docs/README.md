@@ -1,0 +1,28 @@
+# Documentation
+
+| Folder | Contents |
+|---|---|
+| [product/](product/) | What we are building and for whom: [vision.md](product/vision.md), [v1-scope.md](product/v1-scope.md), [modules.md](product/modules.md) |
+| [adr/](adr/) | Architecture decision records: one decision per file, with context and rejected alternatives |
+| [research/](research/) | The evidence behind the decisions: market, hardware, RAG, architecture. Start with [00-summary.md](research/00-summary.md) |
+
+## Architecture decisions
+
+| ADR | Decision |
+|---|---|
+| [0001](adr/0001-record-architecture-decisions.md) | Record architecture decisions |
+| [0002](adr/0002-process-topology.md) | Modular monolith with separate worker processes |
+| [0003](adr/0003-single-postgres-store.md) | PostgreSQL is the only stateful store |
+| [0004](adr/0004-job-queue.md) | Background jobs with Procrastinate on PostgreSQL |
+| [0005](adr/0005-tenancy.md) | Tenant column with forced row-level security |
+| [0006](adr/0006-authentication.md) | Local accounts with server-side sessions |
+| [0007](adr/0007-authorization.md) | Roles and per-document grants inside PostgreSQL |
+| [0008](adr/0008-audit-log.md) | Tamper-evident audit log |
+| [0009](adr/0009-model-runtime.md) | llama.cpp behind provider ports |
+| [0010](adr/0010-rag-pipeline.md) | RAG pipeline v1 and its quality gates |
+| [0011](adr/0011-frontend.md) | Static React SPA with compile-time checked translations |
+| [0012](adr/0012-installer-modules-licensing.md) | Installer, module registry and offline licensing |
+| [0013](adr/0013-secrets-and-network-security.md) | Secrets, credentials and network security |
+| [0014](adr/0014-observability.md) | OpenTelemetry and structured logs, light by default |
+| [0015](adr/0015-tooling-and-ci.md) | Language, repository layout, tooling and CI |
+| [0016](adr/0016-dependency-licence-policy.md) | Dependency and model licence policy |
