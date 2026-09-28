@@ -71,8 +71,24 @@ def test_tenant_and_user_commands(
     monkeypatch.setenv("SYNAPSE_TOTP_KEY_FILE", str(test_database.secrets_dir / "totp_key"))
     get_settings.cache_clear()
 
-    assert main(["tenant", "create", "--slug", f"cli-{uuid.uuid4().hex[:8]}", "--name", "CLI"]) == 0
+    chosen = uuid.uuid4()
+    assert (
+        main(
+            [
+                "tenant",
+                "create",
+                "--slug",
+                f"cli-{chosen.hex[:8]}",
+                "--name",
+                "CLI",
+                "--id",
+                str(chosen),
+            ]
+        )
+        == 0
+    )
     tenant_id = capsys.readouterr().out.strip().splitlines()[-1]
+    assert tenant_id == str(chosen)
     monkeypatch.setenv("SYNAPSE_TENANT_ID", str(uuid.UUID(tenant_id)))
     get_settings.cache_clear()
 

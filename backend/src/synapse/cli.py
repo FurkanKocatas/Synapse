@@ -7,6 +7,7 @@ Only roles that exist are listed here.
 
 import argparse
 import sys
+import uuid
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -50,6 +51,9 @@ def build_parser() -> argparse.ArgumentParser:
     new_tenant = tenant_commands.add_parser("create", help="Create a tenant and print its ID.")
     new_tenant.add_argument("--slug", required=True, help="Short lower-case name, e.g. acme")
     new_tenant.add_argument("--name", required=True, help="Display name of the organization")
+    new_tenant.add_argument(
+        "--id", type=uuid.UUID, help="Use this ID (the installer takes it from synapse.toml)"
+    )
 
     user = commands.add_parser("user", help="Account administration.")
     user_commands = user.add_subparsers(dest="user_command", required=True)
@@ -99,7 +103,7 @@ def _run_admin_command(args: argparse.Namespace) -> int:
             return 0 if intact else 1
         print(audit_cli.checkpoint(settings))
     elif args.command == "tenant":
-        print(accounts_cli.create_tenant(settings, args.slug, args.name))
+        print(accounts_cli.create_tenant(settings, args.slug, args.name, tenant_id=args.id))
     else:
         user_id = accounts_cli.create_user(
             settings,

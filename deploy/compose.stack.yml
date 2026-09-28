@@ -121,7 +121,7 @@ services:
     mem_limit: 128m
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8099/"]
       interval: 10s
       timeout: 5s
       retries: 6

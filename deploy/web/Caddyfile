@@ -1,11 +1,26 @@
 # Serves the app and proxies the API on one origin, so cookies are first-party and no CORS
-# is ever needed (ADR 0011, ADR 0013). The site address and TLS settings are rendered by the
-# installer per install; the default below is plain HTTP for local testing only.
+# is ever needed (ADR 0011, ADR 0013).
+#
+# This file is the only site configuration. Per installation, synapsectl sets the environment
+# variables below and may add a TLS snippet under /etc/caddy/site.d/ (ADR 0012). Without them,
+# the defaults serve plain HTTP on port 8080, for local testing only.
 {
 	admin off
+	# The port that answers plain HTTP (and redirects to HTTPS). The HTTPS port is part of the
+	# site address instead: Caddy leaves a port equal to its https_port option out of redirects,
+	# assuming an outside mapping to 443 that installations do not have.
+	http_port {$SYNAPSE_HTTP_PORT:8080}
+}
+
+# Liveness for the container health check. This port is never published.
+http://:8099 {
+	respond "ok" 200
 }
 
 {$SYNAPSE_SITE_ADDRESS::8080} {
+	# The TLS directive for this installation (internal CA, provided certificate or ACME).
+	import /etc/caddy/site.d/*.caddy
+
 	encode zstd gzip
 
 	header {

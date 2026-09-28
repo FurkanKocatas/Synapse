@@ -26,11 +26,13 @@ class CommandError(RuntimeError):
     """A problem the operator can fix; printed without a traceback."""
 
 
-async def _create_tenant(settings: Settings, slug: str, name: str) -> uuid.UUID:
+async def _create_tenant(
+    settings: Settings, slug: str, name: str, tenant_id: uuid.UUID | None
+) -> uuid.UUID:
     database = Database(settings.database(application_name="synapse-cli"), max_size=1)
     await database.open()
     try:
-        tenant_id = uuid.uuid4()
+        tenant_id = tenant_id or uuid.uuid4()
         async with database.tenant_transaction(tenant_id) as connection:
             await connection.execute(
                 "INSERT INTO tenants (id, slug, name) VALUES (%s, %s, %s)", (tenant_id, slug, name)
@@ -40,8 +42,10 @@ async def _create_tenant(settings: Settings, slug: str, name: str) -> uuid.UUID:
         await database.close()
 
 
-def create_tenant(settings: Settings, slug: str, name: str) -> uuid.UUID:
-    return asyncio.run(_create_tenant(settings, slug, name))
+def create_tenant(
+    settings: Settings, slug: str, name: str, *, tenant_id: uuid.UUID | None = None
+) -> uuid.UUID:
+    return asyncio.run(_create_tenant(settings, slug, name, tenant_id))
 
 
 def read_new_password(password_file: Path | None) -> str:

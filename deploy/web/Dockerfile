@@ -30,8 +30,12 @@ FROM ${CADDY}
 # Our build has no file capabilities (the stock binary asks for the right to bind ports below
 # 1024, which the kernel refuses once all capabilities are dropped). We listen on 8080.
 COPY --from=caddy /caddy /usr/bin/caddy
+# /data holds Caddy's certificates (including its internal CA) and must persist; /config
+# holds the running configuration. Both belong to the unprivileged user.
 RUN addgroup -S -g 10001 synapse \
- && adduser -S -D -H -u 10001 -G synapse synapse
+ && adduser -S -D -H -u 10001 -G synapse synapse \
+ && mkdir -p /data /config /etc/caddy/site.d \
+ && chown 10001:10001 /data /config
 COPY deploy/web/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /src/dist /srv
 USER 10001:10001

@@ -1,6 +1,6 @@
 # Deployment: images and the full stack
 
-Status: 2026-09-28. The installer (`synapsectl`, [ADR 0012](adr/0012-installer-modules-licensing.md)) will render these files per customer; until then they are built and run from this repository.
+Status: 2026-09-28. Customer installations get their compose file from `synapsectl render` ([installer.md](installer.md)); `deploy/compose.stack.yml` is the same stack for local tests, built from this repository.
 
 ## Images
 
@@ -37,7 +37,7 @@ Applied in [deploy/compose.stack.yml](../deploy/compose.stack.yml) and required 
 - Caching: hashed files under `/assets/` for a year; pages always revalidated, so a new release is picked up on the next visit.
 - The API documentation is not reachable (off in the API, see [development.md](development.md)).
 
-The default site address is plain HTTP on port 8080 inside the container, for local testing only. Customer installs set `SYNAPSE_SITE_ADDRESS` and TLS (customer certificate, ACME or Caddy's internal CA), rendered by the installer.
+The default site address is plain HTTP on port 8080 inside the container, for local testing only. Customer installs set `SYNAPSE_SITE_ADDRESS` and `SYNAPSE_HTTP_PORT`, and mount a TLS snippet into `/etc/caddy/site.d/` (customer certificate, ACME or Caddy's internal CA), all rendered by `synapsectl`. Port 8099 answers the container health check and is never published.
 
 ## Running the full stack locally
 
@@ -68,7 +68,7 @@ It then removes everything it created. CI runs it on every push.
 
 ## Not done yet
 
-- `synapsectl`: rendering these files from `synapse.toml`, `doctor`, backups, upgrades, the offline bundle.
+- `synapsectl apply`, backups, upgrades and the offline bundle ([installer.md](installer.md)).
 - The worker and scheduler roles (with the knowledge base and audit checkpoints).
 - Image signing and SBOMs in a release workflow.
 - TLS configuration and a production memory profile per hardware tier.

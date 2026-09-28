@@ -49,6 +49,31 @@ jobs:
       - name: Tests
         run: uv run pytest --cov
 
+  synapsectl:
+    name: Installer
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: synapsectl
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.14"
+          enable-cache: false
+      - name: Install
+        run: uv sync --locked
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format
+        run: uv run ruff format --check .
+      - name: Types
+        run: uv run mypy src tests
+      - name: Tests
+        run: uv run pytest --cov
+
   frontend:
     name: Frontend
     runs-on: ubuntu-24.04
@@ -113,15 +138,22 @@ jobs:
           pnpm --dir frontend install --frozen-lockfile
       - name: Licences
         run: |
-          (cd backend && uv run --with pip-licenses pip-licenses --from=mixed --format=json) \
-            > "$RUNNER_TEMP/python-licences.json"
+          (cd synapsectl && uv sync --locked)
+          for project in backend synapsectl; do
+            (cd "$project" && uv run --with pip-licenses pip-licenses --from=mixed --format=json) \
+              > "$RUNNER_TEMP/$project-licences.json"
+          done
           pnpm --dir frontend licenses list --json > "$RUNNER_TEMP/node-licences.json"
           python3 tools/check_licences.py \
-            "$RUNNER_TEMP/python-licences.json" "$RUNNER_TEMP/node-licences.json"
+            --python "$RUNNER_TEMP/backend-licences.json" \
+            --python "$RUNNER_TEMP/synapsectl-licences.json" \
+            --node "$RUNNER_TEMP/node-licences.json"
       - name: Vulnerabilities
         run: |
-          (cd backend && uv export --frozen --no-emit-project) > "$RUNNER_TEMP/requirements.txt"
-          uvx pip-audit@2.10.1 -r "$RUNNER_TEMP/requirements.txt" --disable-pip --require-hashes
+          for project in backend synapsectl; do
+            (cd "$project" && uv export --frozen --no-emit-project) > "$RUNNER_TEMP/$project.txt"
+            uvx pip-audit@2.10.1 -r "$RUNNER_TEMP/$project.txt" --disable-pip --require-hashes
+          done
           pnpm --dir frontend audit --audit-level high
 
   images:

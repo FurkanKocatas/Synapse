@@ -12,5 +12,6 @@ Status: foundation. The architecture is decided; the application is being built.
 | [docs/development.md](docs/development.md) | Setting up, running and checking the code |
 | [backend/](backend/) | Python API, workers and CLI |
 | [frontend/](frontend/) | React single-page application |
+| [synapsectl/](synapsectl/) | Installer and operations tool |
 
 Proprietary software; see [LICENSE](LICENSE).

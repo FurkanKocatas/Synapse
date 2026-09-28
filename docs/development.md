@@ -76,6 +76,9 @@ uv run mypy src tests ../tools/check_file_size.py ../tools/check_licences.py ../
 uv run lint-imports
 uv run pytest --cov
 
+# Installer, from synapsectl/
+uv run ruff check . && uv run ruff format --check . && uv run mypy src tests && uv run pytest --cov
+
 # Frontend, from frontend/
 pnpm lint && pnpm typecheck && pnpm format:check && pnpm i18n:check && pnpm test && pnpm build
 

@@ -1,15 +1,16 @@
 """Fail when a dependency has a licence that ADR 0016 does not allow.
 
-Inputs are the JSON reports of the two package managers:
+Inputs are the JSON reports of the package managers, one per Python project:
 
-    uv run --with pip-licenses pip-licenses --from=mixed --format=json > python-licences.json
-    pnpm --dir frontend licenses list --json > node-licences.json
-    python tools/check_licences.py python-licences.json node-licences.json
+    uv run --with pip-licenses pip-licenses --from=mixed --format=json > backend.json
+    pnpm --dir frontend licenses list --json > node.json
+    python tools/check_licences.py --python backend.json --python synapsectl.json --node node.json
 
 Every exception is listed in REVIEWED with the reason; the same reasons are recorded in
 docs/licences.md. Adding an exception there without a review defeats the purpose of this check.
 """
 
+import argparse
 import json
 import re
 import sys
@@ -48,6 +49,7 @@ ALIASES = {
 # Package name (or prefix ending in "*") -> reason. Keep in sync with docs/licences.md.
 REVIEWED = {
     "synapse": "This project itself (proprietary).",
+    "synapsectl": "This project's installer (proprietary).",
     "@lix-js/sdk-*": "Platform binaries of @lix-js/sdk (MIT); the binary package omits the field.",
     "caniuse-lite": "CC-BY-4.0 browser support data, used only at build time by the CSS tooling.",
     "@fontsource-variable/geist": "OFL-1.1 font, bundled with the UI (see docs/licences.md).",
@@ -90,9 +92,12 @@ def node_packages(report: dict[str, list[dict[str, object]]]) -> list[tuple[str,
     ]
 
 
-def main(python_report: Path, node_report: Path) -> int:
-    packages = python_packages(json.loads(python_report.read_text(encoding="utf-8")))
-    packages += node_packages(json.loads(node_report.read_text(encoding="utf-8")))
+def main(python_reports: list[Path], node_reports: list[Path]) -> int:
+    packages: list[tuple[str, str]] = []
+    for report in python_reports:
+        packages += python_packages(json.loads(report.read_text(encoding="utf-8")))
+    for report in node_reports:
+        packages += node_packages(json.loads(report.read_text(encoding="utf-8")))
 
     rejected = [
         f"{name}: {licence}"
@@ -106,7 +111,12 @@ def main(python_report: Path, node_report: Path) -> int:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:  # noqa: PLR2004  (two report paths)
-        print(__doc__, file=sys.stderr)
-        sys.exit(2)
-    sys.exit(main(Path(sys.argv[1]), Path(sys.argv[2])))
+    parser = argparse.ArgumentParser(description="Check dependency licences against ADR 0016.")
+    parser.add_argument(
+        "--python", type=Path, action="append", default=[], help="pip-licenses JSON"
+    )
+    parser.add_argument("--node", type=Path, action="append", default=[], help="pnpm licenses JSON")
+    arguments = parser.parse_args()
+    if not (arguments.python or arguments.node):
+        parser.error("give at least one report")
+    sys.exit(main(arguments.python, arguments.node))
