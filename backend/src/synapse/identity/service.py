@@ -21,6 +21,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
+import psycopg
 import structlog
 from psycopg import AsyncConnection
 
@@ -76,6 +77,10 @@ class CurrentSession:
 class TotpEnrollment:
     secret: str
     provisioning_uri: str
+
+
+class AccountExistsError(ValueError):
+    """An account with this email address already exists in the tenant."""
 
 
 @dataclass(frozen=True)
@@ -468,6 +473,18 @@ class IdentityService:
                 context_words=[email.split("@")[0], account.display_name, *account.context_words],
             )
             password_hash = await asyncio.to_thread(passwords.hash_password, account.password)
+        try:
+            return await self._insert_account(account, email, password_hash, actor_user_id)
+        except psycopg.errors.UniqueViolation as error:
+            raise AccountExistsError(email) from error
+
+    async def _insert_account(
+        self,
+        account: NewAccount,
+        email: str,
+        password_hash: str | None,
+        actor_user_id: UUID | None,
+    ) -> UUID:
         async with self._db.tenant_transaction(self._tenant_id) as connection:
             user_id = await repository.insert_user(
                 connection,

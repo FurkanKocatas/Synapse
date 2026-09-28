@@ -48,8 +48,25 @@ Every route must declare how it is protected, and a test enforces it ([test_rout
 
 The test also proves it can fail, with a route that forgets its guard.
 
+## Administration API
+
+All under `/api/admin`, each behind a role permission, each change audited in the same transaction.
+
+| Endpoint | Permission | Notes |
+|---|---|---|
+| `GET /users`, `POST /users`, `PATCH /users/{id}` | `users.manage` | See [identity.md](identity.md#account-administration) |
+| `GET /groups`, `POST /groups` | `groups.manage` | Names are unique per tenant (409) |
+| `POST /groups/{id}/members`, `DELETE /groups/{id}/members/{user}` | `groups.manage` | Adding twice is 409, removing a non-member is 404 |
+| `GET /collections`, `POST /collections` | `collections.create` | A non-admin creator gets `manage` on the new collection; an admin creator gets nothing, because admins need grants to read like anyone else |
+| `GET /collections/{id}/grants`, `POST /collections/{id}/grants` | `permissions.manage` | Principal is a user or group ID, or a role name. An unknown principal or collection is 404 |
+| `DELETE /grants/{id}` | `permissions.manage` | |
+
+An admin can grant themselves read access to any collection, like any other grant. The audit log records it (`authz.grant.add`, with the actor), so that is visible rather than prevented.
+
+Audit actions: `authz.group.create`, `authz.group.member_add`, `authz.group.member_remove`, `authz.collection.create`, `authz.grant.add`, `authz.grant.remove`.
+
 ## Not in this step
 
-- Admin endpoints and screens for users, groups, collections and grants.
+- Screens for this API.
+- Document grants (they come with the document endpoints) and moving or renaming collections.
 - Retrieval using `accessible_documents` (with the knowledge base).
-- Audit events for permission changes (with the admin endpoints that make them).

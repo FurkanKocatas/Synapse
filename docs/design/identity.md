@@ -91,6 +91,16 @@ Code: [frontend/src/features/auth/](../../frontend/src/features/auth/), routes i
 - After login the session is fetched again, because the login response carries no account details.
 - Known gap: the account's `locale` is not yet applied to the interface; the language choice is remembered per browser until the account settings screen exists.
 
+## Account administration
+
+`/api/admin/users` (permission `users.manage`):
+
+- `GET`: every account with its role, status, locale and whether it has a second factor.
+- `POST {email, display_name, role, locale, password}`: creates an account under the password policy. Errors: 409 `email_taken`, 422 with the policy code (for example `password_too_short`).
+- `PATCH /{id} {role?, status?}`: changes role or status. **The account's sessions end at once**, so new rights apply to the next request. The last active administrator cannot be demoted or disabled (409 `last_administrator`); the check runs inside the transaction with the administrator rows locked, so two concurrent changes cannot both pass.
+
+Audit actions: `identity.user.create` (with `via: admin` or `cli`) and `identity.user.update` (with the old and new values).
+
 ## Audit
 
 Every sign-in step, logout and account creation is written to the audit log in the same transaction; see [audit.md](audit.md).

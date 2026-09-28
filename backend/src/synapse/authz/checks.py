@@ -14,7 +14,14 @@ DocumentPermission = Literal["read", "write", "manage"]
 # Role permissions known to the code. The database table decides which role has which; this
 # list only lets typos in route declarations fail at import time instead of denying silently.
 ROLE_PERMISSIONS = frozenset(
-    {"users.manage", "groups.manage", "collections.create", "settings.manage", "audit.read"}
+    {
+        "users.manage",
+        "groups.manage",
+        "collections.create",
+        "permissions.manage",
+        "settings.manage",
+        "audit.read",
+    }
 )
 
 

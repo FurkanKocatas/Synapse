@@ -115,6 +115,7 @@ name = "Identity is used only through synapse.identity.public"
 type = "forbidden"
 source_modules = ["synapse.accounts_cli", "synapse.api", "synapse.cli"]
 forbidden_modules = [
+    "synapse.identity.accounts",
     "synapse.identity.passwords",
     "synapse.identity.recovery",
     "synapse.identity.repository",
@@ -130,6 +131,7 @@ name = "Authorization is used only through synapse.authz.public"
 type = "forbidden"
 source_modules = ["synapse.api", "synapse.cli", "synapse.identity"]
 forbidden_modules = ["synapse.authz.checks"]
+# synapse.authz.management is reached through synapse.authz.public.management.
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
