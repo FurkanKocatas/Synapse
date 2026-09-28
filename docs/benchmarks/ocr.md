@@ -16,7 +16,19 @@ Status: **in progress**, 2026-09-28. No engine is chosen yet. Method and scripts
 | Tesseract `tessdata_best` tur | 0.960 | 0.977 | 0.908 (0.36) | 2.3 |
 | Tesseract `tessdata_best` tur+eng | 0.959 | 0.967 | 0.923 (0.43) | 2.5 |
 
-`clean` is about one point better on every column, `poor` 3 to 8 points worse. **None of these is good enough:** words are read well, but one identifier in ten is wrong or missing, and on table-heavy pages most of them.
+`clean` is about one point better on every column, `poor` 3 to 8 points worse. **None of these is good enough on the simulated pages:** words are read well, but one identifier in ten is wrong or missing, and on table-heavy pages most of them.
+
+**RapidOCR 3.9.2 (PP-OCRv5 Latin, ONNX), 111 of 112 pages** (the run hung when a worker process died, see below): word F1 0.744, **Turkish-letter words 0.439**, identifiers 0.927 (the best of all on `scan`). It reads digits and `%` but not Turkish letters, so it cannot be used alone.
+
+**Real scans** (three hand-verified pages: a municipal committee report at 200 dpi, a municipal decision at 424 dpi, a ministry circular at 283 dpi):
+
+| Engine | Character error rate | Word F1 | Turkish-letter words | Identifiers |
+|---|---|---|---|---|
+| Tesseract best tur | 0.008 to 0.031 | 0.960 to 0.978 | 0.917 to 1.000 | 0.80 to 1.00 |
+| Tesseract best tur+eng | 0.012 to 0.033 | 0.954 to 0.972 | 0.917 to 0.977 | 0.80 to 1.00 |
+| Hybrid prototype | 0.031 to 0.405 | 0.733 to 0.965 | 0.896 to 0.991 | 0.40 to 0.94 |
+
+On real text-heavy scans Tesseract is much better than on the simulated table pages. The identifiers it missed: the small number under a barcode (read "001408" for "00140812961"), and a 32-character verification code split by a space ("55E3D13EBFB4473F9 C6DD3A6CA62C1EB"; the Turkish-only model also read one "1" as "İ", tur+eng did not). The hybrid prototype is worse on real scans: it detects signatures and stamps as lines and reads them as garbage.
 
 ## What the numbers are made of
 
@@ -27,8 +39,8 @@ Status: **in progress**, 2026-09-28. No engine is chosen yet. Method and scripts
 
 ## Candidates still being measured
 
-- **RapidOCR 3.9.2, PP-OCRv5 Latin recogniser (ONNX, CPU).** Spot checks: reads `%` and numbers correctly, finds lines in tables and on dark cells, but drops Turkish letters (ı to i, "Sağlik", "ilikin"); its dictionary has every Turkish letter, so this is the model, not the character set. About 6 to 8 seconds per page, several times Tesseract's cost.
-- **Hybrid** ([eval/ocr/hybrid.py](../../eval/ocr/hybrid.py)): RapidOCR's detector finds the lines, dark lines are inverted, the lines are stacked into one image, Tesseract (best, tur+eng) reads it in one call. First spot checks: `%40` and Turkish letters both right, table rows read. Open: its speed measured alone, and false line detections on table borders ("ges ep"), which the quality check should drop.
+- **RapidOCR** (measured above): its dictionary has every Turkish letter, so the weakness is the model, not the character set. About 6 to 8 seconds per page and about 1 GB per process; with four processes on the work laptop one died and `multiprocessing.Pool` hung the run, so `run.py` now uses `ProcessPoolExecutor` (fails instead of hanging) and `BENCH_WORKERS`.
+- **Hybrid** ([eval/ocr/hybrid.py](../../eval/ocr/hybrid.py)): RapidOCR's detector finds the lines, dark lines are inverted, the lines are stacked into one image, Tesseract (best, tur+eng) reads it in one call. First spot checks: `%40` and Turkish letters both right, table rows read. Open: its speed measured alone; false line detections on table borders, signatures and stamps; and missing white-on-dark header cells. Until those are fixed it is worse than Tesseract on real scans.
 - Tesseract variants: page segmentation 4 and 6, and enlarging images below 300 dpi before OCR.
 
 ## Safety, whatever the engine
@@ -41,7 +53,8 @@ OCR will not be perfect on scans. Rules for step 8 (answers):
 
 ## Next steps
 
-1. Finish the RapidOCR and variant runs; run every engine on the real scans (`run.py --real`).
+1. Run the Tesseract variants (page segmentation 4 and 6, enlarging to 300 dpi) and RapidOCR again with `BENCH_WORKERS=2`; transcribe more real scans (tables especially), since three pages cannot carry a decision.
+1. Search-side mitigation for split codes: match long letter-and-digit identifiers with spaces removed (step 7).
 2. Measure the hybrid alone, with a filter for non-text line detections; try a lighter detector model for speed.
 3. Choose, and record the decision here and in the plan. Then wire OCR into the worker ([ocr.py](../../backend/src/synapse/knowledge/ocr.py) is ready and tested: rendering, the Tesseract adapter, and "keep whichever text scores better").
 4. Speed on the reference machines (Ryzen 5 3600 and 6600H class, 16 GB) before any default is fixed.

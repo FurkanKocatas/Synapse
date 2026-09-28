@@ -6,7 +6,9 @@
 
 Reads /bench/work/images/*.png, writes /bench/work/out/<engine>/<image>.txt and timings in
 /bench/work/out/<engine>/timings.json. Each image is OCR'd by one process with one thread, so the
-time per page is comparable across engines; pages run four at a time.
+time per page is comparable across engines. Pages run BENCH_WORKERS at a time (default 4; use
+2 for RapidOCR, whose processes take about 1 GB each). A worker that dies (for example out of
+memory) stops the run with an error instead of hanging it, as multiprocessing.Pool would.
 """
 
 import json
@@ -15,7 +17,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable
-from multiprocessing import Pool
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 os.environ["OMP_THREAD_LIMIT"] = "1"  # Tesseract: one thread per page
@@ -111,8 +113,9 @@ def main() -> None:
     for engine in chosen:
         (WORK / "out" / engine).mkdir(parents=True, exist_ok=True)
         started = time.perf_counter()
-        with Pool(4) as pool:
-            timings = dict(pool.map(work, [(engine, image) for image in images], chunksize=1))
+        workers = int(os.environ.get("BENCH_WORKERS", "4"))
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            timings = dict(pool.map(work, [(engine, image) for image in images]))
         name = "timings-real.json" if real else "timings.json"
         (WORK / "out" / engine / name).write_text(json.dumps(timings, indent=1))
         print(f"{engine}: {len(timings)} images in {time.perf_counter() - started:.0f} s")

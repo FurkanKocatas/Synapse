@@ -95,7 +95,9 @@ def main() -> None:
     options.add_argument("--worst", nargs=2, metavar=("ENGINE", "CONDITION"))
     args = options.parse_args()
     pages = json.loads((WORK / "pages.json").read_text())
-    engines = sorted(p.name for p in (WORK / "out").iterdir() if (p / "timings.json").exists())
+    # An engine whose run did not finish has outputs but no timings; it is scored on the pages
+    # it has, and the table says how many.
+    engines = sorted(p.name for p in (WORK / "out").iterdir() if p.is_dir())
     if args.worst:
         engine, condition = args.worst
         scored = []
@@ -113,24 +115,33 @@ def main() -> None:
         f"{'id_recall':26} sec/page"
     )
     for engine in engines:
-        timings = json.loads((WORK / "out" / engine / "timings.json").read_text())
+        timing_file = WORK / "out" / engine / "timings.json"
+        timings = json.loads(timing_file.read_text()) if timing_file.exists() else {}
         for condition in CONDITIONS:
             metrics: dict[str, list[float]] = {}
+            scored = 0
             for page in pages:
+                output = WORK / "out" / engine / f"{page['name']}.{condition}.txt"
+                if not output.exists():
+                    continue
+                scored += 1
                 truth = (WORK / "truth" / f"{page['name']}.txt").read_text()
-                ocr = (WORK / "out" / engine / f"{page['name']}.{condition}.txt").read_text()
+                ocr = output.read_text()
                 for key, value in page_scores(truth, ocr).items():
                     if value is not None:
                         metrics.setdefault(key, []).append(value)
-            seconds = statistics.median(
-                t for name, t in timings.items() if name.endswith(f".{condition}")
-            )
+            if not scored:
+                continue
+            times = [t for name, t in timings.items() if name.endswith(f".{condition}")]
+            seconds = f"{statistics.median(times):.2f}" if times else "n/a"
+            if scored < len(pages):
+                seconds += f" ({scored}/{len(pages)} pages)"
             print(
                 f"{engine:24} {condition:5}  "
                 f"{summarise(metrics['cer'], higher_is_better=False):26} "
                 f"{summarise(metrics['word_f1'], higher_is_better=True):26} "
                 f"{summarise(metrics['tr_recall'], higher_is_better=True):26} "
-                f"{summarise(metrics['id_recall'], higher_is_better=True):26} {seconds:.2f}"
+                f"{summarise(metrics['id_recall'], higher_is_better=True):26} {seconds}"
             )
 
 
