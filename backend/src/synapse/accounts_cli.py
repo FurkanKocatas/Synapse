@@ -27,13 +27,24 @@ class CommandError(RuntimeError):
 
 
 async def _create_tenant(
-    settings: Settings, slug: str, name: str, tenant_id: uuid.UUID | None
+    settings: Settings, slug: str, name: str, tenant_id: uuid.UUID | None, *, if_missing: bool
 ) -> uuid.UUID:
     database = Database(settings.database(application_name="synapse-cli"), max_size=1)
     await database.open()
     try:
         tenant_id = tenant_id or uuid.uuid4()
         async with database.tenant_transaction(tenant_id) as connection:
+            if if_missing:
+                cursor = await connection.execute(
+                    "SELECT slug FROM tenants WHERE id = %s", (tenant_id,)
+                )
+                existing = await cursor.fetchone()
+                if existing is not None:
+                    if existing[0] != slug:
+                        raise CommandError(
+                            f"tenant {tenant_id} exists with slug {existing[0]!r}, not {slug!r}"
+                        )
+                    return tenant_id
             await connection.execute(
                 "INSERT INTO tenants (id, slug, name) VALUES (%s, %s, %s)", (tenant_id, slug, name)
             )
@@ -42,10 +53,37 @@ async def _create_tenant(
         await database.close()
 
 
+async def _active_admins(settings: Settings) -> int:
+    if settings.tenant_id is None:
+        raise CommandError("SYNAPSE_TENANT_ID is not set")
+    database = Database(settings.database(application_name="synapse-cli"), max_size=1)
+    await database.open()
+    try:
+        async with database.tenant_transaction(settings.tenant_id) as connection:
+            cursor = await connection.execute(
+                "SELECT count(*) FROM users WHERE role = 'admin' AND status = 'active'"
+            )
+            row = await cursor.fetchone()
+            return int(row[0]) if row else 0
+    finally:
+        await database.close()
+
+
+def active_admins(settings: Settings) -> int:
+    """How many active administrators the tenant has; the installer creates the first one."""
+    return asyncio.run(_active_admins(settings))
+
+
 def create_tenant(
-    settings: Settings, slug: str, name: str, *, tenant_id: uuid.UUID | None = None
+    settings: Settings,
+    slug: str,
+    name: str,
+    *,
+    tenant_id: uuid.UUID | None = None,
+    if_missing: bool = False,
 ) -> uuid.UUID:
-    return asyncio.run(_create_tenant(settings, slug, name, tenant_id))
+    """Create a tenant. With ``if_missing``, an existing tenant with this ID and slug is fine."""
+    return asyncio.run(_create_tenant(settings, slug, name, tenant_id, if_missing=if_missing))
 
 
 def read_new_password(password_file: Path | None) -> str:

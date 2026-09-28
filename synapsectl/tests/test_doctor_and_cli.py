@@ -7,6 +7,7 @@ import pytest
 
 from synapsectl import cli, doctor, render, secrets
 from synapsectl import config as cfg
+from synapsectl.apply import ApplyError
 from synapsectl.config import SynapseConfig, Tier
 from synapsectl.doctor import Status
 
@@ -127,3 +128,30 @@ def test_cli_reports_an_invalid_configuration(tmp_path: Path) -> None:
     path = tmp_path / "synapse.toml"
     path.write_text('hardware = "cpu-64"\n', encoding="utf-8")
     assert cli.main(["--config", str(path), "render"]) == 1
+
+
+def test_cli_apply_needs_both_administrator_fields(
+    config: SynapseConfig, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = tmp_path / "synapse.toml"
+    cfg.save(config, target)
+    code = cli.main(["--config", str(target), "apply", "--admin-email", "a@demo.local"])
+    assert code == 1
+    assert "--admin-email and --admin-name together" in capsys.readouterr().err
+
+
+def test_cli_apply_reports_a_failed_step(
+    config: SynapseConfig,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    target = tmp_path / "synapse.toml"
+    cfg.save(config, target)
+
+    def fail(*_: object, **__: object) -> None:
+        raise ApplyError("Start the database: failed (exit 1)")
+
+    monkeypatch.setattr(cli, "apply", fail)
+    assert cli.main(["--config", str(target), "apply"]) == 1
+    assert "Start the database: failed" in capsys.readouterr().err

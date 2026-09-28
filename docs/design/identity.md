@@ -84,7 +84,7 @@ Testing: the backend tests use a software authenticator ([tests/soft_authenticat
 
 ## Creating the first administrator
 
-There is no web endpoint for it. On the server:
+There is no web endpoint for it. `synapsectl apply --admin-email ... --admin-name ...` does it during installation ([installer.md](../installer.md)); by hand, on the server:
 
 ```bash
 synapse tenant create --slug acme --name "Acme"          # prints the tenant ID for SYNAPSE_TENANT_ID

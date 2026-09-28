@@ -1,6 +1,6 @@
 # Installer: synapsectl
 
-Status: first version (init, render, doctor), 2026-09-28. Decision record: [ADR 0012](adr/0012-installer-modules-licensing.md). Code: [synapsectl/](../synapsectl/).
+Status: init, render, doctor and apply, 2026-09-28. Decision record: [ADR 0012](adr/0012-installer-modules-licensing.md). Code: [synapsectl/](../synapsectl/).
 
 `synapsectl` runs on the customer's machine, operated by the vendor's installer. One file, `/etc/synapse/synapse.toml`, describes the installation; everything else is produced from it.
 
@@ -9,15 +9,7 @@ Status: first version (init, render, doctor), 2026-09-28. Decision record: [ADR 
 ```bash
 sudo synapsectl init          # asks a few questions, writes synapse.toml, creates secrets, renders
 sudo synapsectl doctor        # checks the machine and the files
-# then, with the rendered compose file (to become synapsectl apply):
-docker compose -f /etc/synapse/rendered/compose.yml up -d --wait db
-docker compose -f /etc/synapse/rendered/compose.yml run --rm bootstrap
-docker compose -f /etc/synapse/rendered/compose.yml run --rm migrate
-docker compose -f /etc/synapse/rendered/compose.yml run --rm --no-deps api \
-    tenant create --slug <slug> --name "<organization>" --id <instance.tenant_id>
-docker compose -f /etc/synapse/rendered/compose.yml run --rm --no-deps api \
-    user create --email <admin email> --name "<name>" --role admin
-docker compose -f /etc/synapse/rendered/compose.yml up -d --wait
+sudo synapsectl apply --admin-email admin@example.org --admin-name "Admin"
 ```
 
 `synapsectl init --from answers.toml` skips the questions, for scripted or repeated installs.
@@ -35,6 +27,18 @@ docker compose -f /etc/synapse/rendered/compose.yml up -d --wait
 | `[modules]` | `enabled` | Optional modules; see below |
 
 Unknown keys, unknown modules and incomplete TLS settings are rejected, so a typo never falls back to a default silently.
+
+## apply
+
+`apply` brings the machine to the state `synapse.toml` describes. Every step is safe to repeat, so the same command installs, repairs, and (after `[images] version` is changed) upgrades:
+
+1. Renders the files again and runs the doctor checks. Any FAIL stops here, before anything starts. If the services are already running, their ports count as in use by Synapse.
+2. Starts the database, then runs bootstrap (creates or repairs roles and schema) and the migrations.
+3. Creates the tenant with the ID from `synapse.toml` (`synapse tenant create --if-missing`; an existing tenant with another slug is an error).
+4. Creates the first administrator only if the tenant has no active one. The first run therefore needs `--admin-email` and `--admin-name`; later runs do not. The password is prompted in the terminal, or read from `--admin-password-file` for scripted installs (the file is mounted read-only into the one container that reads it, so it must be readable by uid 10001).
+5. Starts every service, waits until each is healthy, and runs the checks again.
+
+A failed step stops `apply` with the step's name and its output; running it again continues from wherever the installation is. Tested by [tests/test_apply.py](../synapsectl/tests/test_apply.py) with a scripted Docker, and by hand on a fresh install: install, then a second run with nothing to do.
 
 ## Modules
 
@@ -77,6 +81,5 @@ Two details that matter for non-standard ports:
 
 ## Not done yet
 
-- `apply`: running the steps in the workflow above, idempotently.
 - `backup`, `restore`, `upgrade`, `support-bundle`, the offline bundle, licence files.
 - A web-based setup screen for the same steps, served on localhost during installation.

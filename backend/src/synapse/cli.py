@@ -54,6 +54,11 @@ def build_parser() -> argparse.ArgumentParser:
     new_tenant.add_argument(
         "--id", type=uuid.UUID, help="Use this ID (the installer takes it from synapse.toml)"
     )
+    new_tenant.add_argument(
+        "--if-missing",
+        action="store_true",
+        help="Succeed without changes if a tenant with this ID and slug exists (needs --id)",
+    )
 
     user = commands.add_parser("user", help="Account administration.")
     user_commands = user.add_subparsers(dest="user_command", required=True)
@@ -64,6 +69,15 @@ def build_parser() -> argparse.ArgumentParser:
     new_user.add_argument("--locale", default="tr", choices=["tr", "en"])
     new_user.add_argument(
         "--password-file", type=Path, help="Read the password from a file instead of prompting"
+    )
+    new_user.add_argument(
+        "--unless-admin-exists",
+        action="store_true",
+        help="Do nothing if the tenant already has an active administrator (for the installer)",
+    )
+
+    user_commands.add_parser(
+        "admins", help="Print how many active administrators SYNAPSE_TENANT_ID has."
     )
 
     audit = commands.add_parser("audit", help="Audit log checks.")
@@ -103,7 +117,17 @@ def _run_admin_command(args: argparse.Namespace) -> int:
             return 0 if intact else 1
         print(audit_cli.checkpoint(settings))
     elif args.command == "tenant":
-        print(accounts_cli.create_tenant(settings, args.slug, args.name, tenant_id=args.id))
+        if args.if_missing and args.id is None:
+            raise accounts_cli.CommandError("--if-missing needs --id")
+        print(
+            accounts_cli.create_tenant(
+                settings, args.slug, args.name, tenant_id=args.id, if_missing=args.if_missing
+            )
+        )
+    elif args.user_command == "admins":
+        print(accounts_cli.active_admins(settings))
+    elif args.unless_admin_exists and accounts_cli.active_admins(settings) > 0:
+        print("skipped: an active administrator exists")
     else:
         user_id = accounts_cli.create_user(
             settings,
