@@ -24,9 +24,11 @@ from psycopg.rows import class_row
 
 from synapse.audit import public as audit
 from synapse.audit.public import AuditEvent
+from synapse.jobs.queue import enqueue
 from synapse.kernel.database import Database
 from synapse.knowledge.blobs import BlobStore, Incoming
 from synapse.knowledge.filetypes import MediaType, detect
+from synapse.knowledge.pipeline import parse_job
 
 VersionStatus = Literal["queued", "parsing", "ocr", "embedding", "ready", "failed"]
 
@@ -187,6 +189,8 @@ class DocumentService:
                 _NewVersion(document_id, 1, incoming.sha256, name, uploader.user_id),
                 now,
             )
+            # In the same transaction: no document without its job, no job without its document.
+            await enqueue(connection, self._tenant_id, parse_job(document_id, version_id))
             await self._audit(
                 connection,
                 "kb.document.create",
@@ -226,6 +230,7 @@ class DocumentService:
                 _NewVersion(document_id, version, incoming.sha256, name, uploader.user_id),
                 now,
             )
+            await enqueue(connection, self._tenant_id, parse_job(document_id, version_id))
             await self._audit(
                 connection,
                 "kb.document.version",

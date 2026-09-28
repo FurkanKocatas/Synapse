@@ -13,6 +13,12 @@ from tests.db.conftest import TestDatabase
 NOT_TENANT_SCOPED = {
     "alembic_version": "migration bookkeeping; holds no tenant data",
     "role_permissions": "the same catalogue for every tenant; read-only for runtime roles",
+    # The job queue (migration 0009). Job rows hold identifiers only; the task wrapper sets the
+    # tenant from them before touching tenant data.
+    "procrastinate_jobs": "job queue; arguments are identifiers, tenant set by the task wrapper",
+    "procrastinate_events": "job state history; identifiers only",
+    "procrastinate_periodic_defers": "bookkeeping for periodic jobs; no tenant data",
+    "procrastinate_workers": "worker heartbeats; no tenant data",
 }
 # Tables scoped by their own primary key instead of a tenant_id column.
 SCOPED_BY_ID = {"tenants"}

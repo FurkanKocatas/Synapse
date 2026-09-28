@@ -56,6 +56,9 @@ REVIEWED = {
     "psycopg": "LGPL-3.0, used unmodified as a separate package (see docs/licences.md).",
     "psycopg-binary": "LGPL-3.0, binary distribution of psycopg (see docs/licences.md).",
     "psycopg-pool": "LGPL-3.0, used unmodified as a separate package (see docs/licences.md).",
+    "pillow": "MIT-CMU (HPND), a permissive OSI-approved licence.",
+    "pypdfium2": "Apache-2.0 or BSD-3-Clause; the bundled PDFium and its libraries are permissive, "
+    "FreeType needs a credit line (see docs/licences.md).",
 }
 
 

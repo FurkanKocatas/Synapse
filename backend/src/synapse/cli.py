@@ -1,6 +1,7 @@
 """Command line entry point.
 
-One image runs in several roles (ADR 0002): ``synapse api`` starts a process role, while
+One image runs in several roles (ADR 0002): ``synapse api`` and ``synapse worker`` start process
+roles, while
 ``synapse db|tenant|user ...`` are administration commands run by the installer and operators.
 Only roles that exist are listed here.
 """
@@ -13,9 +14,10 @@ from pathlib import Path
 
 import uvicorn
 
-from synapse import __version__, accounts_cli, audit_cli
+from synapse import __version__, accounts_cli, audit_cli, worker_cli
 from synapse.dbadmin import bootstrap, migrate
 from synapse.identity.public import PasswordPolicyError
+from synapse.jobs.queue import Queue
 from synapse.kernel.config import get_settings
 from synapse.kernel.logging import configure_logging
 from synapse.kernel.secrets import read_secret
@@ -26,6 +28,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"synapse {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("api", help="Run the HTTP API.")
+    worker = commands.add_parser("worker", help="Run background jobs.")
+    worker.add_argument(
+        "--queue",
+        dest="queues",
+        action="append",
+        choices=[q.value for q in Queue],
+        help="A queue to take jobs from (repeatable; default: all)",
+    )
+    worker.add_argument("--concurrency", type=int, default=1, help="Jobs run at the same time")
+    worker.add_argument(
+        "--once", action="store_true", help="Stop when the queues are empty (for tests)"
+    )
 
     database = commands.add_parser("db", help="Database administration.")
     database_commands = database.add_subparsers(dest="db_command", required=True)
@@ -93,6 +107,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "api":
         return _run_api()
+    if args.command == "worker":
+        settings = get_settings()
+        configure_logging(settings)
+        queues = [Queue(q) for q in args.queues] if args.queues else list(Queue)
+        return worker_cli.main(settings, queues, concurrency=args.concurrency, once=args.once)
     try:
         return _run_admin_command(args)
     except (accounts_cli.CommandError, audit_cli.AuditCommandError, PasswordPolicyError) as error:

@@ -6,7 +6,7 @@ Status: 2026-09-28. Customer installations get their compose file from `synapsec
 
 | Image | Built from | Runs as | Contents |
 |---|---|---|---|
-| `synapse-app` | [deploy/app/Dockerfile](../deploy/app/Dockerfile) | uid 10001 | Python 3.14 and the backend, installed from `uv.lock` without development dependencies. One image for every role (`synapse api`, `synapse db migrate`, ...). pip is removed |
+| `synapse-app` | [deploy/app/Dockerfile](../deploy/app/Dockerfile) | uid 10001 | Python 3.14 and the backend, installed from `uv.lock` without development dependencies. One image for every role (`synapse api`, `synapse worker`, `synapse db migrate`, ...). The worker runs as its own database role and mounts the blob volume read-only. pip is removed |
 | `synapse-web` | [deploy/web/Dockerfile](../deploy/web/Dockerfile) | uid 10001 | The built SPA and Caddy, which serves it and proxies `/api`. Caddy is compiled from source with a current Go toolchain and patched modules |
 | `synapse-postgres` | [deploy/postgres/Dockerfile](../deploy/postgres/Dockerfile) | postgres (999) | PostgreSQL 18 with pgvector and pg_textsearch, Debian security updates applied, gosu removed |
 
@@ -63,14 +63,14 @@ Open http://localhost:8480 (`SYNAPSE_STACK_PORT` changes the port, `SYNAPSE_STAC
 3. Creates a tenant and an account with the CLI.
 4. Checks the SPA, the security headers and a sign-in through the web front.
 5. Registers a passkey and signs in with it through the web front ([tools/smoke_passkey.py](../tools/smoke_passkey.py), with the backend tests' software authenticator), which also proves `SYNAPSE_PUBLIC_URL` reaches the API.
-6. Uploads a document as an editor, lists it and downloads it byte for byte, which proves the blob volume is writable under the read-only container.
+6. Uploads a PDF as an editor, lists it and downloads it byte for byte, which proves the blob volume is writable under the read-only container; then waits for the worker to mark it `parsed` and finds its text in the database.
 7. Verifies the audit chain.
 
 It then removes everything it created. CI runs it on every push.
 
 ## Not done yet
 
-- `synapsectl apply`, backups, upgrades and the offline bundle ([installer.md](installer.md)).
-- The worker and scheduler roles (with the knowledge base and audit checkpoints).
+- Backups, upgrades and the offline bundle ([installer.md](installer.md)).
+- The scheduler role (periodic jobs such as audit checkpoints and cleanup), and separate workers per queue on bigger machines.
 - Image signing and SBOMs in a release workflow.
 - TLS configuration and a production memory profile per hardware tier.

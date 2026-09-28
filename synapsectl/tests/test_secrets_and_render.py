@@ -57,7 +57,7 @@ def test_only_the_web_front_publishes_ports(config: SynapseConfig) -> None:
 
 def test_every_application_container_is_hardened(config: SynapseConfig) -> None:
     services = render.compose(config)["services"]
-    for name in ("bootstrap", "migrate", "api", "web"):
+    for name in ("bootstrap", "migrate", "api", "worker", "web"):
         assert services[name]["read_only"] is True, name
         assert services[name]["cap_drop"] == ["ALL"], name
         assert services[name]["security_opt"] == ["no-new-privileges:true"], name
@@ -67,6 +67,8 @@ def test_the_tenant_and_tier_are_applied(config: SynapseConfig) -> None:
     services = render.compose(config)["services"]
     assert services["api"]["environment"]["SYNAPSE_TENANT_ID"] == str(config.instance.tenant_id)
     assert services["api"]["volumes"] == ["blobs:/var/lib/synapse/blobs"]
+    assert services["worker"]["volumes"] == ["blobs:/var/lib/synapse/blobs:ro"]
+    assert services["worker"]["environment"]["SYNAPSE_DB_USER"] == "synapse_worker"
     assert services["db"]["mem_limit"] == "2560m"
     big = render.compose(config.model_copy(update={"hardware": Tier.CPU_32}))["services"]
     assert big["db"]["mem_limit"] == "6g"

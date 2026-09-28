@@ -20,6 +20,15 @@ BlueOak-1.0.0 and MIT-0 are permissive licences equivalent in effect to MIT for 
 | `pathspec` | MPL-2.0 | Python development tooling | Allowed: used unmodified |
 | `@fontsource-variable/geist` | OFL-1.1 | Frontend (the UI typeface, bundled into the static build) | Allowed: the SIL Open Font License permits bundling and embedding fonts in software, including commercial software; it only forbids selling the font on its own. The licence text ships with the third-party notices |
 | `psycopg`, `psycopg-binary`, `psycopg-pool` | LGPL-3.0-only | Backend runtime (database driver; also required by the job queue) | Allowed with conditions, see below |
+| `pillow` | MIT-CMU (HPND) | Backend runtime (image support for the Office readers) | Allowed: permissive, OSI-approved; the gate did not know the identifier |
+| `pypdfium2` | Apache-2.0 or BSD-3-Clause, with bundled third-party libraries | Backend worker (PDF text extraction) | Allowed with a credit line, see below |
+
+### pypdfium2 and the PDFium binary, reviewed 2026-09-28
+
+pypdfium2 is Apache-2.0 or BSD-3-Clause. Its wheel bundles a PDFium build and lists every library in it under `dist-info/licenses/`: PDFium (BSD-3-Clause), Abseil and LLVM libc (Apache-2.0), fast_float, lcms, simdutf and the pdfium-binaries build scripts (MIT), libjpeg-turbo (IJG and BSD-3-Clause), OpenJPEG (BSD-2-Clause), libpng (PNG Reference Library licence v2), libtiff (libtiff licence), zlib (zlib), ICU (Unicode licence), Anti-Grain Geometry 2.3 (permissive, notice required) and FreeType (FreeType Project licence, chosen over its GPL-2.0 alternative). All are permissive. Obligations:
+
+1. Keep the notices: the licence files stay in the installed package inside the image, and the offline bundle's third-party notices file will include them.
+2. **FreeType credit:** the product documentation must say "Portions of this software are copyright © The FreeType Project (www.freetype.org). All rights reserved." It goes into the about page and the notices file when those exist; until then this entry is the reminder.
 
 ### psycopg (LGPL-3.0), reviewed 2026-09-28
 

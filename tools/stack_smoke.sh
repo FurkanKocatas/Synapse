@@ -51,8 +51,8 @@ stack run --rm --no-deps -T -v "$password_file:/run/password:ro" api \
   user create --email editor@smoke.example --name "Smoke Editor" --role editor \
   --password-file /run/password >/dev/null
 
-step "Start the API and the web front"
-stack up -d --wait api web
+step "Start the API, the worker and the web front"
+stack up -d --wait api worker web
 
 base="http://127.0.0.1:$port"
 step "Check the web front and the API through it"
@@ -83,12 +83,31 @@ editor() { curl -fsS -b "$editor_jar" -H "X-Synapse-CSRF: $csrf" "$@"; }
 collection="$(editor -H 'Content-Type: application/json' -X POST "$base/api/admin/collections" \
   -d '{"name": "Smoke"}' | json "['id']")"
 sample="$(mktemp)"
-printf '%%PDF-1.7\n%% smoke test document\n%%%%EOF\n' > "$sample"
+# A real PDF with a text layer, from the test helpers, so the worker has something to read.
+uv run --directory backend python -c \
+  "import sys; from tests.knowledge_samples import pdf; sys.stdout.buffer.write(pdf('Karar 2026/35 kabul edildi.'))" \
+  > "$sample"
 document="$(editor -H 'Content-Type: application/octet-stream' --data-binary "@$sample" \
   -X POST "$base/api/collections/$collection/documents?filename=Karar%202026-35.pdf" | json "['id']")"
 editor "$base/api/collections/$collection/documents" | grep -q '"title":"Karar 2026-35"'
 editor -o "$sample.back" "$base/api/documents/$document/versions/1/file"
 cmp "$sample" "$sample.back"
+
+step "Wait for the worker to extract the text"
+parsed=""
+for _ in $(seq 60); do
+  status="$(editor "$base/api/documents/$document/versions" | json "[0]['status']")"
+  if [ "$status" = "parsed" ]; then parsed=yes; break; fi
+  if [ "$status" = "failed" ]; then break; fi
+  sleep 1
+done
+if [ -z "$parsed" ]; then
+  echo "version status: $status, failure: $(editor "$base/api/documents/$document/versions" | json "[0]['failure']")"
+  exit 1
+fi
+stack exec -T db psql -U postgres -d synapse -Atc \
+  "SELECT text FROM synapse.document_pages p JOIN synapse.document_versions v ON v.id = p.version_id
+   WHERE v.document_id = '$document'" | grep -q "Karar 2026/35 kabul edildi."
 rm -f "$editor_jar" "$sample" "$sample.back"
 
 step "Check the audit log recorded the sign-in and is intact"
