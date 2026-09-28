@@ -8,8 +8,11 @@ import ipaddress
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
+from fastapi.params import Depends as DependsMarker
 
+from synapse.authz import public as authz
 from synapse.identity.public import CurrentSession, IdentityService
+from synapse.kernel.database import Database
 
 SESSION_COOKIE = "__Host-synapse_session"
 CSRF_HEADER = "X-Synapse-CSRF"
@@ -97,3 +100,30 @@ AnySession = Annotated[CurrentSession, Depends(_current_session)]
 FullSession = Annotated[CurrentSession, Depends(_full_session)]
 PendingSession = Annotated[CurrentSession, Depends(_pending_session)]
 EnrollmentSession = Annotated[CurrentSession, Depends(_enrollment_session)]
+
+
+def public_endpoint() -> None:
+    """Marks a route as reachable without a session, on purpose.
+
+    Every route must either depend on a session or carry this marker; a test enforces it, so a
+    route cannot become public by forgetting a dependency (ADR 0007).
+    """
+
+
+def require(permission: str) -> DependsMarker:
+    """A dependency that allows the request only if the user's role has ``permission``.
+
+    Unknown permission names fail when the route is defined, not at request time.
+    """
+    authz.check_known(permission)
+
+    async def check(session: FullSession, request: Request) -> CurrentSession:
+        database: Database = request.app.state.database
+        async with database.tenant_transaction(request.app.state.tenant_id) as connection:
+            allowed = await authz.role_has_permission(connection, session.role, permission)
+        if not allowed:
+            raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden")
+        return session
+
+    check.__name__ = f"require_{permission.replace('.', '_')}"
+    return DependsMarker(check)

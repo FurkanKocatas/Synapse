@@ -7,13 +7,13 @@ from datetime import timedelta
 
 import structlog
 from alembic.script import ScriptDirectory
-from fastapi import FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from synapse import __version__
-from synapse.api import auth_routes
-from synapse.api.deps import ApiError
+from synapse.api import audit_routes, auth_routes
+from synapse.api.deps import ApiError, public_endpoint
 from synapse.dbadmin import migrate
 from synapse.identity.public import IdentityService, SessionPolicy, TotpCipher
 from synapse.kernel.config import Settings, get_settings
@@ -51,6 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         database = Database(settings.database(application_name="synapse-api"))
         await database.open()
         app.state.database = database
+        app.state.tenant_id = settings.tenant_id
         app.state.identity = IdentityService(
             database,
             tenant_id=settings.tenant_id,
@@ -71,12 +72,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title="Synapse API",
         version=__version__,
         lifespan=lifespan,
-        # The interactive docs are served only through the API prefix, never at the site root.
-        docs_url="/api/docs",
-        openapi_url="/api/openapi.json",
+        # The interactive docs are off unless enabled, and never served at the site root.
+        docs_url="/api/docs" if settings.api_docs else None,
+        openapi_url="/api/openapi.json" if settings.api_docs else None,
         redoc_url=None,
     )
     app.include_router(auth_routes.router)
+    app.include_router(audit_routes.router)
 
     @app.exception_handler(ApiError)
     async def api_error(_: Request, error: ApiError) -> JSONResponse:
@@ -98,12 +100,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.headers[REQUEST_ID_HEADER] = request_id
         return response
 
-    @app.get("/healthz", response_model=HealthResponse, include_in_schema=False)
+    @app.get(
+        "/healthz",
+        response_model=HealthResponse,
+        include_in_schema=False,
+        dependencies=[Depends(public_endpoint)],
+    )
     async def healthz() -> HealthResponse:
         """Liveness: the process is up and serving requests."""
         return HealthResponse(status="ok", version=__version__)
 
-    @app.get("/readyz", response_model=HealthResponse, include_in_schema=False)
+    @app.get(
+        "/readyz",
+        response_model=HealthResponse,
+        include_in_schema=False,
+        dependencies=[Depends(public_endpoint)],
+    )
     async def readyz(request: Request) -> Response:
         """Readiness: the database answers and its schema is the revision this code expects."""
         database: Database = request.app.state.database

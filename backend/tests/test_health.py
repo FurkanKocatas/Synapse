@@ -38,10 +38,11 @@ def test_invalid_request_id_is_replaced() -> None:
     uuid.UUID(returned)
 
 
-def test_docs_are_not_served_at_site_root() -> None:
-    client = make_client()
-    assert client.get("/docs").status_code == 404
-    assert client.get("/api/docs").status_code == 200
+def test_docs_are_off_by_default_and_never_at_the_site_root() -> None:
+    assert make_client().get("/api/docs").status_code == 404
+    with_docs = TestClient(create_app(Settings(log_format="console", api_docs=True)))
+    assert with_docs.get("/api/docs").status_code == 200
+    assert with_docs.get("/docs").status_code == 404
 
 
 def test_client_ip_accepts_only_ip_addresses() -> None:

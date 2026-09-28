@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Addresses whose X-Forwarded-* headers are trusted: the reverse proxy only. Anything
     # else could spoof client IPs, which feed rate limiting and the audit log.
     trusted_proxy_ips: str = "127.0.0.1"
+    # The interactive API documentation and schema. Off by default: publishing the full API
+    # surface helps attackers more than users. Enable on development machines.
+    api_docs: bool = False
 
     # Each process connects as its own role (ADR 0013); the password is read from a file.
     db_host: str = "127.0.0.1"

@@ -12,6 +12,7 @@ from tests.db.conftest import TestDatabase
 # Tables that are deliberately not tenant-scoped, with the reason.
 NOT_TENANT_SCOPED = {
     "alembic_version": "migration bookkeeping; holds no tenant data",
+    "role_permissions": "the same catalogue for every tenant; read-only for runtime roles",
 }
 # Tables scoped by their own primary key instead of a tenant_id column.
 SCOPED_BY_ID = {"tenants"}

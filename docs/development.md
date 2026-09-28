@@ -90,6 +90,8 @@ CI additionally runs the licence check, dependency vulnerability audits, a secre
 - Python files at most 800 lines; React and TypeScript files at most 400 lines.
 - Module boundaries in `backend/pyproject.toml` (`[tool.importlinter]`): higher layers may import lower ones, never the reverse. Add each new package to the contract when you create it.
 - Test warnings are errors.
+- Every API route is explicitly public or requires a session ([design/authorization.md](design/authorization.md#routes)).
+- API docs are off unless `SYNAPSE_API_DOCS=true` (useful locally at `/api/docs`).
 - No `toUpperCase()` or `toLowerCase()` on user-visible text in the frontend (Turkish casing), and no `dangerouslySetInnerHTML`.
 - Only licences allowed by [ADR 0016](adr/0016-dependency-licence-policy.md); reviews are recorded in [licences.md](licences.md).
 
@@ -97,7 +99,6 @@ CI additionally runs the licence check, dependency vulnerability audits, a secre
 
 These are decided in the ADRs and will be added as the code they apply to lands:
 
-- Route authorization inventory test ([ADR 0007](adr/0007-authorization.md)): needs the first authenticated routes.
 - RAG evaluation gate ([ADR 0010](adr/0010-rag-pipeline.md)): needs the pipeline and the golden set.
 - Container image scanning, SBOM and signing: needs the first images.
 - A check that every test directory is collected by a CI job: needs more than one test tree.

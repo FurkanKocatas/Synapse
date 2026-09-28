@@ -202,3 +202,23 @@ def test_enrollment_rejects_a_wrong_code(client: TestClient, tenant: Tenant) -> 
     response = client.post("/api/auth/mfa/totp/confirm", json={"code": "000000"}, headers=csrf)
     assert response.status_code == 400
     assert response.json() == {"error": "invalid_code"}
+
+
+def test_audit_status_needs_the_audit_permission(client: TestClient, tenant: Tenant) -> None:
+    login(client, tenant.member)
+    assert client.get("/api/audit/status").json() == {"error": "forbidden"}
+
+    auditor = f"auditor-{uuid.uuid4().hex[:6]}@example.org"
+    accounts_cli.create_user(
+        tenant.settings,
+        email=auditor,
+        display_name="Auditor",
+        role="auditor",
+        locale="en",
+        password=PASSWORD,
+    )
+    client.cookies.clear()
+    login(client, auditor)
+    status = client.get("/api/audit/status").json()
+    assert status["ok"] is True
+    assert status["events_checked"] >= 1

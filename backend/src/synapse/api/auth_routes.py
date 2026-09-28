@@ -17,6 +17,7 @@ from synapse.api.deps import (
     Identity,
     PendingSession,
     client_ip,
+    public_endpoint,
     require_client_header,
 )
 from synapse.identity.public import AuthLevel, CurrentSession, IssuedSession, LoginRejected
@@ -88,7 +89,7 @@ def _user_view(session: CurrentSession) -> UserView:
     )
 
 
-@router.post("/login", dependencies=[Depends(require_client_header)])
+@router.post("/login", dependencies=[Depends(public_endpoint), Depends(require_client_header)])
 async def login(
     body: LoginRequest, request: Request, response: Response, identity: Identity
 ) -> SessionView:

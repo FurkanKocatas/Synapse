@@ -4,7 +4,7 @@
 |---|---|
 | [product/](product/) | What we are building and for whom: [vision.md](product/vision.md), [v1-scope.md](product/v1-scope.md), [modules.md](product/modules.md) |
 | [adr/](adr/) | Architecture decision records: one decision per file, with context and rejected alternatives |
-| [design/](design/) | How implemented parts work: [identity.md](design/identity.md), [audit.md](design/audit.md) |
+| [design/](design/) | How implemented parts work: [identity.md](design/identity.md), [audit.md](design/audit.md), [authorization.md](design/authorization.md) |
 | [research/](research/) | The evidence behind the decisions: market, hardware, RAG, architecture. Start with [00-summary.md](research/00-summary.md) |
 
 ## Architecture decisions
