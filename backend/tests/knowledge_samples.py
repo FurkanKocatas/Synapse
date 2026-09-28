@@ -6,6 +6,20 @@ import zipfile
 import docx
 import openpyxl
 import pptx
+from PIL import Image, ImageDraw, ImageFont
+
+
+def scanned_pdf(*lines: str, dpi: int = 200) -> bytes:
+    """A one-page A4 PDF that is only an image of the lines at ``dpi``, like a scan (ASCII text:
+    the built-in font)."""
+    page = Image.new("L", (round(8.27 * dpi), round(11.69 * dpi)), 255)
+    draw = ImageDraw.Draw(page)
+    font = ImageFont.load_default(size=dpi // 5)  # about 14 points
+    for index, line in enumerate(lines):
+        draw.text((dpi, dpi + index * dpi // 3), line, fill=0, font=font)
+    buffer = io.BytesIO()
+    page.save(buffer, format="PDF", resolution=dpi)
+    return buffer.getvalue()
 
 
 def pdf(*pages: str) -> bytes:

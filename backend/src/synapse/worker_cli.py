@@ -14,18 +14,45 @@ from synapse.jobs.queue import Queue
 from synapse.jobs.worker import build_app, register
 from synapse.kernel.config import Settings
 from synapse.kernel.database import Database
-from synapse.knowledge.public import LightParser, LocalBlobStore, Processor
+from synapse.knowledge.public import (
+    LightParser,
+    LocalBlobStore,
+    PageReader,
+    Processor,
+    RapidOcrEngine,
+    TesseractEngine,
+    TwoEngineReader,
+)
 
 log = structlog.get_logger(__name__)
 
 
-async def run(settings: Settings, queues: Sequence[Queue], *, concurrency: int, once: bool) -> None:
-    """Process jobs until stopped; with ``once``, until the queues are empty."""
+def page_reader(settings: Settings) -> PageReader:
+    return TwoEngineReader(
+        TesseractEngine(tessdata_dir=settings.ocr_tessdata_dir),
+        RapidOcrEngine(threads=settings.ocr_threads),
+    )
+
+
+async def run(
+    settings: Settings,
+    queues: Sequence[Queue],
+    *,
+    concurrency: int,
+    once: bool,
+    reader: PageReader | None = None,
+) -> None:
+    """Process jobs until stopped; with ``once``, until the queues are empty.
+
+    ``reader`` replaces the OCR engines (tests use a stand-in; the engines are exercised by the
+    full-stack smoke test, in the image that ships them).
+    """
     connection = settings.database(application_name="synapse-worker")
     database = Database(connection, max_size=concurrency + 1)
     await database.open()
     app = build_app(connection.conninfo())
-    processor = Processor(database, LocalBlobStore(settings.blob_dir), LightParser())
+    reader = reader or page_reader(settings)
+    processor = Processor(database, LocalBlobStore(settings.blob_dir), LightParser(), reader)
     for task in processor.tasks():
         register(app, task)
     try:
@@ -38,6 +65,7 @@ async def run(settings: Settings, queues: Sequence[Queue], *, concurrency: int, 
                 install_signal_handlers=not once,
             )
     finally:
+        reader.close()
         await database.close()
 
 

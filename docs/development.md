@@ -51,6 +51,8 @@ uv run synapse api       # API on http://127.0.0.1:8000; /healthz, /readyz, /api
 
 Sign-in flows and endpoints are described in [design/identity.md](design/identity.md).
 
+A worker run on the host (`uv run synapse worker`) reads scanned pages with Tesseract, so it needs `tesseract` 5 on the PATH (Debian and Ubuntu: `apt install tesseract-ocr`); `SYNAPSE_OCR_TESSDATA_DIR` points it at the "best" models the image uses ([deploy/app/Dockerfile](../deploy/app/Dockerfile) has their URLs and checksums). RapidOCR downloads its models the first time it runs. Without Tesseract, scanned pages keep no text and everything else works. The backend tests replace both engines; the full-stack smoke test runs the real ones in the image.
+
 Configuration comes from `SYNAPSE_*` environment variables ([kernel/config.py](../backend/src/synapse/kernel/config.py)). For readable logs while developing: `SYNAPSE_LOG_FORMAT=console`.
 
 ## Frontend

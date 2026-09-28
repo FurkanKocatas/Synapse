@@ -93,21 +93,42 @@ editor "$base/api/collections/$collection/documents" | grep -q '"title":"Karar 2
 editor -o "$sample.back" "$base/api/documents/$document/versions/1/file"
 cmp "$sample" "$sample.back"
 
+# Waits until a document's first version is parsed; fails on failed or after $2 seconds.
+wait_parsed() {
+  local status=""
+  for _ in $(seq "$2"); do
+    status="$(editor "$base/api/documents/$1/versions" | json "[0]['status']")"
+    if [ "$status" = "parsed" ]; then return 0; fi
+    if [ "$status" = "failed" ]; then break; fi
+    sleep 1
+  done
+  echo "version status: $status, failure: $(editor "$base/api/documents/$1/versions" | json "[0]['failure']")"
+  return 1
+}
+page_query() {
+  stack exec -T db psql -U postgres -d synapse -Atc \
+    "SELECT $2 FROM synapse.document_pages p JOIN synapse.document_versions v ON v.id = p.version_id
+     WHERE v.document_id = '$1' ORDER BY p.number"
+}
+
 step "Wait for the worker to extract the text"
-parsed=""
-for _ in $(seq 60); do
-  status="$(editor "$base/api/documents/$document/versions" | json "[0]['status']")"
-  if [ "$status" = "parsed" ]; then parsed=yes; break; fi
-  if [ "$status" = "failed" ]; then break; fi
-  sleep 1
-done
-if [ -z "$parsed" ]; then
-  echo "version status: $status, failure: $(editor "$base/api/documents/$document/versions" | json "[0]['failure']")"
-  exit 1
-fi
-stack exec -T db psql -U postgres -d synapse -Atc \
-  "SELECT text FROM synapse.document_pages p JOIN synapse.document_versions v ON v.id = p.version_id
-   WHERE v.document_id = '$document'" | grep -q "Karar 2026/35 kabul edildi."
+wait_parsed "$document" 60
+page_query "$document" text | grep -q "Karar 2026/35 kabul edildi."
+
+step "Upload a scanned PDF and wait for OCR"
+# An image-only page, as a scanner makes: the worker must read it with both OCR engines, in
+# a read-only container without network.
+uv run --directory backend python -c \
+  "import sys; from tests.knowledge_samples import scanned_pdf; sys.stdout.buffer.write(scanned_pdf('Karar 2026/35 kabul edildi.', 'Tutar 12.500 TL, tarih 15.03.2026.'))" \
+  > "$sample"
+scanned="$(editor -H 'Content-Type: application/octet-stream' --data-binary "@$sample" \
+  -X POST "$base/api/collections/$collection/documents?filename=Tarama.pdf" | json "['id']")"
+wait_parsed "$scanned" 240
+read_back="$(page_query "$scanned" "text_source || ' ' || ocr_engine || ' ' || text")"
+echo "$read_back"
+grep -q "^ocr tesseract-tur+eng+rapidocr-latin " <<<"$read_back"
+grep -q "Karar 2026/35 kabul edildi" <<<"$read_back"
+grep -q "15.03.2026" <<<"$read_back"
 rm -f "$editor_jar" "$sample" "$sample.back"
 
 step "Check the audit log recorded the sign-in and is intact"

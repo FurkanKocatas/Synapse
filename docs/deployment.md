@@ -6,7 +6,7 @@ Status: 2026-09-28. Customer installations get their compose file from `synapsec
 
 | Image | Built from | Runs as | Contents |
 |---|---|---|---|
-| `synapse-app` | [deploy/app/Dockerfile](../deploy/app/Dockerfile) | uid 10001 | Python 3.14 and the backend, installed from `uv.lock` without development dependencies. One image for every role (`synapse api`, `synapse worker`, `synapse db migrate`, ...). The worker runs as its own database role and mounts the blob volume read-only. pip is removed |
+| `synapse-app` | [deploy/app/Dockerfile](../deploy/app/Dockerfile) | uid 10001 | Python 3.14 and the backend, installed from `uv.lock` without development dependencies. One image for every role (`synapse api`, `synapse worker`, `synapse db migrate`, ...). The worker runs as its own database role and mounts the blob volume read-only. OCR ([benchmark](benchmarks/ocr.md)): Debian's Tesseract with the official "best" Turkish and English models pinned by checksum, and RapidOCR's models fetched at build time, so the containers need no network. The worker's memory limit is 2.5 GB on the 16 GB tier, since OCR peaks at about 2 GB. pip is removed |
 | `synapse-web` | [deploy/web/Dockerfile](../deploy/web/Dockerfile) | uid 10001 | The built SPA and Caddy, which serves it and proxies `/api`. Caddy is compiled from source with a current Go toolchain and patched modules |
 | `synapse-postgres` | [deploy/postgres/Dockerfile](../deploy/postgres/Dockerfile) | postgres (999) | PostgreSQL 18 with pgvector and pg_textsearch, Debian security updates applied, gosu removed |
 
@@ -64,7 +64,8 @@ Open http://localhost:8480 (`SYNAPSE_STACK_PORT` changes the port, `SYNAPSE_STAC
 4. Checks the SPA, the security headers and a sign-in through the web front.
 5. Registers a passkey and signs in with it through the web front ([tools/smoke_passkey.py](../tools/smoke_passkey.py), with the backend tests' software authenticator), which also proves `SYNAPSE_PUBLIC_URL` reaches the API.
 6. Uploads a PDF as an editor, lists it and downloads it byte for byte, which proves the blob volume is writable under the read-only container; then waits for the worker to mark it `parsed` and finds its text in the database.
-7. Verifies the audit chain.
+7. Uploads a scanned PDF (an image only) and waits for OCR: both engines read it in the read-only worker container, which proves the models are in the image and nothing is downloaded at run time; the page must come back as OCR text with the date and decision number in it.
+8. Verifies the audit chain.
 
 It then removes everything it created. CI runs it on every push.
 

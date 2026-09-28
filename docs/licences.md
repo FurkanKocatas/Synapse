@@ -22,6 +22,17 @@ BlueOak-1.0.0 and MIT-0 are permissive licences equivalent in effect to MIT for 
 | `psycopg`, `psycopg-binary`, `psycopg-pool` | LGPL-3.0-only | Backend runtime (database driver; also required by the job queue) | Allowed with conditions, see below |
 | `pillow` | MIT-CMU (HPND) | Backend runtime (image support for the Office readers) | Allowed: permissive, OSI-approved; the gate did not know the identifier |
 | `pypdfium2` | Apache-2.0 or BSD-3-Clause, with bundled third-party libraries | Backend worker (PDF text extraction) | Allowed with a credit line, see below |
+| `antlr4-python3-runtime` | BSD-3-Clause (the ANTLR project's licence); the package metadata says only "BSD" and the wheel carries no licence file | Backend worker (needed by `omegaconf`, RapidOCR's configuration library) | Allowed: permissive |
+
+The gate also learned two things on 2026-09-28, when RapidOCR brought new dependencies: an expression joined by `AND` is allowed only when every part is (`numpy`: BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0; `tqdm`: MPL-2.0 AND MIT), and "3-Clause BSD License" (`protobuf`) is BSD-3-Clause. RapidOCR itself is Apache-2.0, `onnxruntime` MIT, `opencv-python-headless` Apache-2.0.
+
+### OCR programs and models in the application image, reviewed 2026-09-28
+
+| Component | Source | Licence | Redistribution in the image |
+|---|---|---|---|
+| Tesseract 5.5 (program and libraries) | Debian package `tesseract-ocr` | Apache-2.0; its libraries (Leptonica and image codecs) permissive | Allowed; Debian's copyright files stay in the image |
+| Tesseract `tessdata_best` 4.1.0 `tur` and `eng` | github.com/tesseract-ocr/tessdata_best, pinned by checksum | Apache-2.0 | Allowed |
+| PP-OCR detection and Latin recognition models (ONNX) | Converted by the RapidOCR project from PaddleOCR, fetched by RapidOCR 3.9.2 with its own SHA-256 | Apache-2.0 | Allowed |
 
 ### pypdfium2 and the PDFium binary, reviewed 2026-09-28
 
@@ -41,4 +52,4 @@ psycopg is the PostgreSQL driver for the backend ([ADR 0017](adr/0017-data-acces
 
 ## Models shipped in bundles
 
-None yet. Each model added to a bundle gets a row here: name, source, licence, whether redistribution inside an appliance is permitted, and the date checked.
+The OCR models in the application image are listed above. Each model added to a bundle gets a row here: name, source, licence, whether redistribution inside an appliance is permitted, and the date checked.

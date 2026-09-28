@@ -1,6 +1,6 @@
 # Knowledge base: design
 
-Status: storage, upload, the job queue and text extraction implemented, 2026-09-28 (phase 4, steps 1 to 3 of [the plan](../plan/phase-4.md)). Decision records: [ADR 0003](../adr/0003-single-postgres-store.md), [ADR 0007](../adr/0007-authorization.md), [ADR 0010](../adr/0010-rag-pipeline.md). Code: [backend/src/synapse/knowledge/](../../backend/src/synapse/knowledge/), routes in [api/document_routes.py](../../backend/src/synapse/api/document_routes.py), tables in migration [0008](../../backend/src/synapse/migrations/versions/0008_documents.py).
+Status: storage, upload, the job queue, text extraction, the page quality check and OCR implemented, 2026-09-28 (phase 4, steps 1 to 4 of [the plan](../plan/phase-4.md)). Decision records: [ADR 0003](../adr/0003-single-postgres-store.md), [ADR 0007](../adr/0007-authorization.md), [ADR 0010](../adr/0010-rag-pipeline.md). Code: [backend/src/synapse/knowledge/](../../backend/src/synapse/knowledge/), routes in [api/document_routes.py](../../backend/src/synapse/api/document_routes.py), tables in migration [0008](../../backend/src/synapse/migrations/versions/0008_documents.py).
 
 ## Model
 
@@ -72,7 +72,9 @@ sequenceDiagram
     API->>DB: document, version, blob row and job, in one transaction
     W->>DB: take the job; lock the version; status parsing
     W->>W: extract text (no transaction open)
-    W->>DB: lock again, re-check the document; pages; status parsed
+    W->>DB: lock again, re-check the document; pages; status parsed, or ocr and an OCR job
+    W->>W: OCR one page (no transaction open)
+    W->>DB: lock, re-check; store the page; next page ... then status parsed
 ```
 
 - **Jobs** ([jobs/](../../backend/src/synapse/jobs/), [ADR 0004](../adr/0004-job-queue.md)): Procrastinate on the main database. `enqueue` calls Procrastinate's `procrastinate_defer_jobs_v1` on the caller's own connection, so a job exists exactly when the rows it is about exist; a test rolls a transaction back and finds no job. Procrastinate's schema comes from migration 0009, pinned to 3.10.x; a different version stops the migration.
@@ -103,6 +105,17 @@ A PDF page goes to OCR (`quality_issue` is set) when it has fewer than 20 visibl
 
 Found by tests, not by the corpus run: openpyxl refuses a path that does not end in `.xlsx`, and blobs are stored under their hash, so spreadsheets are opened through a file handle.
 
+### OCR
+
+Chosen by benchmark ([ocr.md](../benchmarks/ocr.md)); code in [ocr.py](../../backend/src/synapse/knowledge/ocr.py) and [rapid.py](../../backend/src/synapse/knowledge/rapid.py), columns in migration [0012](../../backend/src/synapse/migrations/versions/0012_page_ocr.py).
+
+- **When:** parsing ends in `ocr` instead of `parsed` when any page needs OCR, and enqueues `ingest.ocr_version` on the `ocr` queue (so a bigger machine can give OCR workers of their own), under the same per-document lock.
+- **Rendering:** a scanned PDF page at the resolution of its embedded scan (at most 600 dpi), a page without one at 300 dpi, an uploaded image as it is. Enlarging low-resolution scans to 300 dpi made identifiers worse in the benchmark.
+- **Two readings:** Tesseract (best models, `tur+eng`) gives the text; a "£" before a digit becomes "₺", which no model has. RapidOCR reads the page again, one text line at a time; only its identifiers are used. Those missing from Tesseract's text go to `extra_identifiers` (search terms only, never shown: two in five are wrong), and Tesseract's identifiers RapidOCR did not read go to `uncertain_identifiers` (answers will flag them). `better_text` still decides whether the page keeps its text layer; if it does, both lists stay empty.
+- **Isolation:** RapidOCR runs in one child process per worker, one page at a time, replaced every 25 pages and killed after 180 s on a page: its memory grows with every image size it sees (about 2 GB at the peak) and a native crash must not take the worker down.
+- **Resumable:** each page is written in its own transaction when it has been read; `ocr_engine` marks pages already read, so a retried job continues where the last run stopped, and a delete stops it at the next page. A page an engine fails on keeps its text; the version still ends `parsed`.
+- `text_source` (`layer` or `ocr`) and `ocr_engine` record where every page's text came from (ADR 0010's answer rule: a number taken from an OCR'd page is flagged).
+
 ## Screen
 
 `/library` ("Belgeler", [frontend/src/features/library/](../../frontend/src/features/library/)), for every signed-in user:
@@ -119,7 +132,7 @@ Checked in the browser against the real API and worker: uploading, a refused fil
 
 ## Not in this step
 
-- OCR, layout analysis and the Turkish quality check (step 4); chunking and indexing (step 5 on).
+- Layout analysis (tables kept whole comes with chunking); chunking and indexing (step 5 on). Using `extra_identifiers` in search and `uncertain_identifiers` in answers (steps 7 and 8).
 - Versions and titles on the screen (the API has versions already).
 - Purging deleted documents' bytes, and removing files without a row.
 - Per-document grants through the API, and editing titles and metadata.

@@ -1,13 +1,17 @@
 """Upload to parsed text through the real queue and a real worker process role."""
 
 import asyncio
+import io
 import uuid
-from collections.abc import Iterator
-from dataclasses import dataclass
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
 
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from synapse import accounts_cli, worker_cli
 from synapse.api.app import create_app
@@ -15,10 +19,29 @@ from synapse.api.deps import CLIENT_HEADER, CSRF_HEADER
 from synapse.jobs.queue import Job, Queue, enqueue
 from synapse.kernel.config import Settings
 from synapse.kernel.database import Database
+from synapse.knowledge.ocr import OcrError, PageReading
 from tests import knowledge_samples as samples
 from tests.db.conftest import TestDatabase
 
 PASSWORD = "a sufficiently long passphrase"
+
+
+@dataclass
+class StandInReader:
+    """Reads every page as the same text; the real engines run in the full-stack smoke test."""
+
+    fail: bool = False
+    name: str = "stand-in"
+    read_images: list[str] = field(default_factory=list)
+
+    def read(self, image: Path) -> PageReading:
+        self.read_images.append(image.name)
+        if self.fail:
+            raise OcrError("tesseract failed: CalledProcessError")
+        return PageReading("Karar 2026/35 okundu.", "stand-in", ("2026/36",), ("2026/35",))
+
+    def close(self) -> None:
+        pass
 
 
 @dataclass(frozen=True)
@@ -86,14 +109,48 @@ def upload(client: TestClient, data: bytes, name: str) -> dict[str, str]:
     return body
 
 
-def run_worker(world: World) -> None:
+def run_worker(
+    world: World,
+    reader: StandInReader | None = None,
+    queues: Sequence[Queue] = (Queue.INGEST, Queue.OCR),
+) -> StandInReader:
     # Other test modules leave jobs for their own tenants and blob directories; only this
     # module's jobs are this worker's business.
     world.db.execute(
         "DELETE FROM synapse.procrastinate_jobs WHERE status = 'todo' AND args->>'tenant_id' <> %s",
         (str(world.tenant_id),),
     )
-    asyncio.run(worker_cli.run(world.worker, [Queue.INGEST], concurrency=2, once=True))
+    reader = reader or StandInReader()
+    # A worker run with once=True stops as soon as it finds no job, even while a running job is
+    # about to enqueue the next one (parsing enqueues OCR); run again until nothing is left.
+    for _ in range(5):
+        asyncio.run(worker_cli.run(world.worker, queues, concurrency=2, once=True, reader=reader))
+        left = world.db.execute(
+            "SELECT count(*) FROM synapse.procrastinate_jobs "
+            "WHERE status = 'todo' AND queue_name = ANY(%s) AND args->>'tenant_id' = %s",
+            ([q.value for q in queues], str(world.tenant_id)),
+        ).fetchone()
+        if left == (0,):
+            return reader
+    raise AssertionError("jobs still waiting after five worker runs")
+
+
+def ocr_state(world: World, version_id: str) -> list[tuple[Any, ...]]:
+    """(number, text, text_source, ocr_engine, extra_identifiers) per page."""
+    return [
+        tuple(row)
+        for row in world.db.execute(
+            "SELECT number, text, text_source, ocr_engine, extra_identifiers "
+            "FROM synapse.document_pages WHERE version_id = %s ORDER BY number",
+            (version_id,),
+        ).fetchall()
+    ]
+
+
+def png() -> bytes:
+    buffer = io.BytesIO()
+    Image.new("L", (1654, 2339), 255).save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def version_state(world: World, version_id: str) -> tuple[str, str | None]:
@@ -162,7 +219,7 @@ def test_the_worker_extracts_pages(world: World, editor: TestClient) -> None:
     first, second = pages(world, text_pdf["version_id"])
     assert first[:4] == (1, "page", None, False)
     assert "Karar 2026/35" in first[4]
-    assert second[:4] == (2, "page", None, True)  # no text: waits for OCR
+    assert second[:4] == (2, "page", None, True)  # no text: read by OCR
     issues = world.db.execute(
         "SELECT number, quality_issue FROM synapse.document_pages WHERE version_id = %s "
         "ORDER BY number",
@@ -198,3 +255,55 @@ def test_a_document_deleted_before_parsing_is_skipped(world: World, editor: Test
     run_worker(world)
     assert version_state(world, doomed["version_id"]) == ("queued", None)
     assert pages(world, doomed["version_id"]) == []
+
+
+def test_pages_without_usable_text_are_read_by_ocr(world: World, editor: TestClient) -> None:
+    scan = upload(editor, samples.pdf("Karar 2026/35 kabul edildi ve sunuldu.", ""), "scan.pdf")
+    image = upload(editor, png(), "tarama.png")
+    reader = run_worker(world)
+
+    assert version_state(world, scan["version_id"]) == ("parsed", None)
+    layer, read = ocr_state(world, scan["version_id"])
+    assert layer[2:] == ("layer", None, [])
+    assert read == (2, "Karar 2026/35 okundu.", "ocr", "stand-in", ["2026/36"])
+    uncertain = world.db.execute(
+        "SELECT uncertain_identifiers FROM synapse.document_pages "
+        "WHERE version_id = %s AND number = 2",
+        (scan["version_id"],),
+    ).fetchone()
+    assert uncertain == (["2026/35"],)
+
+    assert version_state(world, image["version_id"]) == ("parsed", None)
+    assert ocr_state(world, image["version_id"]) == [
+        (1, "Karar 2026/35 okundu.", "ocr", "stand-in", ["2026/36"])
+    ]
+    # Each image was deleted once read; only the two scanned pages were read.
+    assert sorted(reader.read_images) == ["image.png", "page-00002.png"]
+
+
+def test_a_page_the_engine_fails_on_keeps_its_text(world: World, editor: TestClient) -> None:
+    scan = upload(editor, samples.pdf(""), "bos.pdf")
+    run_worker(world, StandInReader(fail=True))
+    assert version_state(world, scan["version_id"]) == ("parsed", None)
+    assert ocr_state(world, scan["version_id"]) == [(1, "", "layer", None, [])]
+
+
+def test_a_retried_ocr_job_reads_only_the_pages_left(world: World, editor: TestClient) -> None:
+    scan = upload(editor, samples.pdf("", ""), "iki.pdf")
+    run_worker(world, queues=[Queue.INGEST])
+    assert version_state(world, scan["version_id"]) == ("ocr", None)
+    # As if an earlier run had read page 1 and then crashed.
+    world.db.execute(
+        "UPDATE synapse.document_pages SET text = 'earlier', text_source = 'ocr', "
+        "ocr_engine = 'earlier' WHERE version_id = %s AND number = 1",
+        (scan["version_id"],),
+    )
+    reader = run_worker(world, queues=[Queue.OCR])
+    assert reader.read_images == ["page-00002.png"]
+    assert [
+        (n, text, engine) for n, text, _, engine, _ in ocr_state(world, scan["version_id"])
+    ] == [
+        (1, "earlier", "earlier"),
+        (2, "Karar 2026/35 okundu.", "stand-in"),
+    ]
+    assert version_state(world, scan["version_id"]) == ("parsed", None)

@@ -58,13 +58,18 @@ class Settings(BaseSettings):
     # Uploaded files (ADR 0003): a local directory, normally a Docker volume.
     blob_dir: Path = Path("/var/lib/synapse/blobs")
     upload_max_mb: int = Field(default=100, ge=1, le=2048)
+    # OCR (docs/benchmarks/ocr.md). The application image ships Tesseract's "best" models and
+    # sets this; unset means Tesseract's own models.
+    ocr_tessdata_dir: Path | None = None
+    # Threads RapidOCR's second reading may use. A worker reads one page at a time with it.
+    ocr_threads: int = Field(default=1, ge=1, le=16)
     # The address users open, such as https://synapse.example.org. Passkeys are bound to its
     # host name, so they stop working if it changes; unset means passkeys are unavailable.
     public_url: str | None = Field(
         default=None, pattern=r"^(https://[^/:?#]+(:\d+)?|http://localhost(:\d+)?)$"
     )
 
-    @field_validator("tenant_id", "public_url", mode="before")
+    @field_validator("tenant_id", "public_url", "ocr_tessdata_dir", mode="before")
     @classmethod
     def _empty_means_unset(cls, value: object) -> object:
         # Environment files commonly carry "NAME=" for a value not filled in yet.

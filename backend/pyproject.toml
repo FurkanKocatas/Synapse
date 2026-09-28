@@ -11,7 +11,10 @@ dependencies = [
     "cryptography>=50.0",
     "defusedxml>=0.7.1",
     "fastapi>=0.141",
+    "onnxruntime>=1.24.4,<1.25",
+    "opencv-python-headless>=5.0",
     "openpyxl>=3.1",
+    "pillow>=12.0",
     "procrastinate>=3.10,<3.11",
     "psycopg[binary,pool]>=3.3",
     "pydantic>=2.13",
@@ -20,6 +23,7 @@ dependencies = [
     "pypdfium2>=5.13",
     "python-docx>=1.2",
     "python-pptx>=1.0",
+    "rapidocr>=3.9.2,<3.10",
     "structlog>=26.1",
     "uvicorn[standard]>=0.54",
     "webauthn>=3.0.1",
@@ -41,6 +45,11 @@ dev = [
     "types-defusedxml>=0.7.0.20260504",
     "types-openpyxl>=3.1.5.20260827",
 ]
+
+[tool.uv]
+# rapidocr asks for the desktop OpenCV build, which needs libGL; the headless build provides
+# the same cv2 module and is listed above.
+override-dependencies = ["opencv-python; sys_platform == 'never'"]
 
 [build-system]
 requires = ["hatchling"]
@@ -88,9 +97,14 @@ python_version = "3.14"
 mypy_path = "src"
 plugins = ["pydantic.mypy"]
 
-# pypdfium2 ships no type information; its use is confined to knowledge/parsing.py.
+# pypdfium2 ships no type information; its use is confined to knowledge/parsing.py and ocr.py.
 [[tool.mypy.overrides]]
 module = ["pypdfium2", "pypdfium2.*"]
+ignore_missing_imports = true
+
+# Nor does rapidocr; its use is confined to knowledge/rapid.py.
+[[tool.mypy.overrides]]
+module = ["rapidocr", "rapidocr.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
@@ -165,9 +179,13 @@ forbidden_modules = [
     "synapse.knowledge.blobs",
     "synapse.knowledge.documents",
     "synapse.knowledge.filetypes",
+    "synapse.knowledge.ocr",
     "synapse.knowledge.parsing",
     "synapse.knowledge.pipeline",
     "synapse.knowledge.processing",
+    "synapse.knowledge.quality",
+    "synapse.knowledge.rapid",
+    "synapse.knowledge.turkish",
 ]
 allow_indirect_imports = true
 

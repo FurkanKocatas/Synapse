@@ -1,16 +1,28 @@
-"""OCR behind the ``OcrEngine`` port (ADR 0010, ingestion rule 4).
+"""OCR behind the ``PageReader`` port (ADR 0010, ingestion rule 4).
 
-Pages that the page quality check sends to OCR are rendered to images and recognised. The
-engine is chosen by benchmark (docs/benchmarks/ocr.md). Whatever the engine returns, the page
-keeps whichever text is better: a text layer flagged by mistake is never replaced by worse OCR,
-so a false alarm costs time only.
+Pages that the page quality check sends to OCR are rendered to images and read by two engines,
+as measured in docs/benchmarks/ocr.md ("Two engines together"):
+
+- Tesseract (the "best" models, Turkish and English) gives the text. English adds the symbols
+  the Turkish model cannot write ("%", "+", "="); neither has "₺", which Tesseract reads as "£".
+- RapidOCR reads the page again, and only its identifiers are used: dates, decision numbers,
+  amounts. Those Tesseract lacks are kept as search terms, never as text a reader or a model
+  sees (two in five of them are wrong). Tesseract's identifiers that RapidOCR did not read are
+  marked uncertain, so an answer can flag them: in the benchmark an identifier both engines
+  read was right 98 to 99% of the time, one only Tesseract read about half the time.
+
+Whatever the engines return, the page keeps whichever text is better: a text layer flagged by
+mistake is never replaced by worse OCR, so a false alarm costs time only.
 
 Runs only in workers (ADR 0002): rendering and recognising untrusted files.
 """
 
 import os
+import re
 import subprocess
 import tempfile
+import unicodedata
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -19,31 +31,68 @@ import pypdfium2 as pdfium
 from PIL import Image
 
 from synapse.knowledge import quality
-from synapse.knowledge.parsing import PDFIUM_LOCK, Page
+from synapse.knowledge.parsing import PDFIUM_LOCK, Page, normalize
 
-# Tesseract is trained on text about this resolution; lower-resolution images are enlarged.
-TARGET_DPI = 300
-MAX_DPI = 400
-A4_WIDTH_INCHES = 8.27
+# The engines read scans at their own resolution: enlarging to 300 dpi first made identifiers
+# worse in the benchmark (a ministry circular fell from 0.80 to 0.30).
+FALLBACK_DPI = 300  # a page with no embedded scan, such as a broken text layer
+MAX_DPI = 600  # bounds memory for unusually fine scans
 OCR_TIMEOUT_SECONDS = 180
+TESSERACT_LANGUAGES = "tur+eng"
+
+# Identifiers as the benchmark defines them (eval/ocr/score.py): at least four characters, at
+# least half of the letters and digits are digits.
+MIN_IDENTIFIER_LENGTH = 4
+_EDGE = "()[]{}<>\"'«»“”‘’.,;:!?*•"
+# Typographic apostrophes and dashes become ASCII, as search will treat them.
+_APOSTROPHES = {chr(c): "'" for c in (0x2019, 0x2018, 0x60, 0xB4)}
+_DASHES = {chr(c): "-" for c in (0x2010, 0x2011, 0x2012, 0x2013, 0x2014, 0x2212)}
+_TYPOGRAPHY = str.maketrans(_APOSTROPHES | _DASHES)
+_HYPHENATED = re.compile(r"-\n(?=\w)")
+# Tesseract reads "₺" as "£". The pound sign occurs nowhere in the evaluation corpus's text
+# layers (the lira sign 650 times), and every "£" before a digit in the benchmark was a "₺".
+_POUND_BEFORE_DIGIT = re.compile(r"£(?=\d)")
 
 
 class OcrError(RuntimeError):
-    """The engine failed on a page; the page keeps its original text."""
+    """An engine failed on a page; the page keeps its original text."""
 
 
-class OcrEngine(Protocol):
-    name: str
+class TextEngine(Protocol):
+    @property
+    def name(self) -> str: ...
 
     def recognize(self, image: Path) -> str: ...
 
 
 @dataclass(frozen=True)
+class PageReading:
+    text: str
+    engine: str
+    # Identifiers the second engine read that the text lacks: search terms only.
+    extra_identifiers: tuple[str, ...]
+    # Identifiers in the text that the second engine did not read: flag them in answers.
+    uncertain_identifiers: tuple[str, ...]
+
+
+class PageReader(Protocol):
+    @property
+    def name(self) -> str: ...
+
+    def read(self, image: Path) -> PageReading: ...
+
+    def close(self) -> None: ...
+
+
+@dataclass(frozen=True)
 class TesseractEngine:
     tessdata_dir: Path | None = None
-    languages: str = "tur"
+    languages: str = TESSERACT_LANGUAGES
     page_segmentation: int = 3
-    name: str = "tesseract"
+
+    @property
+    def name(self) -> str:
+        return f"tesseract-{self.languages}"
 
     def recognize(self, image: Path) -> str:
         command = [
@@ -75,19 +124,63 @@ class TesseractEngine:
         return result.stdout
 
 
-def render_pdf_page(pdf: Path, number: int, directory: Path) -> Path:
-    """Render one PDF page to a grey PNG at the resolution OCR works best with.
+@dataclass
+class TwoEngineReader:
+    """Tesseract for the text, a second engine for a second reading of the identifiers."""
 
-    Scanned pages are one embedded image; their own resolution is used, enlarged to 300 dpi
-    when lower and capped at 400.
+    text_engine: TextEngine
+    second_engine: TextEngine
+
+    @property
+    def name(self) -> str:
+        return f"{self.text_engine.name}+{self.second_engine.name}"
+
+    def read(self, image: Path) -> PageReading:
+        text = normalize(fix_lira(self.text_engine.recognize(image)))
+        first = identifiers(text)
+        second = identifiers(self.second_engine.recognize(image))
+        return PageReading(
+            text=text,
+            engine=self.name,
+            extra_identifiers=tuple(sorted(second - first)),
+            uncertain_identifiers=tuple(sorted(first - second)),
+        )
+
+    def close(self) -> None:
+        for engine in (self.text_engine, self.second_engine):
+            close = getattr(engine, "close", None)
+            if close is not None:
+                close()
+
+
+def fix_lira(text: str) -> str:
+    return _POUND_BEFORE_DIGIT.sub("₺", text)
+
+
+def identifiers(text: str) -> Counter[str]:
+    text = _HYPHENATED.sub("", unicodedata.normalize("NFC", text).translate(_TYPOGRAPHY))
+    found: Counter[str] = Counter()
+    for word in text.split():
+        token = word.strip(_EDGE)
+        alnum = [ch for ch in token if ch.isalnum()]
+        digits = sum(ch.isdigit() for ch in alnum)
+        if len(token) >= MIN_IDENTIFIER_LENGTH and digits and digits * 2 >= len(alnum):
+            found[token] += 1
+    return found
+
+
+def render_pdf_page(pdf: Path, number: int, directory: Path) -> Path:
+    """Render one PDF page to a grey PNG for OCR.
+
+    A scanned page is one embedded image, rendered at that image's own resolution (at most
+    600 dpi); a page without one at 300 dpi.
     """
     with PDFIUM_LOCK:
         document = pdfium.PdfDocument(pdf)
         try:
             page = document[number - 1]
-            width_points = page.get_width()
-            native = _embedded_image_dpi(page, width_points)
-            dpi = min(MAX_DPI, max(TARGET_DPI, native or TARGET_DPI))
+            native = _embedded_image_dpi(page, page.get_width())
+            dpi = min(MAX_DPI, round(native)) if native else FALLBACK_DPI
             image = page.render(scale=dpi / 72, grayscale=True).to_pil()
             page.close()
         finally:
@@ -98,15 +191,9 @@ def render_pdf_page(pdf: Path, number: int, directory: Path) -> Path:
 
 
 def prepare_image(source: Path, directory: Path) -> Path:
-    """An uploaded image as a grey PNG, enlarged to 300 dpi (judged from A4 width) if smaller."""
+    """An uploaded image as a grey PNG, at its own resolution (the first frame of a TIFF)."""
     with Image.open(source) as picture:
         grey = picture.convert("L")
-    dpi = grey.width / A4_WIDTH_INCHES
-    if dpi < TARGET_DPI:
-        factor = TARGET_DPI / dpi
-        grey = grey.resize(
-            (round(grey.width * factor), round(grey.height * factor)), Image.Resampling.LANCZOS
-        )
     target = directory / "image.png"
     grey.save(target)
     return target

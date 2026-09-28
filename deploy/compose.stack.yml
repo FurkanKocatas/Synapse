@@ -116,7 +116,8 @@ services:
     volumes: [blobs:/var/lib/synapse/blobs:ro]
     depends_on:
       migrate: { condition: service_completed_successfully }
-    mem_limit: 1g
+    # OCR takes about 2 GB at its peak (docs/benchmarks/ocr.md); the 16 GB tier's limit.
+    mem_limit: 2560m
     restart: unless-stopped
 
   web:
