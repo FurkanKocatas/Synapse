@@ -15,6 +15,7 @@ Research: [04-architecture.md, section 5](../research/04-architecture.md).
 - TypeScript 6.0 until `typescript-eslint` supports 7.x.
 - **TanStack Router** (typed routes) and **TanStack Query** (server state). No global state library unless a real need appears.
 - **shadcn/ui** (Radix primitives, Tailwind CSS 4), components copied into the repo. Design tokens in one place; no hard-coded colours in components.
+- Light and dark themes from the same tokens, following the operating system setting (`prefers-color-scheme`) in CSS alone, so there is no flash of the wrong theme on load. An in-app switch can come later.
 - **Paraglide JS 2** for i18n: messages compile to typed functions, so a missing key is a build error. CI also checks that `tr` and `en` have the same keys. Default locale Turkish; the user can switch, and the choice is stored on the account.
 - Turkish text handling: `<html lang>` follows the locale; user-visible casing uses `toLocaleUpperCase(locale)` and `toLocaleLowerCase(locale)` (a lint rule bans the plain variants); sorting with `Intl.Collator`; numbers and dates with `Intl.NumberFormat` and `Intl.DateTimeFormat`.
 - **Security:** strict CSP with no `unsafe-inline` scripts; no `dangerouslySetInnerHTML` (lint rule); model output rendered as Markdown with raw HTML disabled; no inline bootstrapping scripts built from user data.
