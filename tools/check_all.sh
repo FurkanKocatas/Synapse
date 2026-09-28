@@ -14,7 +14,7 @@ step "Backend"
   cd backend
   uv run ruff check . ../tools ../eval
   uv run ruff format --check . ../tools ../eval
-  uv run mypy src tests ../tools/check_file_size.py ../tools/check_licences.py ../eval/corpus/fetch.py
+  uv run mypy src tests ../tools/check_file_size.py ../tools/check_licences.py ../tools/smoke_passkey.py ../eval/corpus/fetch.py
   uv run lint-imports
   uv run pytest --cov -q
 )

@@ -37,7 +37,7 @@ jobs:
       - name: Format
         run: uv run ruff format --check . ../tools ../eval
       - name: Types
-        run: uv run mypy src tests ../tools/check_file_size.py ../tools/check_licences.py ../eval/corpus/fetch.py
+        run: uv run mypy src tests ../tools/check_file_size.py ../tools/check_licences.py ../tools/smoke_passkey.py ../eval/corpus/fetch.py
       - name: Module boundaries
         run: uv run lint-imports
       - name: Test database

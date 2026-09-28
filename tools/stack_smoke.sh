@@ -61,6 +61,10 @@ grep -q '"auth_level":"full"' <<<"$login"
 session="$(curl -fsS -b "$jar" "$base/api/auth/session")"
 grep -q '"email":"member@smoke.example"' <<<"$session"
 
+step "Register a passkey and sign in with it"
+uv run --directory backend python ../tools/smoke_passkey.py \
+  "$base" "http://localhost:$port" member@smoke.example "$password_file"
+
 step "Check the audit log recorded the sign-in and is intact"
 report="$(stack exec -T api synapse audit verify | tail -n 1)"
 grep -q '"ok": true' <<<"$report"
