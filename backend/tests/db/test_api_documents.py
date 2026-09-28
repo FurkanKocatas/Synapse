@@ -221,3 +221,28 @@ def test_new_versions_and_deletion(world: World, clients: list[TestClient]) -> N
         ).fetchall()
     ]
     assert actions == ["kb.document.create", "kb.document.version", "kb.document.delete"]
+
+
+def test_users_see_the_collections_they_can_read_and_where_they_can_write(
+    world: World, clients: list[TestClient]
+) -> None:
+    editor = sign_in(world, world.editor, clients)
+    parent = new_collection(editor)
+    child = editor.post(
+        "/api/admin/collections",
+        json={"name": f"Child {uuid.uuid4().hex[:6]}", "parent_id": parent},
+    ).json()["id"]
+    grant_read(world, child, world.reader)  # the child only, not its parent
+    reader = sign_in(world, world.reader, clients)
+
+    mine = {c["id"]: c for c in editor.get("/api/collections").json()}
+    assert mine[parent]["can_write"] and mine[child]["can_write"]
+    assert mine[child]["parent_id"] == parent
+
+    visible = {c["id"]: c for c in reader.get("/api/collections").json()}
+    assert parent not in visible
+    # The parent is hidden, so the child sits at the top of the reader's tree.
+    assert visible[child]["parent_id"] is None
+    assert visible[child]["can_write"] is False
+    stranger = sign_in(world, world.stranger, clients)
+    assert child not in {c["id"] for c in stranger.get("/api/collections").json()}

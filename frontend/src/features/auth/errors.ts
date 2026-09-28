@@ -31,6 +31,16 @@ export function errorMessage(error: unknown): string {
       return m.error_password_too_long();
     case "password_contains_context":
       return m.error_password_contains_context();
+    case "file_too_large":
+      return m.error_file_too_large();
+    case "unknown_type":
+      return m.error_unknown_type();
+    case "legacy_office":
+      return m.error_legacy_office();
+    case "empty_file":
+      return m.error_empty_file();
+    case "duplicate_document":
+      return m.error_duplicate_document();
     case "own_account":
       return m.error_own_account();
     case "passkey_failed":

@@ -67,6 +67,7 @@ class DocumentSummary:
     title: str
     latest_version: int
     status: VersionStatus
+    failure: str | None
     media_type: str
     size_bytes: int
     updated_at: datetime
@@ -82,6 +83,16 @@ class VersionInfo:
     status: VersionStatus
     failure: str | None
     created_at: datetime
+
+
+@dataclass(frozen=True)
+class CollectionAccess:
+    id: UUID
+    # None at the top level, and also when the parent is not visible to this user, so a
+    # collection granted on its own still has a place in the tree.
+    parent_id: UUID | None
+    name: str
+    can_write: bool
 
 
 @dataclass(frozen=True)
@@ -117,9 +128,19 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+_READABLE_COLLECTIONS = (
+    "WITH readable AS (SELECT collection_id FROM accessible_collections(%(user)s, 'read')), "
+    "writable AS (SELECT collection_id FROM accessible_collections(%(user)s, 'write')) "
+    "SELECT c.id, CASE WHEN c.parent_id IN (SELECT collection_id FROM readable) "
+    "THEN c.parent_id END AS parent_id, c.name, "
+    "c.id IN (SELECT collection_id FROM writable) AS can_write "
+    "FROM collections c WHERE c.id IN (SELECT collection_id FROM readable) "
+    "ORDER BY lower(c.name), c.id"
+)
+
 _LIST_DOCUMENTS = (
     "SELECT d.id, d.collection_id, d.title, v.version AS latest_version, v.status, "
-    "b.media_type, b.size_bytes, v.created_at AS updated_at "
+    "v.failure, b.media_type, b.size_bytes, v.created_at AS updated_at "
     "FROM documents d "
     "JOIN LATERAL (SELECT * FROM document_versions dv WHERE dv.document_id = d.id "
     "              ORDER BY dv.version DESC LIMIT 1) v ON true "
@@ -240,6 +261,15 @@ class DocumentService:
                 {"version": version, "size_bytes": incoming.size_bytes},
             )
         return Uploaded(document_id, version_id, version, media_type)
+
+    async def collections(self, user_id: UUID) -> list[CollectionAccess]:
+        """The collections this user may read, and whether they may add to each."""
+        async with (
+            self._db.tenant_transaction(self._tenant_id) as connection,
+            connection.cursor(row_factory=class_row(CollectionAccess)) as cursor,
+        ):
+            await cursor.execute(_READABLE_COLLECTIONS, {"user": user_id})
+            return await cursor.fetchall()
 
     async def list_documents(self, user_id: UUID, collection_id: UUID) -> list[DocumentSummary]:
         async with (

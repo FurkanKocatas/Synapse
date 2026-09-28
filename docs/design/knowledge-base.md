@@ -43,9 +43,10 @@ On the evaluation corpus, 97 of 100 files are recognised as the type the manifes
 
 | Method and path | Needs | Result |
 |---|---|---|
+| `GET /api/collections` | Session | The collections the user may read, each with `can_write`. A collection whose parent the user cannot see is returned at the top level, so it still has a place in the tree |
 | `POST /api/collections/{id}/documents?filename=...&title=...` (body: the file) | `write` on the collection | 201 `{id, version_id, version, media_type}` |
 | `POST /api/documents/{id}/versions?filename=...` (body: the file) | `write` on the document | 201, the next version number |
-| `GET /api/collections/{id}/documents` | Session | The documents in it the user may read, with the latest version's status |
+| `GET /api/collections/{id}/documents` | Session | The documents in it the user may read, with the latest version's status and failure reason |
 | `GET /api/documents/{id}/versions` | `read` | Every version, newest first |
 | `GET /api/documents/{id}/versions/{n}/file` | `read` | The original file |
 | `DELETE /api/documents/{id}` | `write` | 204 |
@@ -98,6 +99,16 @@ On the evaluation corpus: 97 documents, 5,296 pages, in 8 seconds on the work la
 
 Found by tests, not by the corpus run: openpyxl refuses a path that does not end in `.xlsx`, and blobs are stored under their hash, so spreadsheets are opened through a file handle.
 
+## Screen
+
+`/library` ("Belgeler", [frontend/src/features/library/](../../frontend/src/features/library/)), for every signed-in user:
+
+- The collections the user can read, as a tree; choosing one lists its documents with translated status, size, date, a download link, and, where the user may write, a two-step delete.
+- Where the user may write: an upload button and a drop zone. Files go one at a time, so each failure is shown next to its own file name (for example "notlar.pdf: Bu dosya türü desteklenmiyor.").
+- While any document is being processed the list refreshes every 3 seconds, and stops when none is. Like any TanStack Query interval it pauses while the page is hidden and refreshes when it is shown again.
+
+Checked in the browser against the real API and worker: uploading, a refused file, parsing to "Metin çıkarıldı", downloading and deleting.
+
 ## Access
 
 `accessible_collections(user, permission)` is new in migration 0008: the collections granted to the user, their groups or their role, and everything nested below. `accessible_documents` now uses it for its collection half, so there is still one definition of access; the existing permission tests pass unchanged against the rewritten function.
@@ -105,6 +116,6 @@ Found by tests, not by the corpus run: openpyxl refuses a path that does not end
 ## Not in this step
 
 - OCR, layout analysis and the Turkish quality check (step 4); chunking and indexing (step 5 on).
-- The screens for browsing and uploading.
+- Versions and titles on the screen (the API has versions already).
 - Purging deleted documents' bytes, and removing files without a row.
 - Per-document grants through the API, and editing titles and metadata.

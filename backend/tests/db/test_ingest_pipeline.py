@@ -82,6 +82,7 @@ def upload(client: TestClient, data: bytes, name: str) -> dict[str, str]:
     )
     assert response.status_code == 201, response.json()
     body: dict[str, str] = response.json()
+    body["collection_id"] = collection
     return body
 
 
@@ -174,6 +175,8 @@ def test_an_unreadable_file_fails_once_with_its_reason(world: World, editor: Tes
     broken = upload(editor, b"%PDF-1.7\n" + uuid.uuid4().bytes + b" broken", "broken.pdf")
     run_worker(world)
     assert version_state(world, broken["version_id"]) == ("failed", "unreadable")
+    listed = editor.get(f"/api/collections/{broken['collection_id']}/documents").json()
+    assert [(d["status"], d["failure"]) for d in listed] == [("failed", "unreadable")]
     assert pages(world, broken["version_id"]) == []
     status = world.db.execute(
         "SELECT status, attempts FROM synapse.procrastinate_jobs WHERE args->>'version_id' = %s",

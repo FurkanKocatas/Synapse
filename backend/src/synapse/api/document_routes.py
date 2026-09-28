@@ -46,6 +46,13 @@ def _blobs(request: Request) -> BlobStore:
     return store
 
 
+class CollectionView(BaseModel):
+    id: UUID
+    parent_id: UUID | None
+    name: str
+    can_write: bool
+
+
 class UploadedView(BaseModel):
     id: UUID
     version_id: UUID
@@ -59,6 +66,7 @@ class DocumentView(BaseModel):
     title: str
     latest_version: int
     status: str
+    failure: str | None
     media_type: str
     size_bytes: int
     updated_at: datetime
@@ -150,6 +158,12 @@ def _translate(error: BaseException) -> BaseException:
     if isinstance(error, NotFoundError):
         return ApiError(status.HTTP_404_NOT_FOUND, "not_found")
     return error
+
+
+@router.get("/api/collections")
+async def collections(session: FullSession, request: Request) -> list[CollectionView]:
+    found = await _documents(request).collections(session.user_id)
+    return [CollectionView(**vars(collection)) for collection in found]
 
 
 @router.get("/api/collections/{collection_id}/documents")

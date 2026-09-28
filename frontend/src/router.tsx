@@ -18,6 +18,7 @@ import { EnrollPage } from "@/features/auth/EnrollPage";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { MfaPage } from "@/features/auth/MfaPage";
 import { placeFor, sessionQuery, type Place } from "@/features/auth/session";
+import { LibraryPage } from "@/features/library/LibraryPage";
 import { HomePage } from "@/pages/HomePage";
 
 interface RouterContext {
@@ -74,6 +75,12 @@ const routes = [
     path: "/enroll",
     beforeLoad: guard("/enroll"),
     component: EnrollPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/library",
+    beforeLoad: guard("/"),
+    component: LibraryPage,
   }),
   createRoute({
     getParentRoute: () => rootRoute,

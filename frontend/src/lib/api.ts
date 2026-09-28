@@ -39,8 +39,23 @@ export class NetworkError extends Error {
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export async function apiRequest<T>(method: Method, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { [CLIENT_HEADER]: "web" };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  return send<T>(method, path, body === undefined ? undefined : JSON.stringify(body), {
+    ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+  });
+}
+
+/** Sends a file as the raw request body, as the upload endpoints expect. */
+export async function apiUpload<T>(path: string, file: Blob): Promise<T> {
+  return send<T>("POST", path, file, { "Content-Type": "application/octet-stream" });
+}
+
+async function send<T>(
+  method: Method,
+  path: string,
+  body: BodyInit | undefined,
+  extraHeaders: Record<string, string>,
+): Promise<T> {
+  const headers: Record<string, string> = { [CLIENT_HEADER]: "web", ...extraHeaders };
   if (method !== "GET" && csrfToken !== null) headers[CSRF_HEADER] = csrfToken;
 
   let response: Response;
@@ -49,7 +64,7 @@ export async function apiRequest<T>(method: Method, path: string, body?: unknown
       method,
       headers,
       credentials: "same-origin",
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(body === undefined ? {} : { body }),
     });
   } catch (error) {
     throw new NetworkError(error);

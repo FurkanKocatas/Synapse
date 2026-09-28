@@ -34,6 +34,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Link to="/" className={linkClass} activeProps={{ className: activeClass }}>
               {m.nav_home()}
             </Link>
+            <Link to="/library" className={linkClass} activeProps={{ className: activeClass }}>
+              {m.nav_library()}
+            </Link>
             <Link to="/account" className={linkClass} activeProps={{ className: activeClass }}>
               {m.nav_account()}
             </Link>

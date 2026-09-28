@@ -7,6 +7,8 @@ export interface Call {
   path: string;
   headers: Record<string, string>;
   body: unknown;
+  // The body as sent, for uploads that are not JSON.
+  raw: unknown;
 }
 
 type Handler = (call: Call) => { status: number; body?: unknown; headers?: Record<string, string> };
@@ -21,6 +23,7 @@ export function fakeApi(handler: Handler) {
         path,
         headers: (init.headers ?? {}) as Record<string, string>,
         body: typeof init.body === "string" ? JSON.parse(init.body) : undefined,
+        raw: init.body,
       };
       calls.push(call);
       const { status, body, headers } = handler(call);

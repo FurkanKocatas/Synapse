@@ -2,6 +2,7 @@
 
 from synapse.knowledge.blobs import BlobStore, Incoming, LocalBlobStore, Receiver, TooLargeError
 from synapse.knowledge.documents import (
+    CollectionAccess,
     DocumentService,
     DocumentSummary,
     DuplicateError,
@@ -17,6 +18,7 @@ from synapse.knowledge.processing import Processor
 
 __all__ = [
     "BlobStore",
+    "CollectionAccess",
     "DocumentService",
     "DocumentSummary",
     "DuplicateError",
