@@ -73,6 +73,24 @@ synapse user create --email admin@acme.example --name "Admin" --role admin
 
 The password is prompted twice (or read from `--password-file` for automation). At first sign-in the admin is sent through TOTP enrollment.
 
+## Frontend
+
+Code: [frontend/src/features/auth/](../../frontend/src/features/auth/), routes in [router.tsx](../../frontend/src/router.tsx).
+
+| Route | Shown when | Page |
+|---|---|---|
+| `/login` | No session | Email and password |
+| `/mfa` | `pending_mfa` | TOTP or recovery code |
+| `/enroll` | `enroll_mfa` | QR code and manual key, code confirmation, then the recovery codes once |
+| `/` | `full` | The application |
+
+- Every route has the same guard: it loads the session and redirects to the page for its level, so a half-signed-in session can never reach the application, whatever URL is typed.
+- The CSRF token is kept in memory only (never in `localStorage`), and the cookie is `HttpOnly`, so page scripts can read neither the session nor, after a reload, the CSRF token. `GET /api/auth/session` returns it again.
+- The QR code is drawn by React from the code matrix; no generated markup is inserted into the page.
+- While the recovery codes are on screen, leaving or reloading the page asks for confirmation, because they are shown only once.
+- After login the session is fetched again, because the login response carries no account details.
+- Known gap: the account's `locale` is not yet applied to the interface; the language choice is remembered per browser until the account settings screen exists.
+
 ## Not in this step
 
 - Passkeys (WebAuthn): planned in the same ADR, after the audit log.
