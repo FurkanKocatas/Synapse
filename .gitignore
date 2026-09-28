@@ -25,3 +25,6 @@ eval/corpus/files/
 
 # Local development secrets (tools/dev_secrets.py)
 .dev/
+
+# OCR benchmark working files (eval/ocr/prepare.py)
+eval/ocr/work/

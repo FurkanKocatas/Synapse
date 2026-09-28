@@ -3,3 +3,11 @@ extend = "../backend/pyproject.toml"
 
 [lint]
 extend-ignore = ["T201"]
+# The OCR benchmark's engine scripts run inside their own container (eval/ocr/Dockerfile): they
+# call the engine binaries, import the heavy engines lazily per worker process, and use the
+# container's own /tmp.
+[lint.per-file-ignores]
+"ocr/run.py" = ["PLW0603", "PLC0415", "S603", "S108"]
+"ocr/hybrid.py" = ["PLW0603", "PLC0415", "S603"]
+# Seeded randomness picks benchmark pages and simulates scans; nothing secret depends on it.
+"ocr/prepare.py" = ["S311"]

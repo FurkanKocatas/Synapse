@@ -37,7 +37,7 @@ MAX_UNCOMPRESSED_BYTES = 1 << 30
 MAX_COMPRESSION_RATIO = 200
 
 # PDFium is not thread-safe, and the worker parses in threads.
-_PDFIUM = threading.Lock()
+PDFIUM_LOCK = threading.Lock()
 
 
 QualityIssue = Literal["no_text", "not_turkish_like", "ocr_artefacts"]
@@ -126,7 +126,7 @@ class LightParser:
 
 
 def _pdf(path: Path) -> Parsed:
-    with _PDFIUM:
+    with PDFIUM_LOCK:
         try:
             document = pdfium.PdfDocument(path)
         except pdfium.PdfiumError as error:
