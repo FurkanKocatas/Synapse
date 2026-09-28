@@ -1,0 +1,24 @@
+# Local Claude instructions (symlink to the private handoff folder)
+CLAUDE.local.md
+
+# OS and editors
+.DS_Store
+.idea/
+.vscode/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.coverage
+coverage.xml
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.import_linter_cache/
+
+# Frontend (see also frontend/.gitignore)
+node_modules/
+
+# Evaluation corpus files (downloaded by eval/corpus/fetch.py, never committed)
+eval/corpus/files/
