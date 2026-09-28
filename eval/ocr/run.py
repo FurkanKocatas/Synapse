@@ -22,6 +22,11 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 os.environ["OMP_THREAD_LIMIT"] = "1"  # Tesseract: one thread per page
+# RapidOCR (onnxruntime) uses every core by default: about six on a 6-core machine, measured.
+ONE_THREAD = {
+    "EngineConfig.onnxruntime.intra_op_num_threads": 1,
+    "EngineConfig.onnxruntime.inter_op_num_threads": 1,
+}
 
 WORK = Path("/bench/work")
 IMAGES = sorted((WORK / "images").glob("*.png"))
@@ -72,6 +77,7 @@ def rapidocr(image: Path) -> str:
                 "Rec.ocr_version": OCRVersion.PPOCRV5,
                 "Rec.model_type": ModelType.MOBILE,
                 "Global.log_level": "error",
+                **ONE_THREAD,
             }
         )
     output = _rapid(str(image))
@@ -81,7 +87,7 @@ def rapidocr(image: Path) -> str:
 def hybrid_engine(image: Path) -> str:
     import hybrid
 
-    return hybrid.recognize(image, "/models/best", "tur+eng")
+    return hybrid.recognize(image, "/models/best", "tur+eng", engine_params=ONE_THREAD)
 
 
 ENGINES: dict[str, Callable[[Path], str]] = {

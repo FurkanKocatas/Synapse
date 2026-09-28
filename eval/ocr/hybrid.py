@@ -12,6 +12,7 @@ Used by run.py as the "hybrid" engines.
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from PIL import Image, ImageOps
@@ -23,17 +24,20 @@ DARK = 110  # mean grey level below which a line is white text on a dark backgro
 _detector = None
 
 
-def detector():  # type: ignore[no-untyped-def]
+def detector(engine_params: dict[str, Any] | None = None):  # type: ignore[no-untyped-def]
+    """``engine_params``: extra RapidOCR settings, applied when the detector is first created."""
     global _detector
     if _detector is None:
         from rapidocr import RapidOCR
 
-        _detector = RapidOCR(params={"Global.log_level": "error"})
+        _detector = RapidOCR(params={"Global.log_level": "error", **(engine_params or {})})
     return _detector
 
 
-def line_boxes(image: Path) -> list[tuple[int, int, int, int]]:
-    result = detector()(str(image), use_det=True, use_cls=False, use_rec=False)
+def line_boxes(
+    image: Path, engine_params: dict[str, Any] | None = None
+) -> list[tuple[int, int, int, int]]:
+    result = detector(engine_params)(str(image), use_det=True, use_cls=False, use_rec=False)
     boxes = []
     for quad in result.boxes if result.boxes is not None else []:
         xs, ys = quad[:, 0], quad[:, 1]
@@ -43,10 +47,10 @@ def line_boxes(image: Path) -> list[tuple[int, int, int, int]]:
     return boxes
 
 
-def stacked_lines(image: Path) -> Image.Image | None:
+def stacked_lines(image: Path, engine_params: dict[str, Any] | None = None) -> Image.Image | None:
     page = Image.open(image).convert("L")
     crops = []
-    for x0, y0, x1, y1 in line_boxes(image):
+    for x0, y0, x1, y1 in line_boxes(image, engine_params):
         crop = page.crop((max(0, x0 - PAD), max(0, y0 - PAD), x1 + PAD, y1 + PAD))
         if np.asarray(crop).mean() < DARK:
             crop = ImageOps.invert(crop)
@@ -63,8 +67,10 @@ def stacked_lines(image: Path) -> Image.Image | None:
     return sheet
 
 
-def recognize(image: Path, tessdata: str, languages: str) -> str:
-    sheet = stacked_lines(image)
+def recognize(
+    image: Path, tessdata: str, languages: str, engine_params: dict[str, Any] | None = None
+) -> str:
+    sheet = stacked_lines(image, engine_params)
     if sheet is None:
         return ""
     with tempfile.NamedTemporaryFile(suffix=".png") as handle:
