@@ -114,6 +114,27 @@ async def list_groups(connection: AsyncConnection) -> list[Group]:
         return await cursor.fetchall()
 
 
+@dataclass(frozen=True)
+class Member:
+    user_id: UUID
+    display_name: str
+    email: str
+
+
+async def list_members(connection: AsyncConnection, group_id: UUID) -> list[Member]:
+    exists = await connection.execute("SELECT 1 FROM groups WHERE id = %s", (group_id,))
+    if await exists.fetchone() is None:
+        raise NotFoundError("group")
+    async with connection.cursor(row_factory=class_row(Member)) as cursor:
+        await cursor.execute(
+            "SELECT u.id AS user_id, u.display_name, u.email FROM group_members m "
+            "JOIN users u ON u.tenant_id = m.tenant_id AND u.id = m.user_id "
+            "WHERE m.group_id = %s ORDER BY lower(u.display_name)",
+            (group_id,),
+        )
+        return await cursor.fetchall()
+
+
 async def create_group(connection: AsyncConnection, actor: Actor, name: str) -> UUID:
     group_id = await _insert_returning_id(
         connection, "INSERT INTO groups (tenant_id, name) VALUES (%s, %s)", (actor.tenant_id, name)

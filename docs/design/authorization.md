@@ -65,8 +65,11 @@ An admin can grant themselves read access to any collection, like any other gran
 
 Audit actions: `authz.group.create`, `authz.group.member_add`, `authz.group.member_remove`, `authz.collection.create`, `authz.grant.add`, `authz.grant.remove`.
 
+## Screens
+
+`/admin/users`, `/admin/groups` and `/admin/collections` in the web app ([frontend/src/features/admin/](../../frontend/src/features/admin/)). The navigation shows each area only to roles that can use it, and the route guard sends anyone else home; the API still decides. Errors from the API appear as one translated sentence at the top of the page (for example "At least one active administrator must remain").
+
 ## Not in this step
 
-- Screens for this API.
 - Document grants (they come with the document endpoints) and moving or renaming collections.
 - Retrieval using `accessible_documents` (with the knowledge base).

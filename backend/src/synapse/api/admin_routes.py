@@ -175,6 +175,14 @@ async def create_group(
         return {"id": await authz.management.create_group(connection, actor, body.name)}
 
 
+@router.get("/groups/{group_id}/members")
+async def list_members(
+    group_id: UUID, session: ManageGroups, request: Request
+) -> list[authz.Member]:
+    async with _changes(request, session) as (connection, _):
+        return await authz.management.list_members(connection, group_id)
+
+
 @router.post("/groups/{group_id}/members", status_code=status.HTTP_204_NO_CONTENT)
 async def add_member(
     group_id: UUID, body: MemberRequest, session: ManageGroups, request: Request

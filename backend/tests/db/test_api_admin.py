@@ -154,6 +154,8 @@ def test_groups_and_membership(admin: TestClient) -> None:
     assert admin.post(members, json={"user_id": str(uuid.uuid4())}).status_code == 404
     counts = {g["name"]: g["member_count"] for g in admin.get("/api/admin/groups").json()}
     assert counts[name] == 1
+    assert [m["user_id"] for m in admin.get(members).json()] == [user]
+    assert admin.get(f"/api/admin/groups/{uuid.uuid4()}/members").status_code == 404
     assert admin.delete(f"{members}/{user}").status_code == 204
     assert admin.delete(f"{members}/{user}").status_code == 404
 

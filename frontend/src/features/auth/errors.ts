@@ -16,6 +16,22 @@ export function errorMessage(error: unknown): string {
     case "not_authenticated":
     case "no_second_factor_pending":
       return m.error_session_expired();
+    case "email_taken":
+      return m.error_email_taken();
+    case "password_too_short":
+      return m.error_password_too_short();
+    case "password_too_long":
+      return m.error_password_too_long();
+    case "password_contains_context":
+      return m.error_password_contains_context();
+    case "last_administrator":
+      return m.error_last_administrator();
+    case "conflict":
+      return m.error_conflict();
+    case "not_found":
+      return m.error_not_found();
+    case "forbidden":
+      return m.error_forbidden();
     default:
       return m.error_unexpected();
   }

@@ -9,6 +9,10 @@ import {
   redirect,
 } from "@tanstack/react-router";
 
+import { adminAreas } from "@/features/admin/adminApi";
+import { CollectionsPage } from "@/features/admin/CollectionsPage";
+import { GroupsPage } from "@/features/admin/GroupsPage";
+import { UsersPage } from "@/features/admin/UsersPage";
 import { EnrollPage } from "@/features/auth/EnrollPage";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { MfaPage } from "@/features/auth/MfaPage";
@@ -29,6 +33,18 @@ function guard(place: Place) {
     if (target !== place) {
       // eslint-disable-next-line @typescript-eslint/only-throw-error -- the router's redirect protocol
       throw redirect({ to: target });
+    }
+  };
+}
+
+/** Like the "/" guard, and the role must also have this administration area. */
+function adminGuard(area: keyof ReturnType<typeof adminAreas>) {
+  return async ({ context }: { context: RouterContext }) => {
+    await guard("/")({ context });
+    const session = await context.queryClient.query(sessionQuery);
+    if (!adminAreas(session?.user?.role)[area]) {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- the router's redirect protocol
+      throw redirect({ to: "/" });
     }
   };
 }
@@ -57,6 +73,24 @@ const routes = [
     path: "/enroll",
     beforeLoad: guard("/enroll"),
     component: EnrollPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/admin/users",
+    beforeLoad: adminGuard("users"),
+    component: UsersPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/admin/groups",
+    beforeLoad: adminGuard("groups"),
+    component: GroupsPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/admin/collections",
+    beforeLoad: adminGuard("collections"),
+    component: CollectionsPage,
   }),
 ];
 

@@ -16,6 +16,7 @@ from synapse.authz.management import (
     ConflictError,
     Grant,
     Group,
+    Member,
     NotFoundError,
     PrincipalType,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "DocumentPermission",
     "Grant",
     "Group",
+    "Member",
     "NotFoundError",
     "PrincipalType",
     "UnknownPermissionError",
