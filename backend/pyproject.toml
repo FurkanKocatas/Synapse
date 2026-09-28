@@ -1,0 +1,93 @@
+[project]
+name = "synapse"
+version = "0.1.0"
+description = "On-premise AI knowledge assistant: document knowledge base with grounded, cited chat."
+readme = "README.md"
+requires-python = ">=3.14"
+license = { text = "Proprietary" }
+dependencies = [
+    "fastapi>=0.141",
+    "pydantic>=2.13",
+    "pydantic-settings>=2.15",
+    "structlog>=26.1",
+    "uvicorn[standard]>=0.54",
+]
+
+[project.scripts]
+synapse = "synapse.cli:main"
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.13",
+    "import-linter>=2.15",
+    "mypy>=2.3",
+    "pytest>=9.1",
+    "pytest-cov>=7.1",
+    "ruff>=0.16",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/synapse"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+# A broad rule set from the start; exceptions are listed with a reason.
+select = [
+    "E", "W", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "RET", "PTH",
+    "S", "BLE", "FBT", "T20", "ERA", "PL", "RUF", "ASYNC", "DTZ", "TRY",
+]
+ignore = [
+    "TRY003",  # Long exception messages are fine; our errors carry context.
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",    # pytest uses assert.
+    "PLR2004", # Magic values are normal in assertions.
+]
+
+[tool.ruff.lint.pylint]
+max-statements = 50
+max-branches = 12
+max-args = 6
+
+[tool.mypy]
+strict = true
+python_version = "3.14"
+mypy_path = "src"
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers --strict-config -ra"
+# Warnings are errors, so deprecations are dealt with when they appear, not years later.
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["synapse"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+
+# Module boundaries (ADR 0015). Higher layers may import lower ones, never the reverse.
+# New packages are added to these contracts when they are created.
+[tool.importlinter]
+root_package = "synapse"
+
+[[tool.importlinter.contracts]]
+name = "Layered architecture"
+type = "layers"
+layers = [
+    "synapse.cli",
+    "synapse.api",
+    "synapse.kernel",
+]

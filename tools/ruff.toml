@@ -1,0 +1,5 @@
+# The scripts in tools/ are small command line programs; they report on stdout and stderr.
+extend = "../backend/pyproject.toml"
+
+[lint]
+extend-ignore = ["T201"]

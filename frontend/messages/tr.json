@@ -1,0 +1,8 @@
+{
+  "$schema": "https://inlang.com/schema/inlang-message-format",
+  "app_name": "Synapse",
+  "app_tagline": "Kurumunuzun belgelerine sorun, kaynaklı cevap alın.",
+  "language_switch_label": "Dil",
+  "language_name_tr": "Türkçe",
+  "language_name_en": "English"
+}
