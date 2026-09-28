@@ -18,6 +18,7 @@ docker build -t synapse-ocr-bench eval/ocr                       # the engines, 
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/eval/ocr:/bench" synapse-ocr-bench   # all engines, or name some
 uv run --directory backend python ../eval/ocr/score.py           # the table
 uv run --directory backend python ../eval/ocr/score.py --worst ENGINE CONDITION
+uv run --directory backend python ../eval/ocr/combine.py         # Tesseract text + RapidOCR identifiers
 ```
 
 `eval/ocr/work/` is git-ignored; it holds rendered pages of corpus documents. `--user` matters on Linux: without it the container writes its output as root into the bind-mounted `work/out/` (Docker Desktop on macOS hides this). The image needs no network at run time.
@@ -26,4 +27,4 @@ uv run --directory backend python ../eval/ocr/score.py --worst ENGINE CONDITION
 
 - The truth is the PDF's text layer: its reading order follows the typesetting program, so character error rates on multi-column and table pages are pessimistic. Word F1 and the recalls do not depend on order.
 - Simulated degradation is not a real scanner. Real scans are checked separately on hand-verified pages.
-- Timings come from Docker on the work laptop (Apple silicon), not from the target hardware; they compare engines, they do not predict production speed.
+- Timings are per page on one thread, four pages at a time, in Docker on the machine that runs the benchmark (the published numbers: a Ryzen 5 6600H, the reference hardware). They compare engines; production speed also depends on how many pages run in parallel.

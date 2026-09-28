@@ -1,6 +1,6 @@
 # Phase 4: knowledge base and RAG
 
-Status: in progress, started 2026-09-28. Steps 1 to 3 done ([knowledge-base.md](../design/knowledge-base.md)); in step 4 the page quality check is done ([page-quality.md](../benchmarks/page-quality.md)), the OCR benchmark is in progress ([ocr.md](../benchmarks/ocr.md)). The corpus is downloaded. Decisions it implements: [ADR 0003](../adr/0003-single-postgres-store.md), [0004](../adr/0004-job-queue.md), [0009](../adr/0009-model-runtime.md), [0010](../adr/0010-rag-pipeline.md). Scope: the knowledge base and search and chat sections of [v1-scope.md](../product/v1-scope.md).
+Status: in progress, started 2026-09-28. Steps 1 to 3 done ([knowledge-base.md](../design/knowledge-base.md)); in step 4 the page quality check is done ([page-quality.md](../benchmarks/page-quality.md)), the OCR benchmark is measured on the reference hardware and its engine decision is pending ([ocr.md](../benchmarks/ocr.md)). The corpus is downloaded. Decisions it implements: [ADR 0003](../adr/0003-single-postgres-store.md), [0004](../adr/0004-job-queue.md), [0009](../adr/0009-model-runtime.md), [0010](../adr/0010-rag-pipeline.md). Scope: the knowledge base and search and chat sections of [v1-scope.md](../product/v1-scope.md).
 
 The phase ends when a user can upload the evaluation corpus, ask questions in Turkish and get cited answers, and the evaluation harness reports the ADR 0010 metrics on it. Each step below ends with tests, a smoke run and its design document.
 
