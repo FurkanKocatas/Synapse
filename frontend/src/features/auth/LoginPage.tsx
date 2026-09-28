@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fieldText } from "@/lib/forms";
 import { m } from "@/paraglide/messages.js";
+import { getLocale, isLocale, setLocale } from "@/paraglide/runtime.js";
 
 import { login } from "./authApi";
 import { errorMessage } from "./errors";
@@ -30,6 +31,11 @@ export function LoginPage() {
       // full session so every page sees the same data.
       const session = await queryClient.query({ ...sessionQuery, staleTime: 0 });
       await navigate({ to: placeFor(session) });
+      // The account's language wins over the one chosen on the sign-in page.
+      const preferred = session?.user?.locale;
+      if (preferred !== undefined && isLocale(preferred) && preferred !== getLocale()) {
+        await setLocale(preferred);
+      }
     } catch (failure) {
       setError(errorMessage(failure));
     } finally {

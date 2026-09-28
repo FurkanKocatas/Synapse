@@ -13,7 +13,7 @@ import { m } from "@/paraglide/messages.js";
 
 import { adminApi, adminAreas, type Collection } from "./adminApi";
 import { GrantsPanel } from "./GrantsPanel";
-import { useAdminAction } from "./useAdminAction";
+import { useAction } from "@/lib/useAction";
 
 const COLLECTIONS = ["admin", "collections"];
 
@@ -43,7 +43,7 @@ export function CollectionsPage() {
   const areas = adminAreas(session?.user?.role);
   const collections = useQuery({ queryKey: COLLECTIONS, queryFn: adminApi.collections });
   const [selected, setSelected] = useState<Collection | null>(null);
-  const { run, error, busy } = useAdminAction();
+  const { run, error, busy } = useAction();
   const tree = inTreeOrder(collections.data ?? []);
 
   async function create(event: SubmitEvent<HTMLFormElement>) {

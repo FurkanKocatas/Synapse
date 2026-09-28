@@ -5,14 +5,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "@/App";
 import { rememberCsrfToken } from "@/lib/api";
 import { m } from "@/paraglide/messages.js";
+import { getLocale } from "@/paraglide/runtime.js";
 import { fakeApi } from "@/test/fakeApi";
 
+// The account's language matches the test environment's, so signing in does not reload the page
+// to switch language (which jsdom cannot do).
 const user = {
   id: "u1",
   email: "ayse@example.org",
   display_name: "Ayşe Yılmaz",
   role: "member",
-  locale: "tr",
+  locale: getLocale(),
 };
 
 afterEach(() => {

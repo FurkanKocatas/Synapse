@@ -89,5 +89,20 @@
   "error_last_administrator": "At least one active administrator must remain.",
   "error_conflict": "This name or entry already exists.",
   "error_not_found": "Not found; the page may be out of date.",
-  "error_forbidden": "You do not have permission to do this."
+  "error_forbidden": "You do not have permission to do this.",
+  "nav_account": "My account",
+  "account_password_title": "Change password",
+  "account_current_password": "Current password",
+  "account_new_password": "New password",
+  "account_repeat_password": "Repeat new password",
+  "account_password_hint": "At least 15 characters; at least 8 with two-step verification.",
+  "account_password_mismatch": "The new passwords do not match.",
+  "account_password_changed": "Your password was changed. Your sessions on other devices were ended.",
+  "account_save": "Save",
+  "account_sessions_title": "Active sessions",
+  "account_session_current": "This session",
+  "account_session_end": "End",
+  "account_session_last_seen": "Last active: {time}",
+  "account_unknown_device": "Unknown device",
+  "error_wrong_password": "The current password is incorrect."
 }

@@ -13,13 +13,13 @@ import { m } from "@/paraglide/messages.js";
 
 import { adminApi, ROLES, type Account, type Role } from "./adminApi";
 import { roleLabel } from "./labels";
-import { useAdminAction } from "./useAdminAction";
+import { useAction } from "@/lib/useAction";
 
 const USERS = ["admin", "users"];
 
 export function UsersPage() {
   const users = useQuery({ queryKey: USERS, queryFn: adminApi.users });
-  const { run, error, busy } = useAdminAction();
+  const { run, error, busy } = useAction();
 
   async function create(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();

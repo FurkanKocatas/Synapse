@@ -12,10 +12,16 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from synapse import __version__
-from synapse.api import admin_routes, audit_routes, auth_routes
+from synapse.api import account_routes, admin_routes, audit_routes, auth_routes
 from synapse.api.deps import ApiError, public_endpoint
 from synapse.dbadmin import migrate
-from synapse.identity.public import AccountService, IdentityService, SessionPolicy, TotpCipher
+from synapse.identity.public import (
+    AccountService,
+    IdentityService,
+    ProfileService,
+    SessionPolicy,
+    TotpCipher,
+)
 from synapse.kernel.config import Settings, get_settings
 from synapse.kernel.database import Database
 from synapse.kernel.logging import configure_logging
@@ -63,6 +69,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ),
         )
         app.state.accounts = AccountService(database, tenant_id=settings.tenant_id)
+        app.state.profile = ProfileService(database, tenant_id=settings.tenant_id)
         log.info("api.started", version=__version__, schema_revision=expected_revision)
         try:
             yield
@@ -81,6 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_routes.router)
     app.include_router(audit_routes.router)
     app.include_router(admin_routes.router)
+    app.include_router(account_routes.router)
 
     @app.exception_handler(ApiError)
     async def api_error(_: Request, error: ApiError) -> JSONResponse:

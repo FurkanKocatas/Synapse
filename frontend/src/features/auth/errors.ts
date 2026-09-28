@@ -16,6 +16,8 @@ export function errorMessage(error: unknown): string {
     case "not_authenticated":
     case "no_second_factor_pending":
       return m.error_session_expired();
+    case "wrong_password":
+      return m.error_wrong_password();
     case "email_taken":
       return m.error_email_taken();
     case "password_too_short":

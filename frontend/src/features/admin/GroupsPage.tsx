@@ -11,14 +11,14 @@ import { fieldText } from "@/lib/forms";
 import { m } from "@/paraglide/messages.js";
 
 import { adminApi, type Group } from "./adminApi";
-import { useAdminAction } from "./useAdminAction";
+import { useAction } from "@/lib/useAction";
 
 const GROUPS = ["admin", "groups"];
 
 export function GroupsPage() {
   const groups = useQuery({ queryKey: GROUPS, queryFn: adminApi.groups });
   const [selected, setSelected] = useState<Group | null>(null);
-  const { run, error, busy } = useAdminAction();
+  const { run, error, busy } = useAction();
 
   async function create(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -75,7 +75,7 @@ function GroupMembers({ group }: { group: Group }) {
   const membersKey = ["admin", "groups", group.id, "members"];
   const members = useQuery({ queryKey: membersKey, queryFn: () => adminApi.members(group.id) });
   const users = useQuery({ queryKey: ["admin", "users"], queryFn: adminApi.users });
-  const { run, error, busy } = useAdminAction();
+  const { run, error, busy } = useAction();
   const memberIds = new Set((members.data ?? []).map((member) => member.user_id));
   const candidates = (users.data ?? []).filter((user) => !memberIds.has(user.id));
   const refresh = [membersKey, GROUPS];

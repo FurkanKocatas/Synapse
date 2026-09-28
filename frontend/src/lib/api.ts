@@ -36,7 +36,7 @@ export class NetworkError extends Error {
   }
 }
 
-type Method = "GET" | "POST" | "PATCH" | "DELETE";
+type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export async function apiRequest<T>(method: Method, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { [CLIENT_HEADER]: "web" };

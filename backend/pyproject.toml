@@ -117,6 +117,7 @@ source_modules = ["synapse.accounts_cli", "synapse.api", "synapse.cli"]
 forbidden_modules = [
     "synapse.identity.accounts",
     "synapse.identity.passwords",
+    "synapse.identity.profile",
     "synapse.identity.recovery",
     "synapse.identity.repository",
     "synapse.identity.service",

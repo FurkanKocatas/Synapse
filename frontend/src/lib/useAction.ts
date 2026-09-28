@@ -4,10 +4,10 @@ import { useState } from "react";
 import { errorMessage } from "@/features/auth/errors";
 
 /**
- * Runs an administration change, shows its failure as a sentence, and refreshes the lists it
- * affects. One instance per page keeps a single, announced error line.
+ * Runs a change through the API, shows its failure as a sentence, and refreshes the lists it
+ * affects. One instance per form or page keeps a single, announced error line.
  */
-export function useAdminAction() {
+export function useAction() {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

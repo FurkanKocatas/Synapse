@@ -89,5 +89,20 @@
   "error_last_administrator": "En az bir etkin yönetici kalmalı.",
   "error_conflict": "Bu ad ya da kayıt zaten var.",
   "error_not_found": "Kayıt bulunamadı; sayfa güncel olmayabilir.",
-  "error_forbidden": "Bu işlem için yetkiniz yok."
+  "error_forbidden": "Bu işlem için yetkiniz yok.",
+  "nav_account": "Hesabım",
+  "account_password_title": "Parolayı değiştir",
+  "account_current_password": "Mevcut parola",
+  "account_new_password": "Yeni parola",
+  "account_repeat_password": "Yeni parola (tekrar)",
+  "account_password_hint": "En az 15 karakter; iki adımlı doğrulama açıksa en az 8.",
+  "account_password_mismatch": "Yeni parolalar birbirini tutmuyor.",
+  "account_password_changed": "Parolanız değiştirildi. Diğer cihazlardaki oturumlarınız kapatıldı.",
+  "account_save": "Kaydet",
+  "account_sessions_title": "Açık oturumlar",
+  "account_session_current": "Bu oturum",
+  "account_session_end": "Sonlandır",
+  "account_session_last_seen": "Son etkinlik: {time}",
+  "account_unknown_device": "Bilinmeyen cihaz",
+  "error_wrong_password": "Mevcut parola hatalı."
 }

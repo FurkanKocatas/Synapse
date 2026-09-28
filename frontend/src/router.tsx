@@ -9,6 +9,7 @@ import {
   redirect,
 } from "@tanstack/react-router";
 
+import { AccountPage } from "@/features/account/AccountPage";
 import { adminAreas } from "@/features/admin/adminApi";
 import { CollectionsPage } from "@/features/admin/CollectionsPage";
 import { GroupsPage } from "@/features/admin/GroupsPage";
@@ -73,6 +74,12 @@ const routes = [
     path: "/enroll",
     beforeLoad: guard("/enroll"),
     component: EnrollPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/account",
+    beforeLoad: guard("/"),
+    component: AccountPage,
   }),
   createRoute({
     getParentRoute: () => rootRoute,

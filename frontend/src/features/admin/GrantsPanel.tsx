@@ -19,7 +19,7 @@ import {
   type Role,
 } from "./adminApi";
 import { permissionLabel, principalLabel, roleLabel } from "./labels";
-import { useAdminAction } from "./useAdminAction";
+import { useAction } from "@/lib/useAction";
 
 const PRINCIPAL_TYPES: readonly PrincipalType[] = ["group", "user", "role"];
 
@@ -30,7 +30,7 @@ export function GrantsPanel({ collection }: { collection: Collection }) {
   const users = useQuery({ queryKey: ["admin", "users"], queryFn: adminApi.users });
   const groups = useQuery({ queryKey: ["admin", "groups"], queryFn: adminApi.groups });
   const [principalType, setPrincipalType] = useState<PrincipalType>("group");
-  const { run, error, busy } = useAdminAction();
+  const { run, error, busy } = useAction();
 
   const options: { value: string; label: string }[] =
     principalType === "user"

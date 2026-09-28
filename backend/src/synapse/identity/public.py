@@ -2,6 +2,13 @@
 
 from synapse.identity.accounts import Account, AccountService, LastAdministratorError
 from synapse.identity.passwords import PasswordPolicyError
+from synapse.identity.profile import (
+    Locale,
+    ProfileService,
+    SessionInfo,
+    TooManyAttemptsError,
+    WrongPasswordError,
+)
 from synapse.identity.repository import AuthLevel, Role
 from synapse.identity.service import (
     AccountExistsError,
@@ -26,11 +33,16 @@ __all__ = [
     "IdentityService",
     "IssuedSession",
     "LastAdministratorError",
+    "Locale",
     "LoginRejected",
     "NewAccount",
     "PasswordPolicyError",
+    "ProfileService",
     "Role",
+    "SessionInfo",
     "SessionPolicy",
+    "TooManyAttemptsError",
     "TotpCipher",
     "TotpEnrollment",
+    "WrongPasswordError",
 ]

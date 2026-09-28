@@ -83,13 +83,25 @@ Code: [frontend/src/features/auth/](../../frontend/src/features/auth/), routes i
 | `/mfa` | `pending_mfa` | TOTP or recovery code |
 | `/enroll` | `enroll_mfa` | QR code and manual key, code confirmation, then the recovery codes once |
 | `/` | `full` | The application |
+| `/account` | `full` | Own password, sessions and language |
 
 - Every route has the same guard: it loads the session and redirects to the page for its level, so a half-signed-in session can never reach the application, whatever URL is typed.
 - The CSRF token is kept in memory only (never in `localStorage`), and the cookie is `HttpOnly`, so page scripts can read neither the session nor, after a reload, the CSRF token. `GET /api/auth/session` returns it again.
 - The QR code is drawn by React from the code matrix; no generated markup is inserted into the page.
 - While the recovery codes are on screen, leaving or reloading the page asks for confirmation, because they are shown only once.
 - After login the session is fetched again, because the login response carries no account details.
-- Known gap: the account's `locale` is not yet applied to the interface; the language choice is remembered per browser until the account settings screen exists.
+- Language: after sign-in the interface switches to the account's `locale`; choosing a language while signed in stores it on the account, so it follows the user to every browser. Before sign-in the choice is remembered per browser.
+
+## Own account
+
+`/api/account` (any fully signed-in user, on their own account only). Code: [profile.py](../../backend/src/synapse/identity/profile.py).
+
+- `POST /password {current_password, new_password}`: the current password is checked and throttled like sign-in (400 `wrong_password`, then 429 with `Retry-After`); the new one follows the policy for the account's factors (422 with the policy code). **Every other session of the account ends**, the current one stays.
+- `GET /sessions`: the account's active sessions with creation and last-seen time, client address, user agent and which one is current.
+- `DELETE /sessions/{id}`: ends one of them. A session of another account answers 404, the same as a missing one, so session ids cannot be probed.
+- `PUT /preferences {locale}`: `tr` or `en`.
+
+Audit actions: `identity.password.change` (success and failure) and `identity.session.end`.
 
 ## Account administration
 
@@ -108,4 +120,4 @@ Every sign-in step, logout and account creation is written to the audit log in t
 ## Not in this step
 
 - Passkeys (WebAuthn): planned in the same ADR, after the audit log.
-- Session list and revocation in the UI, password change and reset: with the account settings screens.
+- Password reset by email: needs outgoing mail, which on-prem installations may not have; an administrator reset is the planned replacement.
