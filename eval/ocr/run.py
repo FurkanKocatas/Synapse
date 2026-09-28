@@ -75,6 +75,12 @@ def rapidocr(image: Path) -> str:
     return "\n".join(output.txts or ())
 
 
+def hybrid_engine(image: Path) -> str:
+    import hybrid
+
+    return hybrid.recognize(image, "/models/best", "tur+eng")
+
+
 ENGINES: dict[str, Callable[[Path], str]] = {
     "tesseract-debian-tur": tesseract(None, "tur"),
     "tesseract-fast-tur": tesseract("/models/fast", "tur"),
@@ -84,6 +90,7 @@ ENGINES: dict[str, Callable[[Path], str]] = {
     "tesseract-best-tur+eng-psm4": tesseract("/models/best", "tur+eng", psm=4),
     "tesseract-best-tur+eng-psm6": tesseract("/models/best", "tur+eng", psm=6),
     "tesseract-best-tur+eng-up300": tesseract("/models/best", "tur+eng", upscale_below_dpi=300),
+    "hybrid-tur+eng": hybrid_engine,
 }
 
 

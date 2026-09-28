@@ -82,4 +82,20 @@ def recognize(image: Path, tessdata: str, languages: str) -> str:
             "--tessdata-dir",
             tessdata,
         ]
-        return subprocess.run(command, capture_output=True, text=True, check=True).stdout
+        text = subprocess.run(command, capture_output=True, text=True, check=True).stdout
+    return "\n".join(line for line in text.splitlines() if looks_like_text(line))
+
+
+MIN_ALNUM_SHARE = 0.5
+MIN_WORD = 3
+
+
+def looks_like_text(line: str) -> bool:
+    """Drops lines read from table borders and other detections that are not text ("ges ep")."""
+    visible = [ch for ch in line if not ch.isspace()]
+    if not visible:
+        return False
+    alnum = sum(ch.isalnum() for ch in visible)
+    has_word = any(len(w.strip(".,;:()")) >= MIN_WORD for w in line.split())
+    has_number = any(ch.isdigit() for ch in line)
+    return alnum / len(visible) >= MIN_ALNUM_SHARE and (has_word or has_number)
