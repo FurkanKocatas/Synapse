@@ -34,3 +34,14 @@ def test_settings_are_immutable() -> None:
     settings = Settings()
     with pytest.raises(ValidationError):
         settings.api_port = 1  # type: ignore[misc]
+
+
+def test_an_empty_tenant_id_means_not_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SYNAPSE_TENANT_ID", "")
+    assert Settings().tenant_id is None
+
+
+def test_a_malformed_tenant_id_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SYNAPSE_TENANT_ID", "not-a-uuid")
+    with pytest.raises(ValidationError):
+        Settings()

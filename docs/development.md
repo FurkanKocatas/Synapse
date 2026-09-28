@@ -83,7 +83,7 @@ pnpm lint && pnpm typecheck && pnpm format:check && pnpm i18n:check && pnpm test
 python3 tools/check_file_size.py
 ```
 
-CI additionally runs the licence check, dependency vulnerability audits, a secret scan over the full git history and a workflow security audit.
+CI additionally runs the licence check, dependency vulnerability audits, a secret scan over the full git history, a workflow security audit, the full-stack smoke test (`tools/stack_smoke.sh`, see [deployment.md](deployment.md)) and an image vulnerability scan.
 
 ## Rules that CI enforces
 
@@ -100,5 +100,5 @@ CI additionally runs the licence check, dependency vulnerability audits, a secre
 These are decided in the ADRs and will be added as the code they apply to lands:
 
 - RAG evaluation gate ([ADR 0010](adr/0010-rag-pipeline.md)): needs the pipeline and the golden set.
-- Container image scanning, SBOM and signing: needs the first images.
+- SBOMs and image signing: need a release workflow.
 - A check that every test directory is collected by a CI job: needs more than one test tree.

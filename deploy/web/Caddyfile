@@ -1,0 +1,44 @@
+# Serves the app and proxies the API on one origin, so cookies are first-party and no CORS
+# is ever needed (ADR 0011, ADR 0013). The site address and TLS settings are rendered by the
+# installer per install; the default below is plain HTTP for local testing only.
+{
+	admin off
+}
+
+{$SYNAPSE_SITE_ADDRESS::8080} {
+	encode zstd gzip
+
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy api:8000 {
+			# Chat answers are streamed; forward every chunk immediately.
+			flush_interval -1
+		}
+	}
+
+	handle {
+		root * /srv
+		# Hashed build assets never change, so they can be cached for a long time;
+		# index.html must always be fresh so a new release is picked up.
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@pages not path /assets/*
+		header @pages Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

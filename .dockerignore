@@ -1,0 +1,13 @@
+**/.venv
+**/node_modules
+**/dist
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.coverage
+frontend/src/paraglide
+.dev
+.git
+eval/corpus/files
+CLAUDE.local.md

@@ -44,6 +44,8 @@ def main() -> int:
         SECRETS / "admin_conninfo",
         f"postgresql://postgres:{superuser}@127.0.0.1:{DEV_DB_PORT}/postgres",
     )
+    # The same, as seen from inside the full stack (deploy/compose.stack.yml).
+    write_once(SECRETS / "admin_conninfo_stack", f"postgresql://postgres:{superuser}@db:5432/postgres")
     print(f"development secrets are in {SECRETS.relative_to(ROOT)}/")
     return 0
 

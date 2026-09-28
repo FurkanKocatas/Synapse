@@ -13,7 +13,7 @@ from functools import lru_cache
 from pathlib import Path
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from synapse.kernel.database import ConnectionSettings
@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     audit_signing_key_file: Path = Path("/run/secrets/audit_signing_key")
     session_idle_minutes: int = Field(default=30, ge=5, le=24 * 60)
     session_absolute_hours: int = Field(default=12, ge=1, le=24 * 30)
+
+    @field_validator("tenant_id", mode="before")
+    @classmethod
+    def _empty_means_unset(cls, value: object) -> object:
+        # Environment files commonly carry "NAME=" for a value not filled in yet.
+        return None if value == "" else value
 
     def database(self, application_name: str) -> ConnectionSettings:
         return ConnectionSettings(

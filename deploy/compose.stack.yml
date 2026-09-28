@@ -1,0 +1,147 @@
+# The whole product on one machine, built from this repository: a production-like stack for
+# local end-to-end tests. Customer installs use files rendered by synapsectl (ADR 0012), with
+# the same services and the same hardening.
+#
+#   python3 tools/dev_secrets.py
+#   docker compose -f deploy/compose.stack.yml up -d --build --wait
+#   docker compose -f deploy/compose.stack.yml run --rm api tenant create --slug demo --name Demo
+#   echo "SYNAPSE_TENANT_ID=<printed id>" > .dev/stack.env && docker compose -f deploy/compose.stack.yml up -d
+#
+# Then open http://localhost:8480 (or the port in SYNAPSE_STACK_PORT).
+name: synapse-stack
+
+x-app: &app
+  image: synapse-app:dev
+  build:
+    context: ..
+    dockerfile: deploy/app/Dockerfile
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  networks: [internal]
+  env_file:
+    # Holds SYNAPSE_TENANT_ID once the tenant exists; see the commands at the top.
+    - path: ../.dev/${SYNAPSE_STACK_ENV:-stack.env}
+      required: false
+
+x-db-env: &db-env
+  SYNAPSE_DB_HOST: db
+  SYNAPSE_DB_PORT: "5432"
+  SYNAPSE_DB_NAME: synapse
+
+services:
+  db:
+    build: ./postgres
+    image: synapse-postgres:dev
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_superuser
+    secrets: [postgres_superuser]
+    volumes: [db-data:/var/lib/postgresql]
+    networks: [internal]
+    mem_limit: 2560m
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  bootstrap:
+    <<: *app
+    command:
+      - db
+      - bootstrap
+      - --admin-conninfo-file=/run/secrets/admin_conninfo_stack
+      - --secrets-dir=/run/secrets
+    environment:
+      <<: *db-env
+    secrets:
+      - admin_conninfo_stack
+      - db_synapse_migrator
+      - db_synapse_api
+      - db_synapse_worker
+      - db_synapse_scheduler
+    depends_on:
+      db: { condition: service_healthy }
+    restart: "no"
+
+  migrate:
+    <<: *app
+    command: [db, migrate]
+    environment:
+      <<: *db-env
+      SYNAPSE_DB_USER: synapse_migrator
+      SYNAPSE_DB_PASSWORD_FILE: /run/secrets/db_synapse_migrator
+    secrets: [db_synapse_migrator]
+    depends_on:
+      bootstrap: { condition: service_completed_successfully }
+    restart: "no"
+
+  api:
+    <<: *app
+    command: [api]
+    environment:
+      <<: *db-env
+      SYNAPSE_API_HOST: 0.0.0.0
+      SYNAPSE_API_PORT: "8000"
+      SYNAPSE_DB_USER: synapse_api
+      SYNAPSE_DB_PASSWORD_FILE: /run/secrets/db_synapse_api
+      SYNAPSE_CSRF_KEY_FILE: /run/secrets/csrf_key
+      SYNAPSE_TOTP_KEY_FILE: /run/secrets/totp_key
+      SYNAPSE_AUDIT_SIGNING_KEY_FILE: /run/secrets/audit_signing_key
+      # Only the web front on the internal network may set X-Forwarded-For.
+      SYNAPSE_TRUSTED_PROXY_IPS: ${SYNAPSE_STACK_SUBNET:-172.29.0.0/24}
+    secrets: [db_synapse_api, csrf_key, totp_key, audit_signing_key]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    mem_limit: 768m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  web:
+    image: synapse-web:dev
+    build:
+      context: ..
+      dockerfile: deploy/web/Dockerfile
+    read_only: true
+    # Caddy's state directories, writable by its unprivileged user.
+    tmpfs: ["/data:uid=10001,gid=10001", "/config:uid=10001,gid=10001"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [internal]
+    ports:
+      # Loopback only; the host port is configurable because 8080 is often taken.
+      - "127.0.0.1:${SYNAPSE_STACK_PORT:-8480}:8080"
+    depends_on:
+      api: { condition: service_healthy }
+    mem_limit: 128m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+networks:
+  internal:
+    ipam:
+      config:
+        - subnet: ${SYNAPSE_STACK_SUBNET:-172.29.0.0/24}
+
+secrets:
+  postgres_superuser: { file: ../.dev/secrets/postgres_superuser }
+  admin_conninfo_stack: { file: ../.dev/secrets/admin_conninfo_stack }
+  db_synapse_migrator: { file: ../.dev/secrets/db_synapse_migrator }
+  db_synapse_api: { file: ../.dev/secrets/db_synapse_api }
+  db_synapse_worker: { file: ../.dev/secrets/db_synapse_worker }
+  db_synapse_scheduler: { file: ../.dev/secrets/db_synapse_scheduler }
+  csrf_key: { file: ../.dev/secrets/csrf_key }
+  totp_key: { file: ../.dev/secrets/totp_key }
+  audit_signing_key: { file: ../.dev/secrets/audit_signing_key }
+
+volumes:
+  db-data:

@@ -15,8 +15,15 @@ RUN git clone --filter=blob:none https://github.com/timescale/pg_textsearch.git 
  && make -C /src install DESTDIR=/out
 
 FROM ${BASE}
+# Apply Debian security updates published after the base image was built, and remove gosu:
+# the server runs as the postgres user from the start, so the entrypoint never needs to drop
+# root privileges (and gosu, built with an old Go, is the image scan's largest finding).
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/* /usr/local/bin/gosu
 COPY --from=build /out/usr/lib/postgresql/18/lib/ /usr/lib/postgresql/18/lib/
 COPY --from=build /out/usr/share/postgresql/18/extension/ /usr/share/postgresql/18/extension/
+USER postgres
 # pg_textsearch must be preloaded. Further settings are passed by the deployment (synapsectl
 # renders them per hardware tier), so only what the extension requires is fixed here.
 CMD ["postgres", "-c", "shared_preload_libraries=pg_textsearch"]

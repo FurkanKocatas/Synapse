@@ -123,3 +123,21 @@ jobs:
           (cd backend && uv export --frozen --no-emit-project) > "$RUNNER_TEMP/requirements.txt"
           uvx pip-audit@2.10.1 -r "$RUNNER_TEMP/requirements.txt" --disable-pip --require-hashes
           pnpm --dir frontend audit --audit-level high
+
+  images:
+    name: Images and end-to-end smoke test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Full stack smoke test (builds the images)
+        run: tools/stack_smoke.sh
+      - name: Image scan
+        # Fails on any HIGH or CRITICAL vulnerability that already has a fix.
+        run: |
+          for image in synapse-app:dev synapse-web:dev synapse-postgres:dev; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+              image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$image"
+          done
