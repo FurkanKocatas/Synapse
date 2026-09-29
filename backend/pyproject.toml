@@ -179,7 +179,9 @@ source_modules = ["synapse.api", "synapse.cli", "synapse.worker_cli"]
 forbidden_modules = [
     "synapse.knowledge.blobs",
     "synapse.knowledge.chunking",
+    "synapse.knowledge.dedup",
     "synapse.knowledge.documents",
+    "synapse.knowledge.entities",
     "synapse.knowledge.filetypes",
     "synapse.knowledge.headings",
     "synapse.knowledge.language",
