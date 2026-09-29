@@ -7,10 +7,11 @@ Rules, each covered by a property test (tests/test_chunking.py):
    least ``soft_min_tokens``.
 2. About ``target_tokens`` per chunk and never more than ``max_tokens``; running text longer
    than that is split at sentence ends, and at word boundaries if a sentence is longer still.
-3. A table row is never split. A table that does not fit in one chunk becomes groups of whole
-   rows, each repeating the table's header rows, plus a summary chunk that names its columns and
-   rows. The one chunk allowed over ``max_tokens`` is a single row too long for it, with its
-   header.
+3. A table row is never split between chunks with other rows. A table that does not fit in one
+   chunk becomes groups of whole rows, each repeating the table's header rows, plus a summary
+   chunk that names its columns and rows. A single row too long for a chunk even alone (a note
+   cell of several paragraphs, common in spreadsheets) is split at sentence ends into chunks of
+   its own, each under the header and the row's label, rather than cut off by the embedder.
 4. A table continued on the next page (same column count, no header or the same header) is
    joined first, so its rows are grouped as one table.
 5. No text is lost or repeated: the running text of the chunks, in order, is the running text
@@ -159,9 +160,31 @@ class _Builder:
         if self.count(whole) <= self.config.max_tokens:
             self.emit("table", whole, pages, (index, index))
             return
+        labels = {row_text(row): row[0] for row in table.body if row and row[0] and len(row) > 1}
         for group in _row_groups(header, rows, self.config.target_tokens, self.count):
-            self.emit("table", "\n".join(header + group), pages, (index, index))
+            text = "\n".join(header + group)
+            if len(group) == 1 and self.count(text) > self.config.max_tokens:
+                self._long_row(header, group[0], labels.get(group[0]), pages, index)
+            else:
+                self.emit("table", text, pages, (index, index))
         self.emit("table_summary", self._summary(table, header), pages, (index, index))
+
+    def _long_row(
+        self,
+        header: list[str],
+        row: str,
+        label: str | None,
+        pages: tuple[int, int],
+        index: int,
+    ) -> None:
+        """A row too long for one chunk (a note cell of several paragraphs): its text split at
+        sentence ends, every piece under the header and, after the first, the row's label."""
+        fixed = self.count("\n".join([*header, label or ""]))
+        budget = max(self.config.max_tokens - fixed, self.config.max_tokens // 4)
+        pieces = split_text(row, budget, self.count, self.config.words)
+        for number, piece in enumerate(pieces):
+            lead = [label] if label and number else []
+            self.emit("table", "\n".join(header + lead + [piece]), pages, (index, index))
 
     def _summary(self, table: Table, header: list[str]) -> str:
         words = self.config.words.table_summary
@@ -178,6 +201,15 @@ class _Builder:
         while self.count(text) > self.config.max_tokens:
             text = text[: int(len(text) * 0.9)].rsplit(" ", 1)[0]
         return text
+
+
+def indexed_text(chunk: Chunk) -> str:
+    """The chunk as search indexes it: its heading path, one line per heading, then its text.
+
+    Headings are not repeated in chunk text, so a number or date in a heading ("2024 YILI
+    FAALİYET RAPORU") is found through this; entity offsets point into it.
+    """
+    return "\n".join([*chunk.heading_path, chunk.text])
 
 
 def chunk(

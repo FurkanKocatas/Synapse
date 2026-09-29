@@ -6,6 +6,7 @@ import pytest
 
 from synapse.knowledge.filetypes import MediaType, detect
 from synapse.knowledge.parsing import LightParser, ParseError, normalize
+from synapse.knowledge.structure import Block, Table
 from tests import knowledge_samples as samples
 
 
@@ -77,3 +78,51 @@ def test_unreadable_files_fail_with_a_reason(
 def test_text_is_normalized() -> None:
     decomposed = "Kararı şube\r\nA\x00B\x07\tC"  # "ş" as s + combining cedilla
     assert normalize(decomposed) == "Kararı şube\nAB\tC"
+
+
+def test_pages_carry_their_structure(tmp_path: Path) -> None:
+    text_page, blank = parse(
+        tmp_path, samples.pdf("Karar 2026/35 kabul edildi ve sunuldu.", "")
+    ).pages
+    assert text_page.blocks == (Block("paragraph", "Karar 2026/35 kabul edildi ve sunuldu.", 1),)
+    assert blank.blocks == ()
+
+    [word] = parse(tmp_path, samples.word()).pages
+    assert word.blocks == (
+        Block("heading", "Belediye Meclisi Kararı", 1, level=1),
+        Block("paragraph", "Karar No: 2026/35. Meclis üyeleri toplandı.", 1),
+        Block("heading", "Gündem", 1, level=2),
+        Block("table", "", 1, table=Table((("Madde", "Karar"), ("1", "Kabul edildi")), 1)),
+    )
+
+    budget, empty = parse(tmp_path, samples.spreadsheet()).pages
+    assert budget.blocks == (
+        Block("heading", "Bütçe", 1, level=1),
+        Block("table", "", 1, table=Table((("Kalem", "Tutar"), ("Personel", "1250000")), 1)),
+    )
+    assert empty.blocks == (Block("heading", "Boş", 2, level=1),)
+
+    first, _ = parse(tmp_path, samples.slides()).pages
+    assert first.blocks == (
+        Block("heading", "KVKK Eğitimi", 1, level=2),
+        Block("paragraph", "Açık rıza nedir?", 1),
+        Block("paragraph", "Konuşmacı notu", 1),
+    )
+
+
+def test_a_merged_word_cell_keeps_its_text_once(tmp_path: Path) -> None:
+    [page] = parse(tmp_path, samples.word_with_merged_cells()).pages
+    [block] = page.blocks
+    assert block.table == Table(
+        (("Performans Göstergeleri", ""), ("P.G. 2.7.1.", "50"), ("", "20")), header_rows=1
+    )
+
+
+def test_title_and_note_rows_above_a_sheet_table_are_not_its_header(tmp_path: Path) -> None:
+    [sheet] = parse(tmp_path, samples.spreadsheet_with_title()).pages
+    assert sheet.blocks == (
+        Block("heading", "Ücretler", 1, level=1),
+        Block("paragraph", "BELEDİYE ÜCRET TARİFESİ", 1),
+        Block("paragraph", "Fiyatlara KDV dahildir.", 1),
+        Block("table", "", 1, table=Table((("Hizmet", "Ücret"), ("Nikah salonu", "1500")), 1)),
+    )

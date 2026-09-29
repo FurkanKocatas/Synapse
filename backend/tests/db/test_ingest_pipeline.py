@@ -307,3 +307,39 @@ def test_a_retried_ocr_job_reads_only_the_pages_left(world: World, editor: TestC
         (2, "Karar 2026/35 okundu.", "stand-in"),
     ]
     assert version_state(world, scan["version_id"]) == ("parsed", None)
+
+
+def test_finished_pages_are_chunked_with_their_entities(world: World, editor: TestClient) -> None:
+    text = "Karar 2026/35 kabul edildi ve 15.03.2026 tarihinde sunuldu."
+    layer = upload(editor, samples.pdf(text), "k.pdf")
+    scan = upload(editor, samples.pdf(""), "tarama.pdf")
+    run_worker(world)
+
+    def chunks(version_id: str) -> list[tuple[Any, ...]]:
+        return [
+            tuple(row)
+            for row in world.db.execute(
+                "SELECT ordinal, kind, text, page_start, page_end, length(content_hash) "
+                "FROM synapse.document_chunks WHERE version_id = %s ORDER BY ordinal",
+                (version_id,),
+            ).fetchall()
+        ]
+
+    def entities(version_id: str) -> list[tuple[Any, ...]]:
+        return [
+            tuple(row)
+            for row in world.db.execute(
+                "SELECT kind, value, written FROM synapse.chunk_entities WHERE version_id = %s "
+                "ORDER BY char_start",
+                (version_id,),
+            ).fetchall()
+        ]
+
+    assert chunks(layer["version_id"]) == [(0, "text", text, 1, 1, 32)]
+    assert entities(layer["version_id"]) == [
+        ("decision_number", "2026/35", "2026/35"),
+        ("date", "2026-03-15", "15.03.2026"),
+    ]
+    # The scanned page is chunked from its OCR text, once OCR has read it.
+    assert chunks(scan["version_id"]) == [(0, "text", "Karar 2026/35 okundu.", 1, 1, 32)]
+    assert entities(scan["version_id"]) == [("decision_number", "2026/35", "2026/35")]

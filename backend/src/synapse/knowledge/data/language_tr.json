@@ -1,5 +1,5 @@
 {
-  "comment": "Turkish document conventions read by knowledge/headings.py and knowledge/chunking.py. Words are lower case, as knowledge/turkish.py folds them.",
+  "comment": "Turkish document conventions read by knowledge/headings.py, chunking.py and entities.py. Words are lower case, as knowledge/turkish.py folds them.",
   "ordinals": [
     "birinci", "ikinci", "üçüncü", "dördüncü", "beşinci", "altıncı", "yedinci", "sekizinci",
     "dokuzuncu", "onuncu", "on birinci", "on ikinci", "on üçüncü", "on dördüncü", "on beşinci"
@@ -18,5 +18,23 @@
     "columns": "sütun",
     "column_names": "Sütunlar",
     "row_labels": "Satırlar"
+  },
+  "entities": {
+    "months": [
+      "ocak", "şubat", "mart", "nisan", "mayıs", "haziran", "temmuz", "ağustos", "eylül",
+      "ekim", "kasım", "aralık"
+    ],
+    "numbered_law": "sayılı",
+    "decision_words": ["karar no", "karar numarası", "karar sayısı", "sayı"],
+    "court_marks": ["e", "k"],
+    "article_words": ["madde", "md", "mad"],
+    "article_suffixes": ["inci", "ıncı", "üncü", "uncu", "nci", "ncı", "ncü", "ncu"],
+    "article_noun": "madde",
+    "parcel_words": {"block": "ada", "parcel": "parsel"},
+    "currencies": {
+      "₺": "TRY", "tl": "TRY", "try": "TRY", "lira": "TRY", "türk lirası": "TRY",
+      "$": "USD", "usd": "USD", "dolar": "USD", "€": "EUR", "eur": "EUR", "avro": "EUR",
+      "euro": "EUR"
+    }
   }
 }

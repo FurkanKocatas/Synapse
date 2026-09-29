@@ -29,9 +29,17 @@ CELL = st.lists(WORD, min_size=0, max_size=4).map(" ".join)
 
 @st.composite
 def tables(draw: st.DrawFn) -> Table:
+    """Rows short enough to fit a chunk with their header (long rows: their own test)."""
     width = draw(st.integers(1, 5))
     rows = draw(st.lists(st.tuples(*[CELL] * width), min_size=1, max_size=40))
-    return Table(tuple(rows), draw(st.integers(0, min(2, len(rows)))))
+    return Table(tuple(rows), draw(st.integers(0, 1)))
+
+
+@st.composite
+def tables_with_long_rows(draw: st.DrawFn) -> Table:
+    labels = st.lists(WORD, min_size=1, max_size=3).map(" ".join)
+    body = draw(st.lists(st.tuples(labels, PARAGRAPH), min_size=1, max_size=4))
+    return Table((("Kalem", "Açıklama"), *body), header_rows=1)
 
 
 @st.composite
@@ -86,12 +94,28 @@ def test_table_rows_are_never_split_and_headers_repeat(blocks: list[Block]) -> N
 
 @settings(max_examples=300)
 @given(documents())
-def test_no_chunk_is_over_the_limit_but_a_single_long_row(blocks: list[Block]) -> None:
+def test_no_chunk_is_over_the_limit(blocks: list[Block]) -> None:
     for c in run(blocks):
-        if c.tokens > CONFIG.max_tokens:
-            assert c.kind == "table"
-            header_lines = _header_lines(blocks, c)
-            assert len(c.text.split("\n")) - header_lines == 1, c
+        assert c.tokens <= CONFIG.max_tokens, c
+
+
+@settings(max_examples=300)
+@given(tables_with_long_rows())
+def test_a_row_too_long_for_a_chunk_is_split_under_its_header_and_label(table: Table) -> None:
+    chunks = [c for c in run([Block("table", "", 3, table=table)]) if c.kind == "table"]
+    got: list[str] = []
+    for c in chunks:
+        assert c.tokens <= CONFIG.max_tokens, c
+        header, *body = c.text.split("\n")
+        assert header == "Kalem | Açıklama"
+        # Every row line has " | "; a chunk starting without one continues a long row, and
+        # starts with that row's label on a line of its own.
+        if " | " not in body[0]:
+            assert len(body) == 2, c
+            assert body[0] in {row[0] for row in table.body}, c
+            body = body[1:]
+        got += [w for line in body for w in line.split()]
+    assert got == [w for row in table.body for w in row_text(row).split()]
 
 
 @settings(max_examples=300)
@@ -117,12 +141,6 @@ def test_pages_and_order(blocks: list[Block]) -> None:
         assert 1 <= c.page_start <= c.page_end
     for a, b in pairwise(chunks):
         assert a.blocks[0] <= b.blocks[0]
-
-
-def _header_lines(blocks: list[Block], c: Chunk) -> int:
-    block, _ = join_continued_tables(blocks)[c.blocks[0]]
-    assert block.table is not None
-    return len([line for line in map(row_text, block.table.header) if line])
 
 
 def test_a_large_table_gets_a_summary_naming_its_columns_and_rows() -> None:

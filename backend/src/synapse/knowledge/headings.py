@@ -66,7 +66,13 @@ def rules_for(words: Language) -> tuple[HeadingRule, ...]:
             "chapter", re.compile(rf"(?:{ordinals})\s+{re.escape(words.chapter)}\b"), level=2
         ),
         HeadingRule("article", re.compile(article), level=3, in_text=True),
-        HeadingRule("numbered", re.compile(r"(\d{1,2}(?:\.\d{1,2}){0,3})\.?\s+\S"), capitals=True),
+        # "9. MALİ YÖNETİM", "3.2 HEDEFLER", "3.2.1."; a bare "1 " is not a section number: in a
+        # PDF text layer it starts the row of a numbered table ("1 AYHAN ŞAHİN 802 ...").
+        HeadingRule(
+            "numbered",
+            re.compile(r"(\d{1,2}\.(?:\d{1,2}\.){0,3}|\d{1,2}(?:\.\d{1,2}){1,3})\s+\S"),
+            capitals=True,
+        ),
         HeadingRule("lettered", re.compile(r"[^\W\d_]\.\s+\S"), level=2, capitals=True),
     )
 
@@ -107,7 +113,7 @@ def section(
             continue
         level = rule.level
         if level is None:
-            level = match.group(1).count(".") + 1 + rule.offset
+            level = len(re.findall(r"\d+", match.group(1))) + rule.offset
         return Section(level, text)
     return Section(UNNUMBERED_LEVEL, text) if marked else None
 

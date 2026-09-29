@@ -65,6 +65,18 @@ def word() -> bytes:
     return buffer.getvalue()
 
 
+def word_with_merged_cells() -> bytes:
+    """A table whose title cell spans both columns and whose first column spans two rows."""
+    document = docx.Document()
+    table = document.add_table(rows=3, cols=2)
+    table.cell(0, 0).merge(table.cell(0, 1)).text = "Performans Göstergeleri"
+    table.cell(1, 0).merge(table.cell(2, 0)).text = "P.G. 2.7.1."
+    table.cell(1, 1).text, table.cell(2, 1).text = "50", "20"
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
 def spreadsheet() -> bytes:
     workbook = openpyxl.Workbook()
     first = workbook.active
@@ -74,6 +86,21 @@ def spreadsheet() -> bytes:
     first.append(["Personel", 1250000])
     first.append([None, None])
     workbook.create_sheet("Boş")
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def spreadsheet_with_title() -> bytes:
+    """A price list as municipalities publish them: a title row, a note, then the table."""
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    assert sheet is not None
+    sheet.title = "Ücretler"
+    sheet.append(["BELEDİYE ÜCRET TARİFESİ"])
+    sheet.append([None, "Fiyatlara KDV dahildir."])
+    sheet.append(["Hizmet", "Ücret"])
+    sheet.append(["Nikah salonu", "1500"])
     buffer = io.BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()

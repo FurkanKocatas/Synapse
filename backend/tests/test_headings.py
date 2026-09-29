@@ -24,6 +24,10 @@ EN_DASH = chr(0x2013)
         ("Geçici Madde 3- Yürürlük.", False, Section(3, "Geçici Madde 3", running=True)),
         ("9. MALİ YÖNETİM", False, Section(2, "9. MALİ YÖNETİM")),
         ("3.2.1. HEDEFLER", False, Section(4, "3.2.1. HEDEFLER")),
+        ("3.2 HEDEFLER", False, Section(3, "3.2 HEDEFLER")),
+        # The row of a numbered table in a PDF text layer, not a section.
+        ("1 AYHAN ŞAHİN İSMETPAŞA 802 398-399 İFRAZ 02.01.2024-24/4", False, None),
+        ("20 HAZİRAN 1919 NİKSAR", False, None),
         (
             "B. Temel Politikalar ve Öncelikler",
             True,

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from synapse.knowledge.headings import blocks_from_text
 from synapse.knowledge.ocr import (
     OcrError,
     PageReading,
@@ -54,9 +55,17 @@ def test_a_good_text_layer_is_never_replaced_by_worse_ocr() -> None:
 def test_a_page_keeping_its_text_layer_keeps_no_ocr_identifiers() -> None:
     reading = PageReading(GARBLED, "engines", ("2026/36",), ("2026/35",))
     kept = page_update(Page(1, "page", CLEAN, issue="not_turkish_like"), reading)
-    assert kept == PageUpdate(CLEAN, "layer", "engines", [], [])
-    taken = page_update(Page(1, "page", "", issue="no_text"), reading)
-    assert taken == PageUpdate(GARBLED, "ocr", "engines", ["2026/36"], ["2026/35"])
+    assert kept == PageUpdate(CLEAN, "layer", "engines", [], [], blocks=None)
+    taken = page_update(Page(4, "page", "", issue="no_text"), reading)
+    assert taken == PageUpdate(
+        GARBLED,
+        "ocr",
+        "engines",
+        ["2026/36"],
+        ["2026/35"],
+        blocks=[b.to_json() for b in blocks_from_text(GARBLED, 4)],
+    )
+    assert taken.blocks and taken.blocks[0]["page"] == 4
 
 
 def test_a_page_without_a_scan_renders_at_300_dpi(tmp_path: Path) -> None:

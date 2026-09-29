@@ -22,6 +22,21 @@ class SummaryWords:
 
 
 @dataclass(frozen=True)
+class EntityWords:
+    months: tuple[str, ...]
+    numbered_law: str
+    decision_words: tuple[str, ...]
+    court_marks: tuple[str, ...]
+    article_words: tuple[str, ...]
+    article_suffixes: tuple[str, ...]
+    article_noun: str
+    parcel_block: str
+    parcel: str
+    # Symbol or word (lower case) to ISO 4217 code.
+    currencies: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
 class Language:
     ordinals: tuple[str, ...]
     part: str
@@ -30,6 +45,7 @@ class Language:
     article_prefixes: tuple[str, ...]
     abbreviations: frozenset[str]
     table_summary: SummaryWords
+    entities: EntityWords
 
 
 @cache
@@ -37,6 +53,7 @@ def language(code: str = "tr") -> Language:
     data = json.loads(
         files("synapse.knowledge.data").joinpath(f"language_{code}.json").read_text("utf-8")
     )
+    entities = data["entities"]
     return Language(
         ordinals=tuple(data["ordinals"]),
         part=data["part"],
@@ -45,4 +62,16 @@ def language(code: str = "tr") -> Language:
         article_prefixes=tuple(data["article_prefixes"]),
         abbreviations=frozenset(data["abbreviations"]),
         table_summary=SummaryWords(**data["table_summary"]),
+        entities=EntityWords(
+            months=tuple(entities["months"]),
+            numbered_law=entities["numbered_law"],
+            decision_words=tuple(entities["decision_words"]),
+            court_marks=tuple(entities["court_marks"]),
+            article_words=tuple(entities["article_words"]),
+            article_suffixes=tuple(entities["article_suffixes"]),
+            article_noun=entities["article_noun"],
+            parcel_block=entities["parcel_words"]["block"],
+            parcel=entities["parcel_words"]["parcel"],
+            currencies=tuple(entities["currencies"].items()),
+        ),
     )

@@ -22,16 +22,22 @@ retries. Any other error is retried by the worker; after the last attempt the ve
 import asyncio
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 import structlog
 from psycopg import AsyncConnection
+from psycopg.types.json import Jsonb
 
 from synapse.jobs.queue import Queue, enqueue
 from synapse.jobs.worker import Args, BadJobError, Task
 from synapse.kernel.database import Database
 from synapse.knowledge.blobs import LocalBlobStore
+from synapse.knowledge.chunking import chunk, indexed_text
+from synapse.knowledge.dedup import content_hash, simhash
+from synapse.knowledge.entities import extract
 from synapse.knowledge.filetypes import MediaType
+from synapse.knowledge.headings import blocks_from_text
 from synapse.knowledge.ocr import (
     OcrError,
     PageReader,
@@ -43,6 +49,7 @@ from synapse.knowledge.ocr import (
 )
 from synapse.knowledge.parsing import Page, Parsed, ParseError, Parser
 from synapse.knowledge.pipeline import OCR_TASK, PARSE_TASK, ocr_job
+from synapse.knowledge.structure import Block
 
 log = structlog.get_logger(__name__)
 
@@ -89,14 +96,18 @@ class Processor:
                 log.info("ingest.parse.dropped", version_id=str(version_id))
                 return
             await _store_pages(connection, tenant_id, version_id, parsed)
-            await _set_status(connection, version_id, "ocr" if needs_ocr else "parsed")
+            chunks = 0
             if needs_ocr:
                 await enqueue(connection, tenant_id, ocr_job(claimed.document_id, version_id))
+            else:
+                chunks = await _store_chunks(connection, tenant_id, version_id)
+            await _set_status(connection, version_id, "ocr" if needs_ocr else "parsed")
         log.info(
             "ingest.parsed",
             version_id=str(version_id),
             pages=len(parsed.pages),
             needs_ocr=needs_ocr,
+            chunks=chunks,
         )
 
     async def ocr(self, tenant_id: UUID, args: Args) -> None:
@@ -125,10 +136,18 @@ class Processor:
                         log.info("ingest.ocr.dropped", version_id=str(version_id))
                         return
                     await _store_reading(connection, version_id, page, reading)
+        chunks = 0
         async with self._db.tenant_transaction(tenant_id) as connection:
             if await _still_wanted(connection, version_id, "ocr"):
+                chunks = await _store_chunks(connection, tenant_id, version_id)
                 await _set_status(connection, version_id, "parsed")
-        log.info("ingest.ocr.done", version_id=str(version_id), pages=len(pending), failed=failed)
+        log.info(
+            "ingest.ocr.done",
+            version_id=str(version_id),
+            pages=len(pending),
+            failed=failed,
+            chunks=chunks,
+        )
 
     def _read(self, path: Path, media_type: MediaType, number: int, directory: Path) -> PageReading:
         if media_type is MediaType.PDF:
@@ -209,8 +228,8 @@ async def _store_pages(
     async with connection.cursor() as cursor:
         await cursor.executemany(
             "INSERT INTO document_pages (tenant_id, version_id, number, kind, label, text, "
-            "needs_ocr, quality_issue, char_score, artefacts) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "needs_ocr, quality_issue, char_score, artefacts, blocks) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             [
                 (
                     tenant_id,
@@ -223,10 +242,53 @@ async def _store_pages(
                     p.issue,
                     p.char_score,
                     p.artefacts,
+                    Jsonb([block.to_json() for block in p.blocks]),
                 )
                 for p in parsed.pages
             ],
         )
+
+
+async def _store_chunks(connection: AsyncConnection, tenant_id: UUID, version_id: UUID) -> int:
+    """Chunk the version's pages, as they are now, and store the chunks and their entities."""
+    cursor = await connection.execute(
+        "SELECT blocks FROM document_pages WHERE version_id = %s ORDER BY number", (version_id,)
+    )
+    blocks = [Block.from_json(data) for (page,) in await cursor.fetchall() for data in page]
+    chunks = chunk(blocks)
+    await connection.execute("DELETE FROM document_chunks WHERE version_id = %s", (version_id,))
+    async with connection.cursor() as insert:
+        await insert.executemany(
+            "INSERT INTO document_chunks (tenant_id, version_id, ordinal, kind, text, "
+            "heading_path, page_start, page_end, tokens, content_hash, simhash) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            [
+                (
+                    tenant_id,
+                    version_id,
+                    c.ordinal,
+                    c.kind,
+                    c.text,
+                    list(c.heading_path),
+                    c.page_start,
+                    c.page_end,
+                    c.tokens,
+                    content_hash(c.text),
+                    simhash(c.text),
+                )
+                for c in chunks
+            ],
+        )
+        await insert.executemany(
+            "INSERT INTO chunk_entities (tenant_id, version_id, ordinal, char_start, kind, value, "
+            "written) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            [
+                (tenant_id, version_id, c.ordinal, e.start, e.kind, e.value[:200], e.text[:400])
+                for c in chunks
+                for e in extract(indexed_text(c))
+            ],
+        )
+    return len(chunks)
 
 
 async def _pages_to_read(connection: AsyncConnection, version_id: UUID) -> list[Page]:
@@ -248,6 +310,8 @@ class PageUpdate:
     ocr_engine: str
     extra_identifiers: list[str]
     uncertain_identifiers: list[str]
+    # The blocks of the OCR text; None when the page keeps its text layer and its blocks.
+    blocks: list[dict[str, Any]] | None
 
 
 def page_update(page: Page, reading: PageReading) -> PageUpdate:
@@ -259,6 +323,7 @@ def page_update(page: Page, reading: PageReading) -> PageUpdate:
         # The identifiers describe the OCR text; kept only when the page keeps that text.
         extra_identifiers=list(reading.extra_identifiers) if from_ocr else [],
         uncertain_identifiers=list(reading.uncertain_identifiers) if from_ocr else [],
+        blocks=[b.to_json() for b in blocks_from_text(text, page.number)] if from_ocr else None,
     )
 
 
@@ -268,7 +333,7 @@ async def _store_reading(
     update = page_update(page, reading)
     await connection.execute(
         "UPDATE document_pages SET text = %s, text_source = %s, ocr_engine = %s, "
-        "extra_identifiers = %s, uncertain_identifiers = %s "
+        "extra_identifiers = %s, uncertain_identifiers = %s, blocks = COALESCE(%s, blocks) "
         "WHERE version_id = %s AND number = %s",
         (
             update.text,
@@ -276,6 +341,7 @@ async def _store_reading(
             update.ocr_engine,
             update.extra_identifiers,
             update.uncertain_identifiers,
+            None if update.blocks is None else Jsonb(update.blocks),
             version_id,
             page.number,
         ),
