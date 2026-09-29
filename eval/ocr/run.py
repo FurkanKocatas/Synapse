@@ -35,13 +35,27 @@ REAL = sorted((WORK / "real").glob("*.png"))
 
 
 def tesseract(
-    tessdata: str | None, languages: str, *, psm: int = 3, upscale_below_dpi: int = 0
+    tessdata: str | None,
+    languages: str,
+    *,
+    psm: int = 3,
+    upscale_below_dpi: int = 0,
+    clean: str | None = None,
 ) -> Callable[[Path], str]:
     """``upscale_below_dpi``: images whose width suggests less than this resolution on A4 are
-    enlarged to it first (Tesseract is trained on text about 300 dpi high)."""
+    enlarged to it first (Tesseract is trained on text about 300 dpi high). ``clean``: the page
+    is cleaned up first (tables.py): "invert" inverts dark cells, "tables" also removes lines."""
 
     def run(image: Path) -> str:
         source = image
+        if clean:
+            import cv2
+            import tables
+
+            grey = cv2.imread(str(image), cv2.IMREAD_GRAYSCALE)
+            cleaned = tables.clean(grey, invert=True, lines=clean == "tables")
+            source = Path(f"/tmp/{image.stem}.clean.png")
+            cv2.imwrite(str(source), cleaned)
         if upscale_below_dpi:
             from PIL import Image
 
@@ -103,6 +117,8 @@ ENGINES: dict[str, Callable[[Path], str]] = {
     "tesseract-best-tur+eng-psm4": tesseract("/models/best", "tur+eng", psm=4),
     "tesseract-best-tur+eng-psm6": tesseract("/models/best", "tur+eng", psm=6),
     "tesseract-best-tur+eng-up300": tesseract("/models/best", "tur+eng", upscale_below_dpi=300),
+    "tesseract-best-tur+eng-invert": tesseract("/models/best", "tur+eng", clean="invert"),
+    "tesseract-best-tur+eng-tables": tesseract("/models/best", "tur+eng", clean="tables"),
     "hybrid-tur+eng": hybrid_engine,
 }
 

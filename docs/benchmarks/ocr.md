@@ -88,6 +88,27 @@ An identifier both engines read is right 98 to 99% of the time; one only Tessera
 
 **What is still short of the targets:** Turkish-letter words on `scan` (0.978 against 0.98), and the worst decile of identifiers (0.72 to 0.77): table pages remain much worse than the rest, mostly the white-on-dark header cells.
 
+## Table pages: cleaning the image first
+
+Measured 2026-09-29 ([eval/ocr/tables.py](../../eval/ocr/tables.py), engines `tesseract-best-tur+eng-invert` and `-tables`). **Not adopted.**
+
+Looking at the worst pages (strategic plans' indicator cards, doc-027 pages 136 and 138) changed the diagnosis. Tesseract does read most white-on-dark header cells ("Amaç (A2)", "Sorumlu Birim"). What it loses is the ruled grid: a row "P.G. 2.3.1. 100 50 20 20 20 20 20 6 AY YILDA 1" comes out "PG. 231. | 50 GAY | YILDAT", and small dots inside codes are dropped in any case ("P.G. 2.3.1." read "PG. 2.31."). Two clean-ups before Tesseract were tried: inverting filled dark areas (cells, not photos or bold headings), and painting over long thin rules.
+
+The first inversion made things worse (identifiers on `scan` 0.928 to 0.918): the inverted cells stayed light grey, and Tesseract's layout analysis took them for pictures and skipped their text. With the cell background scaled to white, inversion alone was neutral (0.927). Both steps together, Tesseract alone, mean (worst 10%):
+
+| Condition | Engine | Character error | Word F1 | Turkish-letter words | Identifiers |
+|---|---|---|---|---|---|
+| clean | tur+eng | 0.081 | 0.967 (0.862) | 0.977 (0.875) | 0.919 (0.487) |
+| clean | tur+eng, cleaned | 0.094 | 0.965 (0.843) | 0.977 (0.877) | 0.931 (0.501) |
+| scan | tur+eng | 0.081 | 0.959 (0.793) | 0.968 (0.801) | 0.928 (0.404) |
+| scan | tur+eng, cleaned | 0.088 | 0.961 (0.813) | 0.972 (0.836) | 0.933 (0.434) |
+| poor | tur+eng | 0.098 | 0.935 (0.720) | 0.936 (0.707) | 0.860 (0.199) |
+| poor | tur+eng, cleaned | 0.102 | 0.935 (0.725) | 0.939 (0.735) | 0.861 (0.181) |
+
+With RapidOCR's identifiers added (the product's reading), identifiers do not move (0.974, 0.974, 0.958); word F1 on `scan` 0.959 to 0.961, Turkish-letter words 0.968 to 0.972; on `clean` word F1 falls 0.967 to 0.965 (worst tenth 0.864 to 0.844). On the three real scans nothing improves and the committee report gets worse (word F1 0.972 to 0.963, Turkish-letter words 0.917 to 0.896).
+
+Page by page the effect is uneven. Pages where the clean-up changes 1 to 5% of the pixels (rules) gain (word F1 +0.008, identifiers +0.025 on 55 images); pages where it changes more than 5% (large dark areas: covers, photos) lose (-0.006, -0.006 on 31); and Tesseract's layout analysis reacts to tiny changes: 0.05% of a page's pixels changed cost one page 0.09 of word F1. The two pages that prompted this got worse on identifiers. A rule deciding where to clean would be tuned on this same set of 112 pages, so the clean-up stays a benchmark engine. (Timings of this run are not comparable: it ran next to the embedding benchmark.)
+
 ## Safety, whatever the engine
 
 OCR will not be perfect on scans. Rules for step 8 (answers):
@@ -98,7 +119,7 @@ OCR will not be perfect on scans. Rules for step 8 (answers):
 
 ## Next steps
 
-1. Table pages: find why the white-on-dark header cells are lost (save the crops and look), and measure a fix on the worst ten pages.
+1. Table pages: done as far as whole-page clean-up goes (above, not adopted). What is left: find the table's grid and read each cell on its own (Tesseract with one line per cell), and more real table scans to measure it on.
 2. Transcribe more real scans, tables especially: three pages cannot carry more than this decision.
 3. RapidOCR speed: detection takes 1.3 s of a page's 5.8 s alone, recognition the rest; recognising only lines that may hold identifiers could cut most of it.
 4. Search (step 7): match long letter-and-digit identifiers with spaces removed; compare identifiers with a leading currency sign stripped, so "$5.000.000" from RapidOCR confirms "₺5.000.000" from Tesseract.
