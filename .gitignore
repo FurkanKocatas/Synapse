@@ -34,3 +34,6 @@ eval/parsing/work/
 
 # Retrieval benchmark working files (eval/retrieval/)
 eval/retrieval/work/
+
+# Answer benchmark working files (eval/answers/)
+eval/answers/work/

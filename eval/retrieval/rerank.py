@@ -39,6 +39,7 @@ def main() -> None:
     options.add_argument("--threads", type=int, default=6)
     options.add_argument("--questions", type=Path, default=QUESTIONS)
     options.add_argument("--backend", choices=["torch", "onnx", "onnx-int8"], default="torch")
+    options.add_argument("--limit", type=int, default=0, help="time the first N questions only")
     args = options.parse_args()
     torch.set_num_threads(args.threads)
     runs = WORK / "runs" / args.parser
@@ -65,23 +66,27 @@ def main() -> None:
             max_tokens=MAX_TOKENS,
         )
     reranked, seconds = [], []
-    for question, ranking in zip(questions, rankings, strict=True):
+    pairs = list(zip(questions, rankings, strict=True))
+    for question, ranking in pairs[: args.limit] if args.limit else pairs:
         top = ranking[: args.top]
         started = time.perf_counter()
         scores = model.predict([(question, chunks[i]) for i in top], batch_size=len(top) or 1)
         seconds.append(time.perf_counter() - started)
         order = [i for _, i in sorted(zip(scores, top, strict=True), key=lambda pair: -pair[0])]
         reranked.append(order + ranking[args.top :])
-    (runs / "extra").mkdir(parents=True, exist_ok=True)
-    name = f"{args.run}+{args.reranker}@{args.top}"
-    if args.backend != "torch":
-        name += f"-{args.backend}"
     timing = {
         "median_seconds": round(statistics.median(seconds), 2),
         "p90_seconds": round(statistics.quantiles(seconds, n=10)[-1], 2),
         "threads": args.threads,
         "backend": args.backend,
     }
+    if args.limit:  # timing only: a partial run is not scored
+        print(json.dumps({"run": args.run, "questions": args.limit, **timing}))
+        return
+    (runs / "extra").mkdir(parents=True, exist_ok=True)
+    name = f"{args.run}+{args.reranker}@{args.top}"
+    if args.backend != "torch":
+        name += f"-{args.backend}"
     (runs / "extra" / f"{name}.json").write_text(
         json.dumps({"rankings": reranked, **timing}), encoding="utf-8"
     )

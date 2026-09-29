@@ -13,3 +13,6 @@ extend-ignore = ["T201"]
 # nothing secret depends on it.
 "ocr/prepare.py" = ["S311"]
 "retrieval/embed.py" = ["S311"]
+# The answer benchmark talks to a llama.cpp server on this machine, and samples questions with
+# a seed.
+"answers/answer.py" = ["S310", "S311"]
