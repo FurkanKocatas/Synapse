@@ -1,0 +1,28 @@
+# The Docling environment of the parser benchmark (README.md). Separate from the backend's:
+# Docling brings PyTorch, which the product does not install today.
+[project]
+name = "synapse-eval-parsing"
+version = "0"
+requires-python = "==3.13.*"
+dependencies = [
+  "docling==2.130.0",
+  "docling-core==2.99.0",
+  "docling-ibm-models==4.0.3",
+  "docling-parse==7.22.1",
+  "torch==2.14.0",
+  "torchvision==0.29.0",
+  "transformers==5.17.0",
+]
+
+[tool.uv]
+package = false
+
+# CPU-only PyTorch: the default wheels bring several GB of CUDA libraries.
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
