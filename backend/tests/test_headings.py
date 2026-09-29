@@ -101,6 +101,32 @@ def test_a_text_layer_becomes_headings_articles_and_paragraphs() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # An identifier broken at the line end keeps its hyphen and loses the line break.
+        (
+            "(Değişik: 12/7/2013-\n6495/73 md.) Bu planlar",
+            "(Değişik: 12/7/2013-6495/73 md.) Bu planlar",
+        ),
+        (
+            "27.11.2025 tarih ve E-81912396-105.04-\n2026.106304.1 sayılı yazı",
+            "27.11.2025 tarih ve E-81912396-105.04-2026.106304.1 sayılı yazı",
+        ),
+        ("stratejik plan (2024-\n2026) dönemi", "stratejik plan (2024-2026) dönemi"),
+        # A word hyphenated across lines is joined without the hyphen.
+        ("belediye-\nlerin görevleri", "belediyelerin görevleri"),
+        # A numbered item after a hyphen stays apart: the next line starts with a letter.
+        (
+            "görevleri şunlardır: 31-\nBürolarda çalışmak",
+            "görevleri şunlardır: 31- Bürolarda çalışmak",
+        ),
+    ],
+)
+def test_line_end_hyphens(text: str, expected: str) -> None:
+    assert [b.text for b in blocks_from_text(text, 1)] == [expected]
+
+
 def test_a_title_below_a_long_heading_is_not_taken_into_it() -> None:
     blocks = blocks_from_text("BİRİNCİ BÖLÜM Amaç ve Kapsam Hükümleri\nGenel Esaslar", 1)
     assert [b.kind for b in blocks] == ["heading", "paragraph"]

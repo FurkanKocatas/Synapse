@@ -31,6 +31,10 @@ _SEPARATORS = "-:.)" + chr(0x2013) + chr(0x2014)
 _LABEL_END = " " + _SEPARATORS
 # "1.", "2)", "a)", or a bullet at the start of a line opens a list item.
 _LIST_MARKER = re.compile(r"(?:\d{1,2}[.)]|[^\W\d_][.)]|[-•*▪●])\s+\S")
+# A number and a hyphen at the end of a line, before a line that starts with a digit: one
+# identifier broken at the line end ("12/7/2013-" "6495/73 md.)", "E-81912396-105.04-"
+# "2026.106304.1"), or a range ("(2024-" "2026)"). The hyphen belongs to it.
+_NUMBER_HYPHEN_END = re.compile(r"\d-$")
 
 
 @dataclass(frozen=True)
@@ -125,7 +129,9 @@ def blocks_from_text(
 
     Lines are joined into paragraphs; a paragraph ends at a blank line, before a title line,
     before an article, or where a line ends a sentence and the next starts with a capital or a
-    digit. A word hyphenated across lines is joined.
+    digit. A word hyphenated across lines is joined; a number that ends a line with a hyphen
+    and continues with a digit on the next is joined keeping the hyphen, so an identifier
+    ("12/7/2013-6495/73", "E-81912396-105.04-2026.106304.1") stays one token.
     """
     blocks: list[Block] = []
     lines: list[str] = []
@@ -144,6 +150,9 @@ def blocks_from_text(
         line = " ".join(raw.split())
         if not line:
             flush()
+            continue
+        if lines and _NUMBER_HYPHEN_END.search(lines[-1]) and line[:1].isdigit():
+            lines[-1] += line
             continue
         found = section(line, marked=False, rules=rules)
         if found is not None and not found.running:
