@@ -43,6 +43,8 @@ class Language:
     chapter: str
     article: str
     article_prefixes: tuple[str, ...]
+    # The word before a page number in a footer ("Sayfa 3 / 40").
+    page_word: str
     abbreviations: frozenset[str]
     table_summary: SummaryWords
     entities: EntityWords
@@ -60,6 +62,7 @@ def language(code: str = "tr") -> Language:
         chapter=data["chapter"],
         article=data["article"],
         article_prefixes=tuple(data["article_prefixes"]),
+        page_word=data["page_word"],
         abbreviations=frozenset(data["abbreviations"]),
         table_summary=SummaryWords(**data["table_summary"]),
         entities=EntityWords(

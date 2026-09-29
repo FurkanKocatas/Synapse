@@ -8,6 +8,7 @@
   "chapter": "bölüm",
   "article": "madde",
   "article_prefixes": ["geçici", "ek", "mükerrer"],
+  "page_word": "sayfa",
   "abbreviations": [
     "md", "mad", "vb", "vs", "bkz", "dr", "prof", "doç", "yrd", "av", "no", "nr", "sy", "s",
     "syf", "tel", "fax", "örn", "st", "cad", "sok", "mah", "a.ş", "ltd", "şti", "t.c"

@@ -23,15 +23,16 @@ def scanned_pdf(*lines: str, dpi: int = 200) -> bytes:
 
 
 def pdf(*pages: str) -> bytes:
-    """A valid PDF with one text line per page (Helvetica, ASCII text); an empty string makes a
-    page without text, like a scan."""
+    """A valid PDF with the given text per page, one printed line per "\\n" (Helvetica, ASCII
+    text); an empty string makes a page without text, like a scan."""
     objects: list[bytes] = []
     kids = " ".join(f"{3 + 2 * i} 0 R" for i in range(len(pages)))
     objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
     objects.append(f"<< /Type /Pages /Kids [{kids}] /Count {len(pages)} >>".encode())
     font = 3 + 2 * len(pages)
     for i, text in enumerate(pages):
-        content = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode() if text else b""
+        lines = " 0 -16 Td ".join(f"({line}) Tj" for line in text.split("\n"))
+        content = f"BT /F1 12 Tf 72 720 Td {lines} ET".encode() if text else b""
         objects.append(
             f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {4 + 2 * i} 0 R "
             f"/Resources << /Font << /F1 {font} 0 R >> >> >>".encode()

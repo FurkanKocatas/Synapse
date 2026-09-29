@@ -12,9 +12,11 @@ knowledge/headings.py.
 Runs only in workers, never in the API process (ADR 0002): these files are untrusted.
 """
 
+import re
 import threading
 import unicodedata
 import zipfile
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
@@ -30,7 +32,9 @@ from docx.text.paragraph import Paragraph
 from synapse.knowledge import quality
 from synapse.knowledge.filetypes import MediaType
 from synapse.knowledge.headings import blocks_from_text, section
+from synapse.knowledge.language import language
 from synapse.knowledge.structure import Block, BlockKind, Table
+from synapse.knowledge.turkish import lower
 
 PageKind = Literal["page", "slide", "sheet", "document"]
 
@@ -47,6 +51,10 @@ SLIDE_TITLE_LEVEL = 2
 SHEET_LEVEL = 1
 # Rows above a sheet's table with fewer filled cells are its title and notes.
 MIN_HEADER_CELLS = 2
+# Running headers and footers: lines this close to a page's top or bottom, repeated on at least
+# half of a document's pages and on at least MIN_RUNNING_PAGES.
+RUNNING_EDGE = 2
+MIN_RUNNING_PAGES = 3
 
 # PDFium is not thread-safe, and the worker parses in threads.
 PDFIUM_LOCK = threading.Lock()
@@ -72,9 +80,13 @@ class Page:
         return self.issue is not None
 
 
-def scanned_page(number: int, kind: PageKind, text: str) -> Page:
-    """A page of a format that can carry an OCR'd text layer: PDF pages and images."""
-    blocks = tuple(blocks_from_text(text, number))
+def scanned_page(number: int, kind: PageKind, text: str, block_text: str | None = None) -> Page:
+    """A page of a format that can carry an OCR'd text layer: PDF pages and images.
+
+    ``block_text``: the text its blocks are made from, when it differs from what the page shows
+    (running headers and footers removed).
+    """
+    blocks = tuple(blocks_from_text(text if block_text is None else block_text, number))
     if visible_chars(text) < MIN_TEXT_CHARS:
         return Page(number, kind, text, issue="no_text", blocks=blocks)
     assessed = quality.assess(text)
@@ -161,7 +173,67 @@ def _pdf(path: Path) -> Parsed:
             document.close()
     if not texts:
         raise ParseError("empty")
-    return Parsed([scanned_page(n, "page", text) for n, text in enumerate(texts, start=1)])
+    cleaned = without_running_lines(texts)
+    return Parsed(
+        [
+            scanned_page(n, "page", text, block_text)
+            for n, (text, block_text) in enumerate(zip(texts, cleaned, strict=True), start=1)
+        ]
+    )
+
+
+def without_running_lines(texts: list[str], page_word: str | None = None) -> list[str]:
+    """Page texts without their page numbers and without running headers and footers after
+    their first appearance (ADR 0010, ingestion rule 5).
+
+    Only the first and last ``RUNNING_EDGE`` lines of a page are looked at. A page number
+    ("3", "- 3 -", "Sayfa 3 / 40") is always dropped. Any other line found there, exactly as
+    written, on at least half the pages (and at least three) is running: the publisher's name,
+    the document's title. It stays where it first appears, so a signature block repeated on
+    every page can still be found once. Lines differing only in their numbers are different:
+    "KARAR SAYISI : 413" on one page and "KARAR SAYISI : 414" on the next are both content.
+    """
+    if len(texts) < MIN_RUNNING_PAGES:
+        return texts
+    page_number = _page_number_pattern(page_word or language().page_word)
+    pages = [text.split("\n") for text in texts]
+    seen_at_edges: Counter[str] = Counter()
+    for lines in pages:
+        seen_at_edges.update({_fold(lines[i]) for i in _edges(lines)})
+    needed = max(MIN_RUNNING_PAGES, len(pages) // 2)
+    running = {line for line, count in seen_at_edges.items() if count >= needed}
+    kept_once: set[str] = set()
+    cleaned = []
+    for lines in pages:
+        edges = set(_edges(lines))
+        out = []
+        for index, line in enumerate(lines):
+            if index in edges:
+                folded = _fold(line)
+                if page_number.fullmatch(folded):
+                    continue
+                if folded in running:
+                    if folded in kept_once:
+                        continue
+                    kept_once.add(folded)
+            out.append(line)
+        cleaned.append("\n".join(out))
+    return cleaned
+
+
+def _page_number_pattern(word: str) -> re.Pattern[str]:
+    # Three digits at most, so a year alone ("2024") is not taken for a page number.
+    return re.compile(rf"[-\s]*(?:{re.escape(word)}\s*)?\d{{1,3}}(?:\s*/\s*\d{{1,4}})?[-\s]*")
+
+
+def _edges(lines: list[str]) -> list[int]:
+    """Indices of the first and last RUNNING_EDGE lines that have text."""
+    filled = [i for i, line in enumerate(lines) if line.strip()]
+    return filled[:RUNNING_EDGE] + filled[RUNNING_EDGE:][-RUNNING_EDGE:]
+
+
+def _fold(line: str) -> str:
+    return lower(" ".join(line.split()))
 
 
 def _check_package(path: Path) -> None:

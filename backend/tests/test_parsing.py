@@ -126,3 +126,31 @@ def test_title_and_note_rows_above_a_sheet_table_are_not_its_header(tmp_path: Pa
         Block("paragraph", "Fiyatlara KDV dahildir.", 1),
         Block("table", "", 1, table=Table((("Hizmet", "Ücret"), ("Nikah salonu", "1500")), 1)),
     )
+
+
+def test_running_headers_and_footers_are_kept_once(tmp_path: Path) -> None:
+    pages = [
+        f"BELEDIYE MECLISI\nKarar {n} kabul edildi ve meclise sunuldu.\nSayfa {n} / 4"
+        for n in range(1, 5)
+    ]
+    parsed = parse(tmp_path, samples.pdf(*pages)).pages
+    # The header stays where it first appears; page numbers go; the decisions, which differ
+    # only in their numbers, all stay.
+    assert [[b.text for b in p.blocks] for p in parsed] == [
+        ["BELEDIYE MECLISI Karar 1 kabul edildi ve meclise sunuldu."],
+        ["Karar 2 kabul edildi ve meclise sunuldu."],
+        ["Karar 3 kabul edildi ve meclise sunuldu."],
+        ["Karar 4 kabul edildi ve meclise sunuldu."],
+    ]
+    # What the page shows is untouched.
+    assert all("BELEDIYE MECLISI" in p.text and "Sayfa" in p.text for p in parsed)
+
+
+def test_two_pages_have_no_running_lines(tmp_path: Path) -> None:
+    parsed = parse(
+        tmp_path, samples.pdf("BASLIK\nKarar 1 kabul edildi.", "BASLIK\nKarar 2 kabul edildi.")
+    ).pages
+    assert [p.blocks[0].text for p in parsed] == [
+        "BASLIK Karar 1 kabul edildi.",
+        "BASLIK Karar 2 kabul edildi.",
+    ]
