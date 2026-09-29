@@ -28,6 +28,7 @@ work/runs/<parser>/extra/ are scored as runs of their own.
 """
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -154,14 +155,17 @@ def metrics(ranks: list[int | None]) -> dict[str, float]:
 
 
 def dense_runs(parser: str, queries: int) -> dict[str, np.ndarray]:
+    digest = hashlib.sha256(QUESTIONS.read_bytes()).hexdigest()
     runs = {}
     for directory in sorted((WORK / "emb" / parser).glob("*")):
         if (directory / "chunks.npy").exists():
             passages = np.load(directory / "chunks.npy")
             questions = np.load(directory / "questions.npy")
-            if questions.shape[0] != queries:
+            meta = json.loads((directory / "meta.json").read_text(encoding="utf-8"))
+            if questions.shape[0] != queries or meta.get("questions_sha256") != digest:
                 raise SystemExit(
-                    f"{directory}: embedded for another question set; run embed.py again"
+                    f"{directory.name}: embedded for another version of the questions; "
+                    f"run embed.py {directory.name} --questions-only"
                 )
             runs[directory.name] = np.argsort(-(questions @ passages.T), axis=1)[:, :CANDIDATES]
     return runs
