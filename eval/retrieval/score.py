@@ -6,7 +6,9 @@
 A question is answered at rank k when the top k chunks cover every piece of its evidence: a
 chunk covers a piece when it is from that document and its pages include the evidence's page
 (or a page where the same quote occurs, ``also``). A multi-document question needs all its
-pieces. Unanswerable questions are left out here; refusing them is the answer step's job.
+pieces; for any other question its pieces are alternatives (the same fact in two versions of a
+standard, or printed twice), and one is enough. Unanswerable questions are left out here;
+refusing them is the answer step's job.
 
 Runs:
 
@@ -20,7 +22,8 @@ Runs:
   amounts, parcels) looked up in the chunks' entities; chunks holding more of them first, in
   BM25 order among equals, then the rest of the BM25 ranking. A question without an entity
   gets the BM25 ranking unchanged.
-- ``rrf:A+B``: reciprocal rank fusion of two runs (k 60), ranks only, never scores.
+- ``rrf:A+B``: reciprocal rank fusion of two runs (k 60), ranks only, never scores;
+  ``rrf2:A+B`` the same with A's ranks weighted twice.
 
 Metrics per question type and overall: Hit@1, Hit@10, MRR@10. Every run ranks 50 candidates;
 ``--dump`` writes them to work/runs/<parser>/<run>.json for rerank.py, whose reranked runs in
@@ -109,11 +112,14 @@ class Identifiers:
         return (first + [i for i in lexical if i not in held])[:depth]
 
 
-def fuse(*rankings: list[int], depth: int = CANDIDATES) -> list[int]:
+def fuse(
+    *rankings: list[int], weights: tuple[float, ...] = (), depth: int = CANDIDATES
+) -> list[int]:
     scores: Counter[int] = Counter()
-    for ranking in rankings:
+    for position, ranking in enumerate(rankings):
+        weight = weights[position] if weights else 1.0
         for rank, index in enumerate(ranking):
-            scores[index] += 1 / (RRF_K + rank + 1)
+            scores[index] += weight / (RRF_K + rank + 1)
     return [index for index, _ in scores.most_common(depth)]
 
 
@@ -123,10 +129,13 @@ class Golden:
 
     @property
     def pieces(self) -> list[set[tuple[str, int]]]:
-        return [
+        pieces = [
             {(e["doc"], e["page"])} | {(a["doc"], a["page"]) for a in e.get("also", [])}
             for e in self.question["evidence"]
         ]
+        if self.question["type"] == "multi_document":
+            return pieces
+        return [set().union(*pieces)]
 
     def rank(self, ranking: list[int], chunks: list[dict[str, Any]]) -> int | None:
         """The rank (1-based) at which every piece is covered, or None in the top ten."""
@@ -199,9 +208,9 @@ def main() -> None:
     ]
     for name, order in dense_runs(args.parser, len(all_questions)).items():
         rankings[name] = [list(map(int, row)) for row in order]
-        rankings[f"rrf:bm25-prefix5+{name}"] = [
-            fuse(a, b) for a, b in zip(rankings["bm25-prefix5"], rankings[name], strict=True)
-        ]
+        pairs = list(zip(rankings["bm25-prefix5"], rankings[name], strict=True))
+        rankings[f"rrf:bm25-prefix5+{name}"] = [fuse(a, b) for a, b in pairs]
+        rankings[f"rrf2:bm25-prefix5+{name}"] = [fuse(a, b, weights=(2, 1)) for a, b in pairs]
     runs = WORK / "runs" / args.parser
     for extra in sorted((runs / "extra").glob("*.json")):
         rankings[extra.stem] = json.loads(extra.read_text(encoding="utf-8"))["rankings"]

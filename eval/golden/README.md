@@ -26,7 +26,7 @@ Evidence comes from 86 documents: 35 municipal, 28 legal, 23 health.
 ```
 
 - `answer`: short, written as the source writes it. `answer_parts` (multi_document only): one part per document.
-- `evidence`: document, page (the file's own page number; a DOCX is one page, an XLSX sheet is one page) and `quote`, 5 to 40 words copied from that page, containing the answer. The quote is the content anchor: page numbers can be checked against it whatever the parser.
+- `evidence`: one item per part of the answer for a multi-document question; for any other question several items are alternatives (the same fact in two versions of a standard), any one of which answers it. Each item: document, page (the file's own page number; a DOCX is one page, an XLSX sheet is one page) and `quote`, 5 to 40 words copied from that page, containing the answer. The quote is the content anchor: page numbers can be checked against it whatever the parser.
 - `also`: other pages that answer the question: where the same quote occurs (a table printed twice, a law quoted word for word in a guide), found by search, and pages that state the answer in other words, found by reading the retrieval misses (three so far). A retrieval hit on any of them counts.
 - `note` (unanswerable only): why the corpus has no answer.
 
