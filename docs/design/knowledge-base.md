@@ -130,7 +130,7 @@ Phase 4, step 5 (ADR 0010, ingestion rules 6 to 9); code in [structure.py](../..
 
 On the corpus with the light parser (97 documents): 11,194 chunks, median 300 tokens, 90th percentile 347, none over 512; parsing 22 s, chunking 0.2 s, entities 3.9 s on the mini PC. In chunk text: 5,740 dates (the pages' text has 5,739; one is split over two lines there), 5,044 articles, 2,735 law numbers, 1,526 amounts, 863 decision numbers and 127 parcels. Checking these against the corpus found four faults, all fixed: rows of numbered tables in a PDF text layer ("1 AYHAN ŞAHİN 802 ...") taken for level 2 headings (179 in one report, their text kept only in heading paths); a spreadsheet's title row taken for its header and repeated in every row group (it had doubled the date count); court numbers written "E.: 2009/34"; parcel numbers with a thousands dot. A random sample of each entity kind was read in context.
 
-Not yet: Docling as the PDF parser (tables with cells, headings from the layout; measured in [parsing.md](../benchmarks/parsing.md), to be decided with the golden set), signature blocks as metadata, MinHash across documents, and the LLM document summary (ADR 0010, rule 9).
+Not in v1: Docling as the PDF parser (measured and not adopted, [parsing.md](../benchmarks/parsing.md)). Not yet: signature blocks as metadata, MinHash across documents, and the LLM document summary (ADR 0010, rule 9).
 
 ## Screen
 

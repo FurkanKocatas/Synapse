@@ -1,6 +1,6 @@
 # PDF parsing: the light parser against Docling
 
-Status: **measured, decision open.** Every born-digital PDF of the corpus has been through both parsers on the reference hardware. The proposal is at the end; until it is decided the light parser stays.
+Status: **decided**, 2026-09-29: the light parser stays, Docling is not adopted for v1 ("Decision" below). Every born-digital PDF of the corpus has been through both parsers on the reference hardware.
 
 Method and scripts: [eval/parsing/](../../eval/parsing/README.md). Requirement: [phase 4](../plan/phase-4.md), step 4 ("Docling, with and without its layout model, against the light adapter"); [ADR 0010](../adr/0010-rag-pipeline.md), ingestion rule 2 (Docling behind the `Parser` port) and rule 7 (never split a table row).
 
@@ -70,17 +70,16 @@ PDFium keeps more words and needs less memory, but it writes spaces around punct
 - **Image size.** PyTorch (CPU) 0.73 GB and Docling's other dependencies make a 1.5 GB environment; the models are 0.37 GB (layout 164 MB, TableFormer accurate 203 MB). The app image today is 1.26 GB.
 - **Licences.** The models: layout model Apache-2.0, TableFormer CDLA-Permissive-2.0, which ADR 0016 does not list and so needs a review in `docs/licences.md` before use (it is permissive: use and redistribution allowed, results unrestricted). The licence gate on Docling's 102 packages rejects four, all permissive with an unusual spelling or part: `regex` (Apache-2.0 AND CNRI-Python), `torch` (includes BSL-1.0), `torchvision` ("BSD"), `transformers` ("Apache 2.0 License").
 
-## Proposal
+## Decision
 
-The parse-level numbers show what Docling adds (tables and headings) and what it costs (0.8 to 4.5 s per page, gigabytes of memory, 1.9 GB of image, recall to be protected by a fallback). They cannot show whether the structure improves answers; that is a retrieval question, and the golden set ([eval/golden/](../../eval/golden/README.md)) can answer it in step 7.
+**The light parser stays; Docling is not adopted for v1** (2026-09-29, Furkan asked for the option the measurements favour). The parse-level numbers show what Docling adds (tables and headings) and what it costs (0.8 to 4.5 s per page, 2.5 to 6.4 GB of memory, 1.9 GB of image, a fallback to protect recall). Two checks on the golden set ([eval/retrieval/](../../eval/retrieval/README.md), 191 answerable questions, chunks with the document context in front) found no gain to pay for it:
 
-**First retrieval check** ([eval/retrieval/](../../eval/retrieval/README.md)), BM25 on the golden set's 191 answerable questions, chunks with the document context in front: light parser Hit@1 0.65, Hit@10 0.95, MRR 0.757; Docling with the text layer below 0.99, 0.63, 0.93, 0.737; on table questions 0.72 and 0.98 against 0.70 and 0.98. No gain for Docling so far; the golden set was written from the light parser's text, which may favour it a little.
+- **Retrieval**, BM25: light parser Hit@1 0.65, Hit@10 0.95, MRR 0.757; Docling with the text layer below 0.99, 0.63, 0.93, 0.737; on table questions 0.72 and 0.98 against 0.70 and 0.98.
+- **Whether a chunk can answer by itself**: for each question, the chunk on its evidence page that holds the answer, and the share of the question's words (its column and row names, for a table) in that chunk. Tables: 0.806 with the light parser, 0.811 with Docling; factual 0.787 against 0.767, identifier 0.771 against 0.787. Docling has no chunk with the answer for three questions (identifiers it glued). In this corpus a table's text layer comes row by row, and its header usually falls in the same chunk.
 
-1. **Keep the light parser as the default now** (it is complete, fast and built), with the identifier fix above.
-2. **Decide Docling with the golden set:** in step 7, index the corpus twice, from the light parser and from Docling with the text layer below 0.99, whose outputs this benchmark already holds, and compare Hit@1 and Hit@10, for table questions especially. Adopt Docling where it wins by more than noise.
-3. If adopted, it runs as its own worker image on a separate queue with a memory limit, never in the API image, converting a few pages at a time; identifiers broken at a line end are repaired from the text layer; its licences are reviewed first.
+The golden set was written from the light parser's text, which may favour it a little; the second check depends less on that. What would change the decision: a customer corpus whose golden set shows table questions failing for want of structure (tables over many pages, header rows far from the values). The benchmark ([eval/parsing/](../../eval/parsing/README.md)) and the Docling chunk variant of the retrieval benchmark stay, to measure it again then; if adopted, it runs as its own worker image with a memory limit, converting ten pages at a time, identifiers broken at a line end repaired from the text layer, its licences reviewed first.
 
 ## Next steps
 
-1. Step 7: the retrieval comparison in point 2 of the proposal, dense and fused as well as lexical.
-2. If Docling is adopted: repair identifiers broken at a line end from the text layer, and measure a worker with 10-page batches on the 16 GB tier alongside the rest of the stack.
+1. When the dense retriever is chosen (step 6), run the Docling chunk variant through it too; the decision above rests on lexical retrieval and on chunk contents.
+2. Measure again on the first customer corpus with complex tables.
