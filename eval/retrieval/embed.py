@@ -1,0 +1,109 @@
+"""Embed the corpus chunks and the golden questions with one model (README.md).
+
+    uv run --project eval/retrieval python eval/retrieval/embed.py MODEL [--parser light]
+                                                                  [--threads 6]
+
+Runs in the environment of eval/retrieval/pyproject.toml, not the backend's. Reads
+work/chunks-<parser>.jsonl (chunks.py) and eval/golden/questions.jsonl; writes, under
+work/emb/<parser>/<MODEL>/, the unit-length vectors of the chunks and of the questions
+(float32 .npy, in file order) and meta.json: the model's revision, the dimension, the seconds
+to embed the corpus, the median milliseconds to embed one question alone, and the process's
+peak memory. Every candidate's licence is allowed by ADR 0016 without review, and none needs
+remote code.
+"""
+
+import argparse
+import json
+import resource
+import statistics
+import time
+from pathlib import Path
+
+import numpy as np
+import torch
+from huggingface_hub import snapshot_download
+from sentence_transformers import SentenceTransformer
+
+HERE = Path(__file__).resolve().parent
+WORK = HERE / "work"
+QUESTIONS = HERE.parent / "golden" / "questions.jsonl"
+MAX_TOKENS = 512
+TIMED_QUERIES = 50
+
+# Prefixes as each model card prescribes for retrieval.
+MODELS = {
+    "e5-small": ("intfloat/multilingual-e5-small", "query: ", "passage: "),
+    "e5-base": ("intfloat/multilingual-e5-base", "query: ", "passage: "),
+    "e5-large": ("intfloat/multilingual-e5-large", "query: ", "passage: "),
+    "bge-m3": ("BAAI/bge-m3", "", ""),
+    "granite-278m": ("ibm-granite/granite-embedding-278m-multilingual", "", ""),
+    "qwen3-0.6b": (
+        "Qwen/Qwen3-Embedding-0.6B",
+        "Instruct: Given a question, retrieve the passages that answer it\nQuery:",
+        "",
+    ),
+}
+
+
+def main() -> None:
+    options = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    options.add_argument("model", choices=sorted(MODELS))
+    options.add_argument("--parser", default="light")
+    options.add_argument("--threads", type=int, default=6)
+    args = options.parse_args()
+    torch.set_num_threads(args.threads)
+    name, query_prefix, passage_prefix = MODELS[args.model]
+    chunks = [
+        json.loads(line)
+        for line in (WORK / f"chunks-{args.parser}.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    questions = [
+        json.loads(line)
+        for line in QUESTIONS.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    model = SentenceTransformer(name, device="cpu")
+    model.max_seq_length = MAX_TOKENS
+    out = WORK / "emb" / args.parser / args.model
+    out.mkdir(parents=True, exist_ok=True)
+
+    started = time.perf_counter()
+    passages = model.encode(
+        [passage_prefix + c["text"] for c in chunks],
+        batch_size=16,
+        normalize_embeddings=True,
+        convert_to_numpy=True,
+    )
+    seconds = time.perf_counter() - started
+    queries = model.encode(
+        [query_prefix + q["question"] for q in questions],
+        batch_size=16,
+        normalize_embeddings=True,
+        convert_to_numpy=True,
+    )
+    single = []
+    for q in questions[:TIMED_QUERIES]:
+        tick = time.perf_counter()
+        model.encode([query_prefix + q["question"]], normalize_embeddings=True)
+        single.append((time.perf_counter() - tick) * 1000)
+
+    np.save(out / "chunks.npy", passages.astype(np.float32))
+    np.save(out / "questions.npy", queries.astype(np.float32))
+    meta = {
+        "model": name,
+        # The snapshot the weights came from: the Hugging Face commit of the model.
+        "revision": Path(snapshot_download(name, local_files_only=True)).name,
+        "dimension": int(passages.shape[1]),
+        "chunks": len(chunks),
+        "seconds": round(seconds, 1),
+        "chunks_per_second": round(len(chunks) / seconds, 2),
+        "query_ms_median": round(statistics.median(single), 1),
+        "threads": args.threads,
+        "peak_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024),
+    }
+    (out / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
+    print(json.dumps(meta))
+
+
+if __name__ == "__main__":
+    main()
