@@ -35,6 +35,7 @@ synapse = "synapse.cli:main"
 [dependency-groups]
 dev = [
     "httpx2>=2.13",
+    "hypothesis>=6.140",
     "import-linter>=2.15",
     "mypy>=2.3",
     "pytest>=9.1",
@@ -177,14 +178,18 @@ type = "forbidden"
 source_modules = ["synapse.api", "synapse.cli", "synapse.worker_cli"]
 forbidden_modules = [
     "synapse.knowledge.blobs",
+    "synapse.knowledge.chunking",
     "synapse.knowledge.documents",
     "synapse.knowledge.filetypes",
+    "synapse.knowledge.headings",
+    "synapse.knowledge.language",
     "synapse.knowledge.ocr",
     "synapse.knowledge.parsing",
     "synapse.knowledge.pipeline",
     "synapse.knowledge.processing",
     "synapse.knowledge.quality",
     "synapse.knowledge.rapid",
+    "synapse.knowledge.structure",
     "synapse.knowledge.turkish",
 ]
 allow_indirect_imports = true
