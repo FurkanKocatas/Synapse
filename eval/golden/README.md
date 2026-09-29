@@ -2,7 +2,7 @@
 
 Turkish questions over the [evaluation corpus](../corpus/README.md), each anchored to the page that answers it: the reference for retrieval and answer quality ([ADR 0010](../../docs/adr/0010-rag-pipeline.md), "Evaluation gates"; [phase 4](../../docs/plan/phase-4.md), step 9).
 
-Status: **draft 1, 2026-09-29.** Checked mechanically ([check.py](check.py)); not yet reviewed by a person. Scanned documents are not covered yet (below).
+Status: **draft 1, 2026-09-29.** Checked mechanically ([check.py](check.py)) and read once against the pages by a second model; not yet reviewed by a person. Scanned documents are not covered yet (below).
 
 ## Contents
 
@@ -33,6 +33,8 @@ Evidence comes from 86 documents: 35 municipal, 28 legal, 23 health.
 ## How it was made
 
 Questions were drafted with a language model from the per-page text the light parser extracts (pages that pass the page quality check only), document by document, with written rules: natural wording as a clerk, lawyer or hospital employee would type it, enough context to be unambiguous in the whole corpus (the municipality, the law, the year), a unique answer supported by the quoted page, no yes/no questions, no arithmetic, no outside knowledge, no personal names. Every unanswerable question was searched for in the corpus's text, and every page where its terms occur was read.
+
+Then every question was read against its page by a second model, told to flag wrong, ambiguous, unnatural and incomplete ones: 219 of 225 passed; three answers were completed (a time limit's starting point, why a blood group is special-category data), one ambiguous budget question and one question asking for a list position were rewritten, and one unanswerable question was replaced, because its document has pages that go to OCR in the section where the answer could be.
 
 [check.py](check.py) verifies, against the parser's pages: every quote is on its stated page, every answer (or answer part) is in a quote, the types, ids and quote lengths, that no evidence sits on a page that goes to OCR, and the repository's dash rule. It passes with 0 failures.
 
