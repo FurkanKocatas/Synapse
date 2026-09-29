@@ -163,15 +163,18 @@ def metrics(ranks: list[int | None]) -> dict[str, float]:
     }
 
 
-def dense_runs(parser: str, queries: int) -> dict[str, np.ndarray]:
-    digest = hashlib.sha256(QUESTIONS.read_bytes()).hexdigest()
+def dense_runs(parser: str, queries: int, questions_file: Path) -> dict[str, np.ndarray]:
+    digest = hashlib.sha256(questions_file.read_bytes()).hexdigest()
+    vectors_file, digest_key = question_vectors(questions_file)
     runs = {}
     for directory in sorted((WORK / "emb" / parser).glob("*")):
         if (directory / "chunks.npy").exists():
             passages = np.load(directory / "chunks.npy")
-            questions = np.load(directory / "questions.npy")
+            if not (directory / vectors_file).exists():
+                continue
+            questions = np.load(directory / vectors_file)
             meta = json.loads((directory / "meta.json").read_text(encoding="utf-8"))
-            if questions.shape[0] != queries or meta.get("questions_sha256") != digest:
+            if questions.shape[0] != queries or meta.get(digest_key) != digest:
                 raise SystemExit(
                     f"{directory.name}: embedded for another version of the questions; "
                     f"run embed.py {directory.name} --questions-only"
@@ -180,11 +183,20 @@ def dense_runs(parser: str, queries: int) -> dict[str, np.ndarray]:
     return runs
 
 
+def question_vectors(questions: Path) -> tuple[str, str]:
+    """Where a question set's vectors and their SHA-256 go: the golden set's own file keeps the
+    plain names, another set (a paraphrased copy) gets its stem in them."""
+    if questions == QUESTIONS:
+        return "questions.npy", "questions_sha256"
+    return f"questions-{questions.stem}.npy", f"questions_sha256-{questions.stem}"
+
+
 def main() -> None:
     options = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     options.add_argument("--parser", default="light")
     options.add_argument("--misses", help="print the questions this run misses at rank 10")
     options.add_argument("--dump", action="store_true", help="write every run's candidates")
+    options.add_argument("--questions", type=Path, default=QUESTIONS)
     args = options.parse_args()
     chunks = [
         json.loads(line)
@@ -192,7 +204,7 @@ def main() -> None:
     ]
     all_questions = [
         json.loads(line)
-        for line in QUESTIONS.read_text(encoding="utf-8").splitlines()
+        for line in args.questions.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
     texts = [c["text"] for c in chunks]
@@ -206,12 +218,14 @@ def main() -> None:
     rankings["ids+bm25-prefix5"] = [
         exact.search(q["question"], ranking) for q, ranking in zip(all_questions, deep, strict=True)
     ]
-    for name, order in dense_runs(args.parser, len(all_questions)).items():
+    for name, order in dense_runs(args.parser, len(all_questions), args.questions).items():
         rankings[name] = [list(map(int, row)) for row in order]
         pairs = list(zip(rankings["bm25-prefix5"], rankings[name], strict=True))
         rankings[f"rrf:bm25-prefix5+{name}"] = [fuse(a, b) for a, b in pairs]
         rankings[f"rrf2:bm25-prefix5+{name}"] = [fuse(a, b, weights=(2, 1)) for a, b in pairs]
     runs = WORK / "runs" / args.parser
+    if args.questions != QUESTIONS:  # another question set: its runs apart from the golden set's
+        runs = WORK / "runs" / f"{args.parser}-{args.questions.stem}"
     for extra in sorted((runs / "extra").glob("*.json")):
         rankings[extra.stem] = json.loads(extra.read_text(encoding="utf-8"))["rankings"]
     if args.dump:

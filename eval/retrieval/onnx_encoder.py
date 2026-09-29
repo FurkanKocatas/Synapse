@@ -8,6 +8,7 @@ length. ``int8`` quantises the weights once, dynamically, with the recipe optimu
 """
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -27,14 +28,31 @@ def snapshot(name: str) -> Path:
     return Path(cached).parent
 
 
+def materialise(folder: Path, onnx_file: str, slug: str) -> Path:
+    """A graph with its weights in a separate file, copied out of the Hugging Face cache:
+    there both are symbolic links into a blob store, and ONNX Runtime refuses external data
+    outside the model's own directory."""
+    source = folder / onnx_file
+    data = source.with_name(source.name + "_data")
+    if not data.exists():
+        return source
+    target = WORK / "onnx" / slug / source.name
+    if not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(data.resolve(), target.with_name(data.name))
+        shutil.copyfile(source.resolve(), target)
+    return target
+
+
 class OnnxEncoder:
     def __init__(
         self, name: str, onnx_file: str, *, int8: bool, threads: int, max_tokens: int
     ) -> None:
         folder = snapshot(name)
-        path = folder / onnx_file
+        slug = name.replace("/", "--")
+        path = materialise(folder, onnx_file, slug)
         if int8:
-            target = WORK / "onnx" / f"{name.replace('/', '--')}-int8.onnx"
+            target = WORK / "onnx" / f"{slug}-int8.onnx"
             if not target.exists():
                 target.parent.mkdir(parents=True, exist_ok=True)
                 quantize_dynamic(path, target, weight_type=QuantType.QInt8, per_channel=True)

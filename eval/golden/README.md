@@ -30,6 +30,10 @@ Evidence comes from 86 documents: 35 municipal, 28 legal, 23 health.
 - `also`: other pages that answer the question: where the same quote occurs (a table printed twice, a law quoted word for word in a guide), found by search, and pages that state the answer in other words, found by reading the retrieval misses (three so far). A retrieval hit on any of them counts.
 - `note` (unanswerable only): why the corpus has no answer.
 
+## The paraphrased copy
+
+[paraphrased.jsonl](paraphrased.jsonl) holds the same questions with every answerable one reworded to avoid the words of its source (synonyms, everyday words for official terms, another sentence structure), keeping what points at the document (the institution, the law, the year) and every identifier; `original` keeps the first wording, answers and evidence are the same. The questions were written looking at their pages and share a third of their words with the evidence quote (five-letter prefixes); the paraphrases share a tenth. Real users are somewhere between the two, so retrieval is measured on both: lexical search looks far better on the first than it will be.
+
 ## How it was made
 
 Questions were drafted with a language model from the per-page text the light parser extracts (pages that pass the page quality check only), document by document, with written rules: natural wording as a clerk, lawyer or hospital employee would type it, enough context to be unambiguous in the whole corpus (the municipality, the law, the year), a unique answer supported by the quoted page, no yes/no questions, no arithmetic, no outside knowledge, no personal names. Every unanswerable question was searched for in the corpus's text, and every page where its terms occur was read.

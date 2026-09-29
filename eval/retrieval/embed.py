@@ -12,8 +12,9 @@ to embed the corpus, the median milliseconds to embed one question alone, the pr
 memory and the questions' SHA-256 (score.py refuses vectors of an older question set).
 
 ``--questions-only`` embeds the questions again after they changed, keeping the corpus's
-vectors. ``--speed N`` only times N chunks drawn with a fixed seed and one question at a time,
-and writes nothing: a full corpus takes up to hours per model, so speed is compared that way,
+vectors; ``--questions FILE`` embeds another question set (a paraphrased copy) beside them.
+``--speed N`` only times N chunks drawn with a fixed seed and one question at a time, and
+writes nothing: a whole corpus takes up to hours per model, so speed is compared that way,
 with nothing else running.
 
 ``--backend onnx`` runs the model's published ONNX graph on ONNX Runtime, ``onnx-int8`` the
@@ -69,6 +70,14 @@ ONNX_FILES = {
 }
 
 
+def question_vectors(questions: Path) -> tuple[str, str]:
+    """Where a question set's vectors and their SHA-256 go: the golden set's own file keeps the
+    plain names, another set (a paraphrased copy) gets its stem in them."""
+    if questions == QUESTIONS:
+        return "questions.npy", "questions_sha256"
+    return f"questions-{questions.stem}.npy", f"questions_sha256-{questions.stem}"
+
+
 def revision(name: str) -> str:
     """The Hugging Face commit the cached weights came from (the snapshot's directory name)."""
     cached = try_to_load_from_cache(name, "config.json")
@@ -82,6 +91,7 @@ def main() -> None:
     options.add_argument("--threads", type=int, default=6)
     options.add_argument("--speed", type=int, default=0)
     options.add_argument("--questions-only", action="store_true")
+    options.add_argument("--questions", type=Path, default=QUESTIONS)
     options.add_argument("--backend", choices=["torch", "onnx", "onnx-int8"], default="torch")
     args = options.parse_args()
     torch.set_num_threads(args.threads)
@@ -92,7 +102,7 @@ def main() -> None:
     ]
     questions = [
         json.loads(line)
-        for line in QUESTIONS.read_text(encoding="utf-8").splitlines()
+        for line in args.questions.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
     model: SentenceTransformer | OnnxEncoder
@@ -113,7 +123,8 @@ def main() -> None:
     run = args.model if args.backend == "torch" else f"{args.model}@{args.backend}"
     out = WORK / "emb" / args.parser / run
     out.mkdir(parents=True, exist_ok=True)
-    digest = hashlib.sha256(QUESTIONS.read_bytes()).hexdigest()
+    digest = hashlib.sha256(args.questions.read_bytes()).hexdigest()
+    vectors_file, digest_key = question_vectors(args.questions)
     if args.questions_only:
         queries = model.encode(
             [query_prefix + q["question"] for q in questions],
@@ -121,9 +132,9 @@ def main() -> None:
             normalize_embeddings=True,
             convert_to_numpy=True,
         )
-        np.save(out / "questions.npy", queries.astype(np.float32))
+        np.save(out / vectors_file, queries.astype(np.float32))
         meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
-        meta["questions_sha256"] = digest
+        meta[digest_key] = digest
         (out / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
         print(json.dumps({"model": name, "questions": len(questions), "sha256": digest[:12]}))
         return
@@ -149,7 +160,7 @@ def main() -> None:
         single.append((time.perf_counter() - tick) * 1000)
 
     np.save(out / "chunks.npy", passages.astype(np.float32))
-    np.save(out / "questions.npy", queries.astype(np.float32))
+    np.save(out / vectors_file, queries.astype(np.float32))
     meta = {
         "model": name,
         "revision": revision(name),
@@ -161,7 +172,7 @@ def main() -> None:
         "threads": args.threads,
         "backend": args.backend,
         "peak_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024),
-        "questions_sha256": digest,
+        digest_key: digest,
     }
     (out / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
     print(json.dumps(meta))
