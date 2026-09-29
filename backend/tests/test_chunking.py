@@ -68,8 +68,18 @@ def run(blocks: list[Block]) -> list[Chunk]:
 
 @settings(max_examples=300)
 @given(documents())
-def test_running_text_is_kept_whole_and_in_order(blocks: list[Block]) -> None:
-    expected = [w for b in blocks if b.kind == "paragraph" for w in b.text.split()]
+def test_running_text_and_headings_are_kept_whole_and_in_order(blocks: list[Block]) -> None:
+    expected: list[str] = []
+    pending: list[str] = []
+    for b in blocks:
+        if b.kind == "heading":
+            pending += b.text.split()
+        elif b.kind == "table":
+            pending = []  # kept in the table's heading path
+        else:
+            expected += pending + b.text.split()
+            pending = []
+    expected += pending
     got = [w for c in run(blocks) if c.kind == "text" for w in c.text.split()]
     assert got == expected
 
@@ -129,7 +139,10 @@ def test_chunks_never_cross_a_level_1_or_2_heading(blocks: list[Block]) -> None:
         sections.append(section)
     for c in run(blocks):
         first, last = c.blocks
-        assert sections[first] == sections[last], c
+        # Headings may lead a chunk (a part's title over its first chapter); its body may not
+        # come from two sections.
+        body = {sections[i] for i in range(first, last + 1) if joined[i].kind != "heading"}
+        assert len(body) <= 1, c
 
 
 @settings(max_examples=200)

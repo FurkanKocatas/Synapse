@@ -14,8 +14,10 @@ Rules, each covered by a property test (tests/test_chunking.py):
    its own, each under the header and the row's label, rather than cut off by the embedder.
 4. A table continued on the next page (same column count, no header or the same header) is
    joined first, so its rows are grouped as one table.
-5. No text is lost or repeated: the running text of the chunks, in order, is the running text
-   of the blocks.
+5. No text is lost or repeated: the text chunks, in order, hold the running text and the
+   headings of the blocks. A heading is written at the start of the text that follows it, so a
+   line taken for a heading by mistake (layout parsers mark "KARAR TARİHİ : 17.06.2025" as
+   one) still reaches search; headings just above a table stay in its heading path instead.
 
 Every chunk keeps its heading path and pages; the deterministic context prefix (title, type,
 date, number, heading path, page) is built from them when the chunk is indexed.
@@ -102,6 +104,8 @@ class _Builder:
         self.chunks: list[Chunk] = []
         self.path: list[tuple[int, str]] = []
         self.draft = _Draft()
+        # Headings not yet written: they open the next text chunk (text, page, block index).
+        self.pending: list[tuple[str, int, int]] = []
 
     def heading_path(self) -> tuple[str, ...]:
         return tuple(label for _, label in self.path)
@@ -141,16 +145,34 @@ class _Builder:
             self.path.pop()
         self.path.append((level, label))
 
+    def heading(self, text: str, page: int, index: int) -> None:
+        self.pending.append((text, page, index))
+
     def text(self, text: str, page: int, index: int) -> None:
-        pieces = split_text(text, self.config.max_tokens, self.count, self.config.words)
-        for piece in pieces:
-            tokens = self.count(piece)
+        pieces = [
+            (piece, page, index)
+            for piece in split_text(text, self.config.max_tokens, self.count, self.config.words)
+        ]
+        self._add([*self.pending, *pieces])
+        self.pending = []
+
+    def finish(self) -> None:
+        # Headings with nothing after them still belong in the text.
+        self._add(self.pending)
+        self.pending = []
+        self.flush()
+
+    def _add(self, parts: list[tuple[str, int, int]]) -> None:
+        for part, page, index in parts:
+            tokens = self.count(part)
             if self.draft.parts and self.draft.tokens + tokens > self.config.target_tokens:
                 self.flush()
-            self.draft.add(piece, tokens, page, index, self.heading_path())
+            self.draft.add(part, tokens, page, index, self.heading_path())
 
     def table(self, table: Table, page_start: int, page_end: int, index: int) -> None:
         self.flush()
+        # Headings just above a table are in its heading path, not in its rows.
+        self.pending = []
         pages = (page_start, page_end)
         header = [line for line in map(row_text, table.header) if line]
         rows = [line for line in map(row_text, table.body) if line]
@@ -206,8 +228,8 @@ class _Builder:
 def indexed_text(chunk: Chunk) -> str:
     """The chunk as search indexes it: its heading path, one line per heading, then its text.
 
-    Headings are not repeated in chunk text, so a number or date in a heading ("2024 YILI
-    FAALİYET RAPORU") is found through this; entity offsets point into it.
+    A table chunk's text has no headings, so a number or date in the heading above a table
+    ("2024 YILI BÜTÇESİ") is found through this; entity offsets point into it.
     """
     return "\n".join([*chunk.heading_path, chunk.text])
 
@@ -223,12 +245,12 @@ def chunk(
         if block.level is not None:
             builder.open_section(block.level, block.label or block.text)
         if block.kind == "heading":
-            continue
-        if block.table is not None:
+            builder.heading(block.text, block.page, index)
+        elif block.table is not None:
             builder.table(block.table, block.page, last_page, index)
         elif block.text.strip():
             builder.text(block.text, block.page, index)
-    builder.flush()
+    builder.finish()
     return builder.chunks
 
 
