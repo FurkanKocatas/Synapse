@@ -1,6 +1,6 @@
 # Phase 4: knowledge base and RAG
 
-Status: in progress, started 2026-09-28. Steps 1 to 4 done ([knowledge-base.md](../design/knowledge-base.md)): in step 4 the page quality check ([page-quality.md](../benchmarks/page-quality.md)) and OCR, chosen by benchmark on the reference hardware and running in the worker ([ocr.md](../benchmarks/ocr.md)). Docling against the light parser is not measured yet; the light parser stays until it is. The corpus is downloaded. Decisions it implements: [ADR 0003](../adr/0003-single-postgres-store.md), [0004](../adr/0004-job-queue.md), [0009](../adr/0009-model-runtime.md), [0010](../adr/0010-rag-pipeline.md). Scope: the knowledge base and search and chat sections of [v1-scope.md](../product/v1-scope.md).
+Status: in progress, started 2026-09-28. Steps 1 to 4 done ([knowledge-base.md](../design/knowledge-base.md)): in step 4 the page quality check ([page-quality.md](../benchmarks/page-quality.md)) and OCR, chosen by benchmark on the reference hardware and running in the worker ([ocr.md](../benchmarks/ocr.md)). Docling against the light parser is measured ([parsing.md](../benchmarks/parsing.md)); the light parser stays until the choice is made, and the proposal there is to make it with the golden set in step 7. Step 5 is done (same design document). A first draft of the golden set for step 9 (225 questions, [eval/golden/](../../eval/golden/README.md)) is in place. The corpus is downloaded. Decisions it implements: [ADR 0003](../adr/0003-single-postgres-store.md), [0004](../adr/0004-job-queue.md), [0009](../adr/0009-model-runtime.md), [0010](../adr/0010-rag-pipeline.md). Scope: the knowledge base and search and chat sections of [v1-scope.md](../product/v1-scope.md).
 
 The phase ends when a user can upload the evaluation corpus, ask questions in Turkish and get cited answers, and the evaluation harness reports the ADR 0010 metrics on it. Each step below ends with tests, a smoke run and its design document.
 
@@ -20,5 +20,5 @@ The phase ends when a user can upload the evaluation corpus, ask questions in Tu
 
 ## Open decisions
 
-- **Corpus download.** Steps 4, 6 and 9 need the 100-document evaluation corpus ([eval/corpus/](../../eval/corpus/)). It is not downloaded yet; steps 1 to 3 do not need it.
-- **Where parsing runs.** Docling's layout model brings PyTorch (hundreds of megabytes, and memory on a 16 GB box). If step 4 shows it is needed, parsing gets its own worker image so the API image stays small.
+- ~~**Corpus download.**~~ Done 2026-09-28 ([eval/corpus/](../../eval/corpus/)).
+- **Where parsing runs.** Docling brings PyTorch (a 1.5 GB environment, 0.37 GB of models) and needs gigabytes of memory on whole documents ([parsing.md](../benchmarks/parsing.md)). If the step 7 comparison adopts it, parsing gets its own worker image so the API image stays small.
