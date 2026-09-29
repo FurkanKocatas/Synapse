@@ -1,10 +1,12 @@
 # The embedding environment of the retrieval benchmark (README.md). Separate from the
-# backend's: the candidates run under PyTorch here only to compare their quality and speed.
+# backend's: the candidates run under PyTorch, or ONNX Runtime as the product would run them.
 [project]
 name = "synapse-eval-retrieval"
 version = "0"
 requires-python = "==3.13.*"
 dependencies = [
+  "onnx>=1.19",
+  "onnxruntime==1.24.4",
   "sentence-transformers>=5",
   "torch==2.14.0",
   "transformers==5.17.0",

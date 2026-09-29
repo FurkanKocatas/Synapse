@@ -2,6 +2,7 @@
 
     uv run --project eval/retrieval python eval/retrieval/embed.py MODEL [--parser light]
                                    [--threads 6] [--speed N] [--questions-only]
+                                   [--backend torch|onnx|onnx-int8]
 
 Runs in the environment of eval/retrieval/pyproject.toml, not the backend's. Reads
 work/chunks-<parser>.jsonl (chunks.py) and eval/golden/questions.jsonl; writes, under
@@ -14,6 +15,10 @@ memory and the questions' SHA-256 (score.py refuses vectors of an older question
 vectors. ``--speed N`` only times N chunks drawn with a fixed seed and one question at a time,
 and writes nothing: a full corpus takes up to hours per model, so speed is compared that way,
 with nothing else running.
+
+``--backend onnx`` runs the model's published ONNX graph on ONNX Runtime, ``onnx-int8`` the
+same with its weights quantised to 8 bits (onnx_encoder.py); vectors go to
+work/emb/<parser>/<MODEL>@<backend>/.
 
 Every candidate's licence is allowed by ADR 0016 without review, and none needs remote code.
 """
@@ -29,7 +34,8 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from huggingface_hub import snapshot_download
+from huggingface_hub import try_to_load_from_cache
+from onnx_encoder import OnnxEncoder
 from sentence_transformers import SentenceTransformer
 
 HERE = Path(__file__).resolve().parent
@@ -53,6 +59,22 @@ MODELS = {
 }
 
 
+# The ONNX graph each model publishes (there is none for qwen3-0.6b).
+ONNX_FILES = {
+    "e5-small": "onnx/model.onnx",
+    "e5-base": "onnx/model.onnx",
+    "e5-large": "onnx/model.onnx",
+    "bge-m3": "onnx/model.onnx",
+    "granite-278m": "model.onnx",
+}
+
+
+def revision(name: str) -> str:
+    """The Hugging Face commit the cached weights came from (the snapshot's directory name)."""
+    cached = try_to_load_from_cache(name, "config.json")
+    return Path(cached).parent.name if isinstance(cached, str) else "unknown"
+
+
 def main() -> None:
     options = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     options.add_argument("model", choices=sorted(MODELS))
@@ -60,6 +82,7 @@ def main() -> None:
     options.add_argument("--threads", type=int, default=6)
     options.add_argument("--speed", type=int, default=0)
     options.add_argument("--questions-only", action="store_true")
+    options.add_argument("--backend", choices=["torch", "onnx", "onnx-int8"], default="torch")
     args = options.parse_args()
     torch.set_num_threads(args.threads)
     name, query_prefix, passage_prefix = MODELS[args.model]
@@ -72,12 +95,23 @@ def main() -> None:
         for line in QUESTIONS.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    model = SentenceTransformer(name, device="cpu")
-    model.max_seq_length = MAX_TOKENS
+    model: SentenceTransformer | OnnxEncoder
+    if args.backend == "torch":
+        model = SentenceTransformer(name, device="cpu")
+        model.max_seq_length = MAX_TOKENS
+    else:
+        model = OnnxEncoder(
+            name,
+            ONNX_FILES[args.model],
+            int8=args.backend == "onnx-int8",
+            threads=args.threads,
+            max_tokens=MAX_TOKENS,
+        )
     if args.speed:
         speed(model, args, chunks, questions)
         return
-    out = WORK / "emb" / args.parser / args.model
+    run = args.model if args.backend == "torch" else f"{args.model}@{args.backend}"
+    out = WORK / "emb" / args.parser / run
     out.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256(QUESTIONS.read_bytes()).hexdigest()
     if args.questions_only:
@@ -118,14 +152,14 @@ def main() -> None:
     np.save(out / "questions.npy", queries.astype(np.float32))
     meta = {
         "model": name,
-        # The snapshot the weights came from: the Hugging Face commit of the model.
-        "revision": Path(snapshot_download(name, local_files_only=True)).name,
+        "revision": revision(name),
         "dimension": int(passages.shape[1]),
         "chunks": len(chunks),
         "seconds": round(seconds, 1),
         "chunks_per_second": round(len(chunks) / seconds, 2),
         "query_ms_median": round(statistics.median(single), 1),
         "threads": args.threads,
+        "backend": args.backend,
         "peak_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024),
         "questions_sha256": digest,
     }
@@ -134,7 +168,7 @@ def main() -> None:
 
 
 def speed(
-    model: SentenceTransformer,
+    model: SentenceTransformer | OnnxEncoder,
     args: argparse.Namespace,
     chunks: list[dict[str, str]],
     questions: list[dict[str, str]],
@@ -161,6 +195,7 @@ def speed(
         "chunks_per_second": round(args.speed / seconds, 2),
         "query_ms_median": round(statistics.median(single), 1),
         "threads": args.threads,
+        "backend": args.backend,
         "peak_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024),
     }
     print(json.dumps(result))
