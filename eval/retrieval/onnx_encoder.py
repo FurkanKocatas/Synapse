@@ -3,8 +3,11 @@
 What an ONNX Runtime adapter for the ``Embedder`` port (ADR 0009) would do, without the
 sentence-transformers wrapper: the model's tokenizer, its ONNX graph, its own pooling (the CLS
 token or the mean of the tokens, as its sentence-transformers configuration says) and unit
-length. ``int8`` quantises the weights once, dynamically, with the recipe optimum calls
-"avx2" (signed 8-bit weights per channel), into work/onnx/.
+length. ``int8`` quantises the weights once, dynamically, to signed 8-bit per channel with
+their range reduced to 7 bits, into work/onnx/. Without the reduced range (the recipe optimum
+calls "avx2"), a CPU with AVX2 but no VNNI (the reference machine's) overflows in the 8-bit
+products: base-sized models' vectors fell to cosine 0.90 and 0.84 of full precision, and their
+retrieval with them.
 """
 
 import json
@@ -52,11 +55,7 @@ class OnnxEncoder:
         slug = name.replace("/", "--")
         path = materialise(folder, onnx_file, slug)
         if int8:
-            target = WORK / "onnx" / f"{slug}-int8.onnx"
-            if not target.exists():
-                target.parent.mkdir(parents=True, exist_ok=True)
-                quantize_dynamic(path, target, weight_type=QuantType.QInt8, per_channel=True)
-            path = target
+            path = quantised(path, slug)
         options = ort.SessionOptions()
         options.intra_op_num_threads = threads
         options.inter_op_num_threads = 1
@@ -99,3 +98,68 @@ class OnnxEncoder:
                 out = np.zeros((len(texts), pooled.shape[1]), np.float32)
             out[batch] = pooled
         return out
+
+
+def quantised(path: Path, slug: str) -> Path:
+    """The graph's weights to signed 8 bits per channel, range reduced to 7 (see above)."""
+    target = WORK / "onnx" / f"{slug}-int8-reduced.onnx"
+    if not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        quantize_dynamic(
+            path, target, weight_type=QuantType.QInt8, per_channel=True, reduce_range=True
+        )
+    return target
+
+
+class OnnxCrossEncoder:
+    """A reranker on ONNX Runtime. No ONNX graph is published for the candidates, so the
+    PyTorch weights are exported once (work/onnx/<model>/model.onnx)."""
+
+    def __init__(self, name: str, *, int8: bool, threads: int, max_tokens: int) -> None:
+        slug = name.replace("/", "--")
+        path = WORK / "onnx" / slug / "model.onnx"
+        if not path.exists():
+            export_cross_encoder(name, path)
+        if int8:
+            path = quantised(path, slug)
+        options = ort.SessionOptions()
+        options.intra_op_num_threads = threads
+        options.inter_op_num_threads = 1
+        self.session = ort.InferenceSession(str(path), options, providers=["CPUExecutionProvider"])
+        self.inputs = {i.name for i in self.session.get_inputs()}
+        self.tokenizer = AutoTokenizer.from_pretrained(name)
+        self.max_tokens = max_tokens
+
+    def predict(self, pairs: list[tuple[str, str]], **_: Any) -> np.ndarray:
+        encoded = self.tokenizer(
+            [q for q, _ in pairs],
+            [d for _, d in pairs],
+            padding=True,
+            truncation=True,
+            max_length=self.max_tokens,
+            return_tensors="np",
+        )
+        feed = {k: v.astype(np.int64) for k, v in encoded.items() if k in self.inputs}
+        logits: np.ndarray = self.session.run(None, feed)[0]
+        return logits[:, 0]
+
+
+def export_cross_encoder(name: str, path: Path) -> None:
+    import torch  # noqa: PLC0415  (only to export once)
+    from transformers import AutoModelForSequenceClassification  # noqa: PLC0415
+
+    model = AutoModelForSequenceClassification.from_pretrained(name).eval()
+    tokenizer = AutoTokenizer.from_pretrained(name)
+    sample = tokenizer(["soru"], ["belge metni"], return_tensors="pt")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    axes = {0: "batch", 1: "tokens"}
+    torch.onnx.export(
+        model,
+        (sample["input_ids"], sample["attention_mask"]),
+        str(path),
+        input_names=["input_ids", "attention_mask"],
+        output_names=["logits"],
+        dynamic_axes={"input_ids": axes, "attention_mask": axes, "logits": {0: "batch"}},
+        opset_version=17,
+        dynamo=False,
+    )
