@@ -8,7 +8,7 @@
 | [installer.md](installer.md) | synapsectl: synapse.toml, secrets, rendering and doctor |
 | [plan/](plan/) | Work plans per phase: [phase-4.md](plan/phase-4.md) (knowledge base and RAG) |
 | [design/](design/) | How implemented parts work: [identity.md](design/identity.md), [audit.md](design/audit.md), [authorization.md](design/authorization.md), [knowledge-base.md](design/knowledge-base.md) |
-| [benchmarks/](benchmarks/) | Measurements behind defaults: [page-quality.md](benchmarks/page-quality.md), [ocr.md](benchmarks/ocr.md) (in progress) |
+| [benchmarks/](benchmarks/) | Measurements behind defaults: [page-quality.md](benchmarks/page-quality.md), [ocr.md](benchmarks/ocr.md), [parsing.md](benchmarks/parsing.md), [embeddings.md](benchmarks/embeddings.md) (retrieval, encoders, reranking), [answers.md](benchmarks/answers.md) (chat models) |
 | [research/](research/) | The evidence behind the decisions: market, hardware, RAG, architecture. Start with [00-summary.md](research/00-summary.md) |
 
 ## Architecture decisions
@@ -32,3 +32,4 @@
 | [0015](adr/0015-tooling-and-ci.md) | Language, repository layout, tooling and CI |
 | [0016](adr/0016-dependency-licence-policy.md) | Dependency and model licence policy |
 | [0017](adr/0017-data-access.md) | psycopg 3 with explicit SQL, migrations with Alembic |
+| [0018](adr/0018-model-defaults.md) | Model defaults: bge-m3, bge-reranker-v2-m3 and Qwen3.5-4B on llama.cpp (proposed) |
