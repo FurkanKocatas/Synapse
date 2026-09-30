@@ -13,6 +13,7 @@ extend-ignore = ["T201"]
 # nothing secret depends on it.
 "ocr/prepare.py" = ["S311"]
 "retrieval/embed.py" = ["S311"]
-# The answer benchmark talks to a llama.cpp server on this machine, and samples questions with
-# a seed.
+# The answer benchmark and the llama.cpp encoders talk to a llama.cpp server on this machine; the
+# answer benchmark samples questions with a seed.
 "answers/answer.py" = ["S310", "S311"]
+"retrieval/llama_encoder.py" = ["S310"]

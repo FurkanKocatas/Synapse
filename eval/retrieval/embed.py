@@ -2,7 +2,7 @@
 
     uv run --project eval/retrieval python eval/retrieval/embed.py MODEL [--parser light]
                                    [--threads 6] [--speed N] [--questions-only]
-                                   [--backend torch|onnx|onnx-int8]
+                                   [--backend torch|onnx|onnx-int8|llama] [--url URL]
 
 Runs in the environment of eval/retrieval/pyproject.toml, not the backend's. Reads
 work/chunks-<parser>.jsonl (chunks.py) and eval/golden/questions.jsonl; writes, under
@@ -18,8 +18,10 @@ writes nothing: a whole corpus takes up to hours per model, so speed is compared
 with nothing else running.
 
 ``--backend onnx`` runs the model's published ONNX graph on ONNX Runtime, ``onnx-int8`` the
-same with its weights quantised to 8 bits (onnx_encoder.py); vectors go to
-work/emb/<parser>/<MODEL>@<backend>/.
+same with its weights quantised to 8 bits (onnx_encoder.py), ``llama`` the model's GGUF on a
+llama.cpp server at ``--url`` (llama_encoder.py), named by ``--label`` (``vulkan-f16``); vectors
+go to work/emb/<parser>/<MODEL>@<backend>[-<label>]/. On ``llama`` the peak memory is this
+process's, not the server's.
 
 Every candidate's licence is allowed by ADR 0016 without review, and none needs remote code.
 """
@@ -36,6 +38,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from huggingface_hub import try_to_load_from_cache
+from llama_encoder import LlamaEncoder
 from onnx_encoder import OnnxEncoder
 from sentence_transformers import SentenceTransformer
 
@@ -92,7 +95,11 @@ def main() -> None:
     options.add_argument("--speed", type=int, default=0)
     options.add_argument("--questions-only", action="store_true")
     options.add_argument("--questions", type=Path, default=QUESTIONS)
-    options.add_argument("--backend", choices=["torch", "onnx", "onnx-int8"], default="torch")
+    options.add_argument(
+        "--backend", choices=["torch", "onnx", "onnx-int8", "llama"], default="torch"
+    )
+    options.add_argument("--url", default="http://127.0.0.1:8082")
+    options.add_argument("--label", default="")
     args = options.parse_args()
     torch.set_num_threads(args.threads)
     name, query_prefix, passage_prefix = MODELS[args.model]
@@ -105,22 +112,12 @@ def main() -> None:
         for line in args.questions.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    model: SentenceTransformer | OnnxEncoder
-    if args.backend == "torch":
-        model = SentenceTransformer(name, device="cpu")
-        model.max_seq_length = MAX_TOKENS
-    else:
-        model = OnnxEncoder(
-            name,
-            ONNX_FILES[args.model],
-            int8=args.backend == "onnx-int8",
-            threads=args.threads,
-            max_tokens=MAX_TOKENS,
-        )
+    model = load(args)
     if args.speed:
         speed(model, args, chunks, questions)
         return
-    run = args.model if args.backend == "torch" else f"{args.model}@{args.backend}"
+    backend = f"{args.backend}-{args.label}" if args.label else args.backend
+    run = args.model if backend == "torch" else f"{args.model}@{backend}"
     out = WORK / "emb" / args.parser / run
     out.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256(args.questions.read_bytes()).hexdigest()
@@ -170,7 +167,7 @@ def main() -> None:
         "chunks_per_second": round(len(chunks) / seconds, 2),
         "query_ms_median": round(statistics.median(single), 1),
         "threads": args.threads,
-        "backend": args.backend,
+        "backend": backend,
         "peak_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024),
         digest_key: digest,
     }
@@ -178,8 +175,25 @@ def main() -> None:
     print(json.dumps(meta))
 
 
+def load(args: argparse.Namespace) -> SentenceTransformer | OnnxEncoder | LlamaEncoder:
+    name = MODELS[args.model][0]
+    if args.backend == "torch":
+        model = SentenceTransformer(name, device="cpu")
+        model.max_seq_length = MAX_TOKENS
+        return model
+    if args.backend == "llama":
+        return LlamaEncoder(name, url=args.url, max_tokens=MAX_TOKENS)
+    return OnnxEncoder(
+        name,
+        ONNX_FILES[args.model],
+        int8=args.backend == "onnx-int8",
+        threads=args.threads,
+        max_tokens=MAX_TOKENS,
+    )
+
+
 def speed(
-    model: SentenceTransformer | OnnxEncoder,
+    model: SentenceTransformer | OnnxEncoder | LlamaEncoder,
     args: argparse.Namespace,
     chunks: list[dict[str, str]],
     questions: list[dict[str, str]],
@@ -206,7 +220,7 @@ def speed(
         "chunks_per_second": round(args.speed / seconds, 2),
         "query_ms_median": round(statistics.median(single), 1),
         "threads": args.threads,
-        "backend": args.backend,
+        "backend": f"{args.backend}-{args.label}" if args.label else args.backend,
         "peak_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024),
     }
     print(json.dumps(result))

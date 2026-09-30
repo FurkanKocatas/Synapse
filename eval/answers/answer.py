@@ -12,9 +12,10 @@ chunks as numbered sources, from the corpus as eval/retrieval chunks it:
 
 The model answers in Turkish as JSON (``answer``, ``citations``, ``sufficient``), with a
 grammar the server enforces, thinking off. Scored per question: correct when the answer
-contains the golden answer (or every answer part), after Turkish lower-casing and plain
-apostrophes and dashes; an unanswerable question is right when the model says the sources do
-not suffice; cited when a cited source holds the evidence. Timings from the server: prompt
+contains the golden answer (or every answer part), after Turkish lower-casing, plain
+apostrophes and dashes, and numbers written as digits (numerals.py); an unanswerable question
+is right when the model says the sources do not suffice; cited when a cited source holds the
+evidence. Timings from the server: prompt
 tokens and seconds (the time to the first token), generated tokens and seconds.
 
 Writes eval/answers/work/<MODEL_NAME>-<context>.jsonl and prints the summary.
@@ -36,6 +37,7 @@ sys.path.insert(0, str(HERE.parent / "retrieval"))
 sys.path.insert(0, str(HERE.parent / "golden"))
 
 from check import fold  # noqa: E402
+from numerals import numeric  # noqa: E402
 from score import PREFIX, QUESTIONS, WORK, Bm25, Golden  # noqa: E402
 
 SOURCES = 6
@@ -115,12 +117,12 @@ def judge(
     golden: Golden, answer: dict[str, Any], shown: list[int], chunks: list[dict[str, Any]]
 ) -> dict[str, bool]:
     q = golden.question
-    text = fold(str(answer.get("answer", "")))
+    text = numeric(fold(str(answer.get("answer", ""))))
     if q["type"] == "unanswerable":
         refused = not answer.get("sufficient", True) or "bulunamad" in text
         return {"correct": refused, "cited": True}
     parts = q.get("answer_parts") or [q["answer"]]
-    correct = all(fold(part) in text for part in parts)
+    correct = all(numeric(fold(part)) in text for part in parts)
     cited_chunks = [shown[n - 1] for n in answer.get("citations", []) if 1 <= n <= len(shown)]
     cited = all(any(covers(chunks[i], piece) for i in cited_chunks) for piece in golden.pieces)
     return {"correct": correct, "cited": cited}
