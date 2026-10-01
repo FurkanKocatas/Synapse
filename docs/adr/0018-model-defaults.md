@@ -1,6 +1,6 @@
 # 0018. Model defaults: bge-m3, bge-reranker-v2-m3 and Qwen3.5-4B on llama.cpp
 
-- Status: proposed
+- Status: accepted (Furkan, 2026-10-01)
 - Date: 2026-09-30
 
 ## Context

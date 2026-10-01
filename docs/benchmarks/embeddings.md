@@ -1,6 +1,6 @@
 # Retrieval on the golden set: lexical, dense, fused, reranked
 
-Status: **proposed**, 2026-09-30, for Furkan's decision ([ADR 0018](../adr/0018-model-defaults.md)). Phase 4, step 6 (the embedding bake-off) and the first measurements for step 7 (retrieval); the choice is at the end.
+Status: **decided**, 2026-10-01: Furkan accepted [ADR 0018](../adr/0018-model-defaults.md). Phase 4, step 6 (the embedding bake-off) and the first measurements for step 7 (retrieval); the choice is at the end.
 
 Method and scripts: [eval/retrieval/](../../eval/retrieval/README.md); questions: [eval/golden/](../../eval/golden/README.md), draft 1, 191 answerable questions, and their paraphrased copy.
 
@@ -120,7 +120,7 @@ On the reference machine the integrated GPU makes bge-m3 affordable (100,000 chu
 - **Encoders on llama.cpp:** Q8_0 on a GPU through Vulkan, 16-bit on the CPU alone; batches of 512 tokens.
 - **Not chosen:** e5-base (10 points lower paraphrased Hit@10), ONNX Runtime (slower, int8 unusable on this CPU), inputs cut to fewer tokens.
 
-The model choice as a whole, with the chat model ([answers.md](answers.md)), is [ADR 0018](../adr/0018-model-defaults.md), proposed.
+The model choice as a whole, with the chat model ([answers.md](answers.md)), is [ADR 0018](../adr/0018-model-defaults.md), accepted.
 
 ## Next steps
 

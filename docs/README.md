@@ -32,4 +32,4 @@
 | [0015](adr/0015-tooling-and-ci.md) | Language, repository layout, tooling and CI |
 | [0016](adr/0016-dependency-licence-policy.md) | Dependency and model licence policy |
 | [0017](adr/0017-data-access.md) | psycopg 3 with explicit SQL, migrations with Alembic |
-| [0018](adr/0018-model-defaults.md) | Model defaults: bge-m3, bge-reranker-v2-m3 and Qwen3.5-4B on llama.cpp (proposed) |
+| [0018](adr/0018-model-defaults.md) | Model defaults: bge-m3, bge-reranker-v2-m3 and Qwen3.5-4B on llama.cpp |

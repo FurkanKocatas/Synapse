@@ -1,6 +1,6 @@
 # Grounded answers in Turkish: the chat model bake-off
 
-Status: **proposed**, 2026-09-30, for Furkan's decision: Qwen3.5-4B as the chat model of the 16 GB tier ([ADR 0018](../adr/0018-model-defaults.md)). The Turkish grounded-QA benchmark that [ADR 0009](../adr/0009-model-runtime.md) makes the choice depend on, and the first measurement for phase 4, step 8.
+Status: **decided**, 2026-10-01: Qwen3.5-4B is the chat model of the 16 GB tier ([ADR 0018](../adr/0018-model-defaults.md), accepted by Furkan). The Turkish grounded-QA benchmark that [ADR 0009](../adr/0009-model-runtime.md) makes the choice depend on, and the first measurement for phase 4, step 8.
 
 Method and script: [eval/answers/](../../eval/answers/README.md); questions: [eval/golden/](../../eval/golden/README.md), the same 75 drawn with a fixed seed for every run: 66 answerable (19 factual, 24 identifier, 15 table, 8 multi-document) and 9 unanswerable.
 
