@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from synapsectl import cli, models
+from synapsectl import cli, models, render
 from synapsectl.models import Accelerator, Conversion, Download, ModelFile
 
 
@@ -179,3 +179,8 @@ def test_the_development_stack_runs_what_installations_run() -> None:
         assert gpu["services"][name]["image"] == models.SERVER_IMAGES["vulkan"], name
         assert cpu_command[1] == f"/models/{models.server_file(role, Accelerator.CPU)}", name
         assert gpu_command[1] == f"/models/{models.server_file(role, Accelerator.VULKAN)}", name
+        # Every argument too: the stack's chat server once lacked one installations had.
+        _, key, arguments = render.SERVERS[name]
+        tail = ["--api-key-file", f"/run/secrets/{key}"]
+        assert cpu_command[2:] == [*arguments, *tail], name
+        assert gpu_command[2:] == [*arguments, "-ngl", "99", *tail], name

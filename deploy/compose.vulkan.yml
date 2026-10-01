@@ -30,4 +30,5 @@ services:
     <<: *gpu
     command:
       [-m, /models/Qwen3.5-4B-Q4_K_M.gguf, -c, "16384", --parallel, "2", --jinja,
-       --reasoning-budget, "0", -ngl, "99", --api-key-file, /run/secrets/chat_key]
+       --reasoning-budget, "0", --cache-ram, "0", -ngl, "99", --api-key-file,
+       /run/secrets/chat_key]
