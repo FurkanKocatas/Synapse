@@ -24,6 +24,10 @@ class LogFormat(StrEnum):
     CONSOLE = "console"
 
 
+# A model server's address: http or https, a host and a port, no path.
+MODEL_URL = r"^https?://[A-Za-z0-9.-]+(:\d+)?$"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SYNAPSE_", frozen=True, extra="ignore")
 
@@ -63,13 +67,31 @@ class Settings(BaseSettings):
     ocr_tessdata_dir: Path | None = None
     # Threads RapidOCR's second reading may use. A worker reads one page at a time with it.
     ocr_threads: int = Field(default=1, ge=1, le=16)
+    # Model servers (ADR 0009, ADR 0018): llama.cpp on the internal network, one per role, each
+    # with its own API key. A role without a URL has no model: ingestion then stores no vectors.
+    embed_url: str | None = Field(default=None, pattern=MODEL_URL)
+    embed_key_file: Path = Path("/run/secrets/embed_key")
+    rerank_url: str | None = Field(default=None, pattern=MODEL_URL)
+    rerank_key_file: Path = Path("/run/secrets/rerank_key")
+    chat_url: str | None = Field(default=None, pattern=MODEL_URL)
+    chat_key_file: Path = Path("/run/secrets/chat_key")
+    # The longest a model call may take; a chat answer on the CPU alone takes about a minute.
+    model_timeout_seconds: float = Field(default=180, ge=1, le=900)
     # The address users open, such as https://synapse.example.org. Passkeys are bound to its
     # host name, so they stop working if it changes; unset means passkeys are unavailable.
     public_url: str | None = Field(
         default=None, pattern=r"^(https://[^/:?#]+(:\d+)?|http://localhost(:\d+)?)$"
     )
 
-    @field_validator("tenant_id", "public_url", "ocr_tessdata_dir", mode="before")
+    @field_validator(
+        "tenant_id",
+        "public_url",
+        "ocr_tessdata_dir",
+        "embed_url",
+        "rerank_url",
+        "chat_url",
+        mode="before",
+    )
     @classmethod
     def _empty_means_unset(cls, value: object) -> object:
         # Environment files commonly carry "NAME=" for a value not filled in yet.
