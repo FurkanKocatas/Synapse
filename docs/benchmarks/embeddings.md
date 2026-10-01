@@ -124,7 +124,7 @@ The model choice as a whole, with the chat model ([answers.md](answers.md)), is 
 
 ## Next steps
 
-1. **The same numbers from the product's search** (step 7): BM25 on PostgreSQL's `turkish` configuration over text lower-cased first, bge-m3 vectors as `halfvec` with HNSW, the fusion and the reranker as chosen above; `score.py` runs against its rankings, and CI fails if they fall more than a point below these.
+1. ~~**The same numbers from the product's search**~~ Done (step 7, [search.md](../design/search.md#measured)): through the product's API on its own ingestion, reranked, 0.75 / 0.97 (MRR 0.843) as written and 0.56 / 0.83 (0.656) paraphrased, with five-letter terms in PostgreSQL's BM25, which beat its Snowball stems there too. CI is to fail if they fall more than a point below these.
 2. **Identifier questions.** Hit@1 0.82 against ADR 0010's target of 0.98 for them. The exact lookup made ranking worse as a first stage; measure it as a tie-breaker after reranking, among candidates the reranker scores close.
 3. **Multi-document questions** need a chunk from each document in the top 10 (0.71 to 0.86 today): measure keeping at least one chunk per document among the reranked candidates.
 4. **Another integrated GPU** (an Intel one, the other common kind in office machines) before the installer relies on Vulkan everywhere: speed and the same rankings.
