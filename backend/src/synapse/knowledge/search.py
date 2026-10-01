@@ -6,9 +6,9 @@ measured:
 1. **Candidates**, each query restricted to the newest searchable version (``parsed``,
    ``embedding`` or ``ready``) of every document ``accessible_documents`` gives the user, so a
    chunk the user may not read is never a candidate, whatever its score:
-   - lexical: BM25 of pg_textsearch over ``document_chunks.search`` (the document's context and
-     the chunk, lower-cased the Turkish way; migration 0015) on PostgreSQL's ``turkish``
-     configuration, the question lower-cased the same way;
+   - lexical: BM25 of pg_textsearch over ``document_chunks.search``, the terms (``lexical_text``)
+     of the document's context and the chunk (migration 0016), on the ``simple`` configuration,
+     the question turned into terms the same way;
    - dense: bge-m3's vector of the question against the chunks' (HNSW, cosine), when an
      embedding model is configured.
 2. **Fusion** by reciprocal rank (k 60) of the two top-50 lists: ranks only. No score is ever
@@ -21,6 +21,7 @@ A model that does not answer leaves its stage out and says so in ``warnings``: s
 answers by words, and the user sees that it did.
 """
 
+import re
 import time
 from collections import defaultdict
 from collections.abc import Sequence
@@ -39,6 +40,13 @@ log = structlog.get_logger(__name__)
 
 CANDIDATES = 50
 RERANK_TOP = 15
+# Lexical terms (``lexical_text``): words cut to their first five letters, a stand-in for
+# Turkish lemmas that ranked above PostgreSQL's Snowball stems on the golden set (Hit@10 0.963
+# against 0.937 by words alone, docs/benchmarks/embeddings.md), and identifiers kept whole.
+PREFIX = 5
+MIN_IDENTIFIER = 4
+_WORD = re.compile(r"\w+")
+_IDENTIFIER = re.compile(r"[\w./-]*\d[\w./-]*")
 RRF_K = 60
 MAX_QUERY = 1000
 # HNSW returns at most ef_search rows; iterative scans keep going when the permission filter
@@ -106,6 +114,19 @@ class Found:
     reranked: bool
     warnings: list[str]
     milliseconds: dict[str, float]
+
+
+def lexical_text(text: str) -> str:
+    """The terms lexical search indexes and asks for, as one string for pg_textsearch's
+    ``simple`` configuration: the text lower-cased the Turkish way, each word without a digit cut
+    to its first five letters ("kararları" and "kararı": "karar"), and every identifier of four
+    characters or more also whole ("2026/16", "e-81912396-105.04"), so a number is not matched
+    only digit group by digit group."""
+    folded = lower(text)
+    words = [w if any(ch.isdigit() for ch in w) else w[:PREFIX] for w in _WORD.findall(folded)]
+    identifiers = [t.strip(".-/") for t in _IDENTIFIER.findall(folded)]
+    whole = [t for t in identifiers if len(t) >= MIN_IDENTIFIER and not t.isdigit()]
+    return " ".join([*words, *whole])
 
 
 def fuse(*rankings: Sequence[Key], k: int = RRF_K) -> list[Key]:
@@ -197,7 +218,7 @@ class Search:
 
     async def _lexical(self, connection: AsyncConnection, user_id: UUID, query: str) -> list[Key]:
         cursor = await connection.execute(
-            _LEXICAL, {"user": user_id, "limit": CANDIDATES, "query": lower(query)}
+            _LEXICAL, {"user": user_id, "limit": CANDIDATES, "query": lexical_text(query)}
         )
         # Zero: none of the question's terms is in the chunk (see _LEXICAL).
         return [

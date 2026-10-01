@@ -524,14 +524,14 @@ def embedding_jobs(world: World, version_id: str) -> int:
     return count
 
 
-async def test_reindex_chunks_old_versions_again_and_queues_embedding(
+async def test_reindex_writes_missing_terms_and_queues_embedding(
     world: World, editor: TestClient
 ) -> None:
     old = upload(editor, samples.pdf(TEXT), "eski.pdf")
     plain = upload(editor, samples.pdf(TEXT), "vektorsuz.pdf")
     # Without an embedding model: both parsed, without vectors.
     await asyncio.to_thread(run_worker, world, None, [Queue.INGEST])
-    # As if old had been chunked before lexical search existed (migration 0015).
+    # As if old had been chunked before its terms were written (migration 0016).
     world.db.execute(
         "UPDATE synapse.document_chunks SET search = NULL WHERE version_id = %s",
         (old["version_id"],),
@@ -540,7 +540,7 @@ async def test_reindex_chunks_old_versions_again_and_queues_embedding(
     await database.open()
     try:
         without_model = await reindex(database, world.tenant_id, embed=False)
-        assert without_model.rechunked == 1
+        assert without_model.terms_written == 1
         assert without_model.embedding_queued == 0
         searchable = world.db.execute(
             "SELECT search FROM synapse.document_chunks WHERE version_id = %s",
@@ -550,7 +550,8 @@ async def test_reindex_chunks_old_versions_again_and_queues_embedding(
         assert searchable[0].startswith("eski")
         assert embedding_jobs(world, old["version_id"]) == 0
         with_model = await reindex(database, world.tenant_id, embed=True)
-        assert with_model.rechunked == 0
+        assert with_model.terms_written == 0
+        assert with_model.embedding_queued >= 2
     finally:
         await database.close()
     assert embedding_jobs(world, old["version_id"]) == 1
@@ -558,3 +559,30 @@ async def test_reindex_chunks_old_versions_again_and_queues_embedding(
     await asyncio.to_thread(run_worker, world, None, [Queue.EMBED], StandInEmbedder())
     assert version_state(world, old["version_id"]) == ("ready", None)
     assert version_state(world, plain["version_id"]) == ("ready", None)
+
+
+def test_the_context_skips_a_cover_page_read_by_ocr(world: World, editor: TestClient) -> None:
+    # Page 1 has no text layer (a cover, read by OCR), page 2 has one.
+    body = upload(
+        editor, samples.pdf("", "Belediye meclisi toplandi ve karar verdi."), "kapakli.pdf"
+    )
+    run_worker(world, queues=ALL_QUEUES)
+    context, _ = indexing(world, body["version_id"])
+    assert context == "kapakli\nBelediye meclisi toplandi ve karar verdi."
+    # The OCR text is still in the chunks, and a scan without any text layer keeps its own.
+    texts = [c[2] for c in chunks_of(world, body["version_id"])]
+    assert any("Karar 2026/35 okundu." in t for t in texts)
+    scan = upload(editor, samples.pdf(""), "tarama-yalniz.pdf")
+    run_worker(world, queues=ALL_QUEUES)
+    assert indexing(world, scan["version_id"])[0] == "tarama yalniz\nKarar 2026/35 okundu."
+
+
+def chunks_of(world: World, version_id: str) -> list[tuple[Any, ...]]:
+    return [
+        tuple(row)
+        for row in world.db.execute(
+            "SELECT ordinal, kind, text FROM synapse.document_chunks WHERE version_id = %s "
+            "ORDER BY ordinal",
+            (version_id,),
+        ).fetchall()
+    ]

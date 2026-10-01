@@ -98,7 +98,7 @@ def build_parser() -> argparse.ArgumentParser:
     knowledge_commands = knowledge.add_subparsers(dest="knowledge_command", required=True)
     knowledge_commands.add_parser(
         "reindex",
-        help="Chunk again versions stored before lexical search, and queue embedding for "
+        help="Write the lexical terms of chunks that lack them, and queue embedding for "
         "versions whose chunks lack vectors (needs SYNAPSE_EMBED_URL).",
     )
 
@@ -150,7 +150,10 @@ def _run_admin_command(args: argparse.Namespace) -> int:
         print(audit_cli.checkpoint(settings))
     elif args.command == "knowledge":
         done = worker_cli.reindex_all(settings)
-        print(f"chunked again: {done.rechunked}, embedding queued: {done.embedding_queued}")
+        print(
+            f"lexical terms written: {done.terms_written} versions, "
+            f"embedding queued: {done.embedding_queued}"
+        )
     elif args.command == "tenant":
         if args.if_missing and args.id is None:
             raise accounts_cli.CommandError("--if-missing needs --id")

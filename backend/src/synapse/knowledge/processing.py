@@ -57,8 +57,8 @@ from synapse.knowledge.ocr import (
 )
 from synapse.knowledge.parsing import Page, Parsed, ParseError, Parser
 from synapse.knowledge.pipeline import EMBED_TASK, OCR_TASK, PARSE_TASK, embed_job, ocr_job
+from synapse.knowledge.search import lexical_text
 from synapse.knowledge.structure import Block
-from synapse.knowledge.turkish import lower
 from synapse.models.public import (
     Embedder,
     ModelResponseError,
@@ -269,17 +269,18 @@ class Processor:
 
 @dataclass(frozen=True)
 class Reindexed:
-    rechunked: int
+    terms_written: int
     embedding_queued: int
 
 
 async def reindex(database: Database, tenant_id: UUID, *, embed: bool) -> Reindexed:
     """Index again what search would miss (``synapse knowledge reindex``).
 
-    Versions whose chunks were stored before lexical search (migration 0015: no ``search``) are
-    cut again from their pages; with ``embed`` (an embedding model is configured), they and any
-    version with chunks still lacking a vector (models installed later, or ``embedding_failure``)
-    get an embedding job. Each version is locked as the jobs lock it, and only ``parsed`` or
+    Chunks without lexical terms (stored before migration 0016 emptied the column, or before
+    0015 added it) get them written in place, from their text and their version's context, so
+    chunks and vectors stay. With ``embed`` (an embedding model is configured), every version
+    with chunks still lacking a vector (models installed later, or ``embedding_failure``) gets
+    an embedding job. Each version is locked as the jobs lock it, and only ``parsed`` or
     ``ready`` ones are touched, so a running job is never raced.
     """
     async with database.tenant_transaction(tenant_id) as connection:
@@ -290,21 +291,38 @@ async def reindex(database: Database, tenant_id: UUID, *, embed: bool) -> Reinde
             "WHERE d.deleted_at IS NULL AND v.status IN ('parsed', 'ready') GROUP BY v.id"
         )
         candidates = [row for row in await cursor.fetchall() if row[1] or (embed and row[2])]
-    rechunked = queued = 0
-    for version_id, unsearchable, _ in candidates:
+    written = queued = 0
+    for version_id, without_terms, without_vectors in candidates:
         async with database.tenant_transaction(tenant_id) as connection:
             claimed = await _claim(connection, version_id, "parsed", "ready")
             if claimed is None:
                 continue
-            if unsearchable:
-                await _store_chunks(connection, tenant_id, version_id)
-                await _set_status(connection, version_id, "parsed")
-                rechunked += 1
-            if embed:
+            if without_terms:
+                await _write_terms(connection, version_id)
+                written += 1
+            if embed and without_vectors:
                 await enqueue(connection, tenant_id, embed_job(claimed.document_id, version_id))
                 queued += 1
-    log.info("ingest.reindexed", rechunked=rechunked, embedding_queued=queued)
-    return Reindexed(rechunked, queued)
+    log.info("ingest.reindexed", terms_written=written, embedding_queued=queued)
+    return Reindexed(written, queued)
+
+
+async def _write_terms(connection: AsyncConnection, version_id: UUID) -> None:
+    cursor = await connection.execute(
+        "SELECT c.ordinal, coalesce(v.context, ''), c.heading_path, c.text "
+        "FROM document_chunks c JOIN document_versions v ON v.id = c.version_id "
+        "WHERE c.version_id = %s AND c.search IS NULL",
+        (version_id,),
+    )
+    rows = await cursor.fetchall()
+    async with connection.cursor() as update:
+        await update.executemany(
+            "UPDATE document_chunks SET search = %s WHERE version_id = %s AND ordinal = %s",
+            [
+                (lexical_text(contextual_text(context, headings, text)), version_id, ordinal)
+                for ordinal, context, headings, text in rows
+            ],
+        )
 
 
 def _version_id(args: Args) -> UUID:
@@ -381,15 +399,24 @@ async def _store_pages(
 async def _store_chunks(connection: AsyncConnection, tenant_id: UUID, version_id: UUID) -> int:
     """Chunk the version's pages, as they are now, and store the chunks and their entities."""
     cursor = await connection.execute(
-        "SELECT blocks FROM document_pages WHERE version_id = %s ORDER BY number", (version_id,)
+        "SELECT number, text_source, blocks FROM document_pages WHERE version_id = %s "
+        "ORDER BY number",
+        (version_id,),
     )
-    blocks = [Block.from_json(data) for (page,) in await cursor.fetchall() for data in page]
+    pages = await cursor.fetchall()
+    blocks = [Block.from_json(data) for _, _, page in pages for data in page]
     chunks = chunk(blocks)
     cursor = await connection.execute(
         "SELECT filename FROM document_versions WHERE id = %s", (version_id,)
     )
     row = await cursor.fetchone()
-    context = document_context(row[0] if row else "", chunks)[:MAX_CONTEXT]
+    # The opening words come from pages with a text layer when the document has any: a cover
+    # page sent to OCR reads its logo as noise ("il ll \ WW"), which then stood in front of
+    # every chunk of 17 of the corpus's 97 documents. A scan has only OCR pages.
+    read = {number for number, source, _ in pages if source == "ocr"}
+    layered = [b for b in blocks if b.page not in read]
+    opening = chunk(layered) if layered and read else chunks
+    context = document_context(row[0] if row else "", opening)[:MAX_CONTEXT]
     # New chunks have no vectors yet, whatever the old ones had.
     await connection.execute(
         "UPDATE document_versions SET context = %s, embedded_with = NULL WHERE id = %s",
@@ -414,8 +441,8 @@ async def _store_chunks(connection: AsyncConnection, tenant_id: UUID, version_id
                     c.tokens,
                     content_hash(c.text),
                     simhash(c.text),
-                    # What lexical search reads (migration 0015): lower-cased the Turkish way.
-                    lower(contextual_text(context, c.heading_path, c.text)),
+                    # What lexical search reads (migration 0016): the chunk's terms.
+                    lexical_text(contextual_text(context, c.heading_path, c.text)),
                 )
                 for c in chunks
             ],

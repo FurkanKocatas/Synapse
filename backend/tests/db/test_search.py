@@ -22,7 +22,7 @@ from synapse.api.deps import CLIENT_HEADER, CSRF_HEADER
 from synapse.jobs.queue import Queue
 from synapse.kernel.database import Database
 from synapse.knowledge.public import Search
-from synapse.knowledge.search import RERANK_TOP, fuse
+from synapse.knowledge.search import RERANK_TOP, fuse, lexical_text
 from synapse.knowledge.turkish import lower
 from synapse.models.public import ModelUnavailableError
 from tests import knowledge_samples as samples
@@ -295,3 +295,13 @@ def test_fusion_ranks_by_rank_only() -> None:
     assert fuse([a, c, d], [b, c]) == [c, a, b, d]
     assert fuse([], []) == []
     assert fuse([a, b]) == [a, b]
+
+
+def test_lexical_terms_are_five_letter_prefixes_and_whole_identifiers() -> None:
+    assert lexical_text("Belediye Meclisinin KARARLARI") == "beled mecli karar"
+    # Turkish capitals: "I" is "ı".
+    assert lexical_text("IĞDIR İLİ") == "ığdır ili"
+    assert lexical_text("2026/16 sayılı karar") == "2026 16 sayıl karar 2026/16"
+    assert lexical_text("E-81912396-105.04") == "e 81912396 105 04 e-81912396-105.04"
+    # Short or digit-only numbers are words already, not identifiers twice.
+    assert lexical_text("Madde 147") == "madde 147"

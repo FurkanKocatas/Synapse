@@ -4,13 +4,14 @@
         [--model bge-m3@llama-vulkan-q8_0] [--questions FILE] [--conninfo-file FILE] [--reload]
 
 Loads work/chunks-<parser>.jsonl into a database of its own (``synapse_eval``, on the server
-``--conninfo-file`` names: by default the development database's superuser), each chunk's text
-Turkish-lower-cased first (knowledge/turkish.py: PostgreSQL's ``lower`` makes "IĞDIR"
-"iğdir"), with a BM25 index of pg_textsearch on PostgreSQL's ``turkish`` text search
-configuration, and the model's vectors at 16 bits with HNSW. Each question, lower-cased the same
-way, gets its top 50 from each index and their reciprocal rank fusion. The runs go to
-work/runs/<parser>[-<stem>]/extra/ as ``pg-bm25``, ``pg-dense`` and ``pg-rrf``, which score.py
-scores next to the in-memory runs they should match, with the median milliseconds per query.
+``--conninfo-file`` names: by default the development database's superuser), each chunk as the
+product indexes it: its lexical terms (knowledge/search.py, ``lexical_text``: five-letter
+prefixes and whole identifiers, Turkish-lower-cased) in a BM25 index of pg_textsearch on the
+``simple`` configuration, and the model's vectors at 16 bits with HNSW. Each question, turned
+into terms the same way, gets its top 50 from each index and their reciprocal rank fusion. The
+runs go to work/runs/<parser>[-<stem>]/extra/ as ``pg-bm25``, ``pg-dense`` and ``pg-rrf``, which
+score.py scores next to the in-memory runs they should match, with the median milliseconds per
+query.
 """
 
 import argparse
@@ -23,7 +24,7 @@ from pathlib import Path
 import numpy as np
 import psycopg
 from psycopg import sql
-from synapse.knowledge.turkish import lower
+from synapse.knowledge.search import lexical_text
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -62,13 +63,15 @@ def load(conninfo: str, texts: list[str], vectors: np.ndarray, *, reload: bool) 
         with db.cursor().copy("COPY chunks (id, search, embedding) FROM STDIN") as copy:
             for index, (text, vector) in enumerate(zip(texts, vectors, strict=True)):
                 literal = "[" + ",".join(f"{v:.6g}" for v in vector) + "]"
-                copy.write_row((index, lower(text), literal))
+                copy.write_row((index, lexical_text(text), literal))
         started = time.perf_counter()
         db.execute(
-            "CREATE INDEX chunks_bm25 ON chunks USING bm25 (search) WITH (text_config = 'turkish')"
+            "CREATE INDEX chunks_bm25 ON chunks USING bm25 (search) WITH (text_config = 'simple')"
         )
         bm25_seconds = time.perf_counter() - started
         started = time.perf_counter()
+        # A parallel build needs more shared memory than a development container has.
+        db.execute("SET max_parallel_maintenance_workers = 0")
         db.execute("CREATE INDEX chunks_hnsw ON chunks USING hnsw (embedding halfvec_cosine_ops)")
         print(
             json.dumps(
@@ -117,7 +120,7 @@ def main() -> None:
             rows = db.execute(
                 "SELECT id FROM chunks ORDER BY search <@> to_bm25query(%s, 'chunks_bm25') "
                 "LIMIT %s",
-                (lower(question), CANDIDATES),
+                (lexical_text(question), CANDIDATES),
             ).fetchall()
             seconds["bm25"].append(time.perf_counter() - started)
             lexical.append([row[0] for row in rows])
