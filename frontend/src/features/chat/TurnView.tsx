@@ -1,6 +1,8 @@
+import { CircleDashed, FileText, FileX, Info, ThumbsUp, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 
 import { FormError } from "@/components/AuthLayout";
+import { LogoMark } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { m } from "@/paraglide/messages.js";
@@ -88,42 +90,65 @@ export function TurnView({
 }) {
   const answered = turn.status === "answered";
   return (
-    <article className="flex flex-col gap-3 border-b pb-6">
-      <p className="self-end rounded-lg bg-muted px-3 py-2 whitespace-pre-wrap">{turn.question}</p>
-      {turn.rewritten !== null && (
-        <p className="text-xs text-muted-foreground">
-          {m.chat_rewritten({ question: turn.rewritten })}
+    <article className="flex flex-col gap-4">
+      <div className="flex flex-col items-end gap-1">
+        <p className="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 whitespace-pre-wrap text-primary-foreground shadow-sm">
+          {turn.question}
         </p>
-      )}
-      {turn.warnings.map((warning) => (
-        <p key={warning} className="text-xs text-muted-foreground">
-          {(WARNINGS[warning] ?? m.error_unexpected)()}
-        </p>
-      ))}
-      {turn.sources !== null && turn.sources.length > 0 && (
-        <SourceList
-          sources={turn.sources}
-          title={answered || turn.status === null ? m.chat_sources() : m.chat_related()}
-          onOpen={onOpen}
-        />
-      )}
-      <div aria-live="polite" className="flex flex-col gap-2">
-        {turn.text !== "" && (answered || turn.status === null) && (
-          <AnswerText text={turn.text} sources={turn.sources ?? []} onOpen={onOpen} />
+        {turn.rewritten !== null && (
+          <p className="max-w-[85%] text-right text-xs text-muted-foreground">
+            {m.chat_rewritten({ question: turn.rewritten })}
+          </p>
         )}
-        {answered && (
-          <CitedSources citations={turn.citations} sources={turn.sources ?? []} onOpen={onOpen} />
-        )}
-        {turn.stripped > 0 && <p className="text-xs text-muted-foreground">{m.chat_stripped()}</p>}
-        {turn.progress !== null && (
-          <p className="animate-pulse text-sm text-muted-foreground">{turn.progress}</p>
-        )}
-        <StatusLine status={turn.status} />
-        <FormError message={turn.error} />
       </div>
-      {answered && feedbackFor !== undefined && (
-        <FeedbackBar initial={turn.feedback} {...feedbackFor} />
-      )}
+      <div className="flex gap-3">
+        <LogoMark className="mt-0.5 size-7 shrink-0" />
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
+          {turn.warnings.map((warning) => (
+            <p key={warning} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <TriangleAlert className="size-3.5" aria-hidden="true" />
+              {(WARNINGS[warning] ?? m.error_unexpected)()}
+            </p>
+          ))}
+          {turn.sources !== null && turn.sources.length > 0 && (
+            <SourceList
+              sources={turn.sources}
+              title={answered || turn.status === null ? m.chat_sources() : m.chat_related()}
+              onOpen={onOpen}
+            />
+          )}
+          <div aria-live="polite" className="flex flex-col gap-2">
+            {turn.text !== "" && (answered || turn.status === null) && (
+              <AnswerText text={turn.text} sources={turn.sources ?? []} onOpen={onOpen} />
+            )}
+            {answered && (
+              <CitedSources
+                citations={turn.citations}
+                sources={turn.sources ?? []}
+                onOpen={onOpen}
+              />
+            )}
+            {turn.stripped > 0 && (
+              <p className="text-xs text-muted-foreground">{m.chat_stripped()}</p>
+            )}
+            {turn.progress !== null && (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span className="flex gap-1" aria-hidden="true">
+                  <span className="size-1.5 animate-bounce rounded-full bg-primary [animation-delay:-0.3s]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-primary [animation-delay:-0.15s]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-primary" />
+                </span>
+                {turn.progress}
+              </p>
+            )}
+            <StatusLine status={turn.status} />
+            <FormError message={turn.error} />
+          </div>
+          {answered && feedbackFor !== undefined && (
+            <FeedbackBar initial={turn.feedback} {...feedbackFor} />
+          )}
+        </div>
+      </div>
     </article>
   );
 }
@@ -138,7 +163,13 @@ const STATUS_TEXT: Partial<Record<TurnStatus, () => string>> = {
 
 function StatusLine({ status }: { status: TurnStatus | null }) {
   const text = status === null ? undefined : STATUS_TEXT[status];
-  return text === undefined ? null : <p className="text-sm">{text()}</p>;
+  if (text === undefined) return null;
+  return (
+    <p className="flex items-center gap-2 rounded-xl border bg-card px-3 py-2 text-sm">
+      <Info className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      {text()}
+    </p>
+  );
 }
 
 function pages(source: Source): string {
@@ -158,8 +189,8 @@ function SourceList({
 }) {
   return (
     <section aria-label={title} className="flex flex-col gap-2">
-      <h3 className="text-sm font-medium">{title}</h3>
-      <ol className="grid gap-2 sm:grid-cols-2">
+      <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{title}</h3>
+      <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {sources.map((source) => (
           <li key={source.number}>
             <button
@@ -168,13 +199,23 @@ function SourceList({
               onClick={() => {
                 onOpen(source);
               }}
-              className="flex w-full flex-col gap-1 rounded-lg border p-2 text-left text-sm hover:bg-muted disabled:opacity-60"
+              className="flex h-full w-full flex-col gap-1.5 rounded-xl border bg-card p-3 text-left text-sm transition-colors hover:border-primary/40 hover:bg-accent/40 disabled:opacity-60"
             >
-              <span className="font-medium">
-                [{source.number}] {source.text === null ? m.chat_source_gone() : source.title}
+              <span className="flex items-start gap-2">
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-highlight text-[11px] font-semibold text-highlight-foreground">
+                  {source.number}
+                </span>
+                <span className="line-clamp-2 font-medium">
+                  {source.text === null ? m.chat_source_gone() : source.title}
+                </span>
               </span>
-              <span className="text-xs text-muted-foreground">{pages(source)}</span>
-              {source.text !== null && <span className="line-clamp-3 text-xs">{source.text}</span>}
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <FileText className="size-3.5" aria-hidden="true" />
+                {pages(source)}
+              </span>
+              {source.text !== null && (
+                <span className="line-clamp-2 text-xs text-muted-foreground">{source.text}</span>
+              )}
             </button>
           </li>
         ))}
@@ -202,7 +243,7 @@ function CitationButton({
       onClick={() => {
         onOpen(source);
       }}
-      className="mx-0.5 rounded bg-primary/10 px-1 align-super text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-60"
+      className="mx-0.5 inline-flex min-w-5 items-center justify-center rounded-md bg-highlight/80 px-1 align-super text-[11px] leading-4 font-semibold text-highlight-foreground hover:bg-highlight disabled:opacity-60"
     >
       {number}
     </button>
@@ -219,7 +260,7 @@ function AnswerText({
   onOpen: (source: Source) => void;
 }) {
   return (
-    <p className="leading-relaxed whitespace-pre-wrap">
+    <p className="leading-7 whitespace-pre-wrap">
       {answerParts(text).map((part, index) =>
         "text" in part ? (
           <span key={index}>{part.text}</span>
@@ -246,8 +287,8 @@ function CitedSources({
 }) {
   if (citations.length === 0) return null;
   return (
-    <p className="text-xs text-muted-foreground">
-      {m.chat_based_on()}:{" "}
+    <p className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+      {m.chat_based_on()}:
       {citations.map((number) => (
         <CitationButton key={number} number={number} sources={sources} onOpen={onOpen} />
       ))}
@@ -255,11 +296,11 @@ function CitedSources({
   );
 }
 
-const FEEDBACK: [Feedback, () => string][] = [
-  ["helpful", m.chat_feedback_helpful],
-  ["wrong_source", m.chat_feedback_wrong_source],
-  ["incomplete", m.chat_feedback_incomplete],
-  ["invented", m.chat_feedback_invented],
+const FEEDBACK: [Feedback, () => string, typeof ThumbsUp][] = [
+  ["helpful", m.chat_feedback_helpful, ThumbsUp],
+  ["wrong_source", m.chat_feedback_wrong_source, FileX],
+  ["incomplete", m.chat_feedback_incomplete, CircleDashed],
+  ["invented", m.chat_feedback_invented, TriangleAlert],
 ];
 
 function FeedbackBar({
@@ -286,16 +327,20 @@ function FeedbackBar({
   }
 
   return (
-    <div role="group" aria-label={m.chat_feedback_label()} className="flex flex-wrap gap-2">
-      {FEEDBACK.map(([kind, label]) => (
+    <div role="group" aria-label={m.chat_feedback_label()} className="flex flex-wrap gap-1.5">
+      {FEEDBACK.map(([kind, label, Icon]) => (
         <Button
           key={kind}
           size="xs"
-          variant="outline"
+          variant="ghost"
           aria-pressed={chosen === kind}
-          className={cn(chosen === kind && "bg-muted font-semibold")}
+          className={cn(
+            "gap-1 text-muted-foreground",
+            chosen === kind && "bg-accent font-semibold text-accent-foreground",
+          )}
           onClick={() => void choose(kind)}
         >
+          <Icon className="size-3.5" aria-hidden="true" />
           {label()}
         </Button>
       ))}

@@ -1,8 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { Languages } from "lucide-react";
 
 import { accountApi } from "@/features/account/accountApi";
 import type { Session } from "@/features/auth/authApi";
 import { sessionQuery } from "@/features/auth/session";
+import { cn } from "@/lib/utils";
 
 import { m } from "../paraglide/messages.js";
 import { getLocale, locales, setLocale, type Locale } from "../paraglide/runtime.js";
@@ -13,7 +15,8 @@ const languageNames: Record<Locale, () => string> = {
   en: m.language_name_en,
 };
 
-export function LanguageSwitch() {
+/** ``compact``: an icon in place of the visible label, for the title bar. */
+export function LanguageSwitch({ compact = false }: { compact?: boolean }) {
   const queryClient = useQueryClient();
 
   async function choose(locale: Locale) {
@@ -31,10 +34,19 @@ export function LanguageSwitch() {
   }
 
   return (
-    <label className="flex items-center gap-2 text-sm">
-      <span>{m.language_switch_label()}</span>
+    <label
+      className={cn(
+        "flex items-center gap-2 text-sm",
+        compact && "rounded-lg border bg-card py-1 pr-1 pl-2 text-muted-foreground",
+      )}
+    >
+      {compact && <Languages className="size-4" aria-hidden="true" />}
+      <span className={cn(compact && "sr-only")}>{m.language_switch_label()}</span>
       <select
-        className="rounded border px-2 py-1"
+        className={cn(
+          "rounded border px-2 py-1",
+          compact && "border-0 bg-transparent py-0.5 pl-0 text-foreground outline-none",
+        )}
         value={getLocale()}
         onChange={(event) => {
           void choose(event.target.value as Locale);

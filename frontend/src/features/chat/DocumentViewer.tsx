@@ -150,7 +150,7 @@ function PageText({ text, passage }: { text: string; passage: string | null }) {
       <mark
         key={`m${String(start)}`}
         ref={index === 0 ? first : undefined}
-        className="bg-yellow-200 dark:bg-yellow-700"
+        className="rounded-sm bg-highlight/70 text-highlight-foreground"
       >
         {text.slice(start, end)}
       </mark>,

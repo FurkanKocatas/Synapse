@@ -1,6 +1,8 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { useState, type SubmitEvent } from "react";
 
+import { Users } from "lucide-react";
+
 import { AppShell } from "@/components/AppShell";
 import { FormError } from "@/components/AuthLayout";
 import { NativeSelect } from "@/components/NativeSelect";
@@ -48,8 +50,7 @@ export function UsersPage() {
   }
 
   return (
-    <AppShell>
-      <h1 className="text-2xl font-semibold">{m.nav_admin_users()}</h1>
+    <AppShell title={m.nav_admin_users()} icon={Users}>
       <FormError message={error} />
 
       <form

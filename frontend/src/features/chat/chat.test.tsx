@@ -195,6 +195,25 @@ describe("chat", () => {
     expect(screen.queryByRole("group", { name: m.chat_feedback_label() })).not.toBeInTheDocument();
   });
 
+  it("sends a lapsed session to sign in, without asking again", async () => {
+    let lapsed = false;
+    const calls = fakeApi((call) => {
+      if (call.path === "/api/auth/session") {
+        return lapsed
+          ? { status: 401, body: { error: "not_authenticated" } }
+          : { status: 200, body: { auth_level: "full", csrf_token: "c", user } };
+      }
+      if (call.path === "/api/conversations") {
+        lapsed = true;
+        return { status: 401, body: { error: "not_authenticated" } };
+      }
+      return { status: 200, body: [] };
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: m.auth_login_title() })).toBeInTheDocument();
+    expect(calls.filter((call) => call.path === "/api/conversations")).toHaveLength(1);
+  });
+
   it("renames and deletes a conversation", async () => {
     window.history.replaceState(null, "", "/?c=k1");
     const calls = api((call) => {

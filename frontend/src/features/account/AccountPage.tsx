@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, type SubmitEvent } from "react";
 
+import { UserRound } from "lucide-react";
+
 import { AppShell } from "@/components/AppShell";
 import { FormError } from "@/components/AuthLayout";
 import { Button } from "@/components/ui/button";
@@ -20,8 +22,7 @@ const SESSIONS = ["account", "sessions"];
 
 export function AccountPage() {
   return (
-    <AppShell>
-      <h1 className="text-2xl font-semibold">{m.nav_account()}</h1>
+    <AppShell title={m.nav_account()} icon={UserRound}>
       <div className="grid gap-4 md:grid-cols-2">
         <PasswordForm />
         <Sessions />

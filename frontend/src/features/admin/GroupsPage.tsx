@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, type SubmitEvent } from "react";
 
+import { UsersRound } from "lucide-react";
+
 import { AppShell } from "@/components/AppShell";
 import { FormError } from "@/components/AuthLayout";
 import { NativeSelect } from "@/components/NativeSelect";
@@ -27,8 +29,7 @@ export function GroupsPage() {
   }
 
   return (
-    <AppShell>
-      <h1 className="text-2xl font-semibold">{m.nav_admin_groups()}</h1>
+    <AppShell title={m.nav_admin_groups()} icon={UsersRound}>
       <FormError message={error} />
       <div className="grid gap-4 md:grid-cols-2">
         <section className="flex flex-col gap-3 rounded-lg border p-4">
