@@ -44,15 +44,49 @@ Medians over the 150 answers of each model on the integrated GPU, and over 10 or
 
 Both meet the latency budget of the 16 GB tier (first token within 60 seconds, the whole answer within 2 minutes) on the CPU alone, and the integrated GPU cuts the time to the first token by 2.6 to 3.7 times. The chat server's memory on the CPU: Qwen 4.2 GB, Gemma 6.6 GB.
 
+## In the product
+
+Measured 2026-10-01 (phase 4, step 8) with [eval/answers/chat.py](../../eval/answers/chat.py): all 225 questions through the `synapse-golden` stack's `POST /api/chat`, each in a conversation of its own, as the page asks them: search, the context ([design/answers.md](../design/answers.md)), Qwen3.5-4B on the integrated GPU, the streamed answer, verification. Refusal before generation off, so every question reaches the model ([refusal.md](refusal.md) applies the threshold afterwards). Two answer formats:
+
+- **A**, the benchmark's: the answer as one text, the prompt asking for `[n]` after each sentence.
+- **B**, what ships: the answer as a list of sentences, each with the numbers of the sources it rests on, at least one, bounded by the sources shown; the grammar makes it.
+
+Every answer the script scored wrong was read with its question, golden answer and evidence quote; the ones that state the golden answer count as correct (B: 26, among them "en az 7, en çok 15 üyeden" for "en az yedi ve en çok on beş üye" and "75 mg/L" for "≥75 mg/L"; an answer that changes an identifier, "34674941" for "UİP-34674941", stays wrong).
+
+| | A | **B** |
+|---|---|---|
+| answers with a citation after their sentences | 14 of 171 | **181 of 181** |
+| correct, by the script | 120 of 191 (0.628) | 131 (0.686) |
+| **correct, by hand** | 144 (0.754) | **157 (0.822)** |
+| factual | 53 of 65 | **58** |
+| identifier | 50 of 62 | 50 |
+| table | 30 of 43 | **35** |
+| multi-document | 11 of 21 | **14** |
+| answerable refused by the model | 15 | 15 |
+| failed (the chat server killed, below) | 8 | 0 |
+| unanswerable refused by the model | 31 of 34 | 29 |
+| a correct answer's citations cover its evidence (script) | 97 of 120 | 126 of 131 |
+| verification: answers written again, sentences removed | 2, 0 | 8, 2 |
+
+Without the 8 questions A lost to the crashes, A has 144 of 183 right (0.787) and B 150 (0.820). B is better on every type but identifiers, where the two are equal; it cites after every sentence, and its citations cover the evidence of 96% of the answers the script scores correct. Its unanswerable refusals are two fewer, which the threshold of 1.0 makes up for ([refusal.md](refusal.md)). The evidence was among the sources given to the model for 0.963 of the answerable questions in both.
+
+**Where B is wrong** (19 answered wrongly): a value from the wrong row or column of a table (6: "15.064,68" for "293,64", the parcel's area for the municipality's share of it), the evidence not among the sources (5, retrieval), an identifier changed or the wrong code (4: a file name given as a document code), a wrong number in running text (3: "bir ay" for "üç ay", "yüzde yirmi" for "yüzde yirmibeş"), and another side of the question answered (1). Verification catches none of these: each wrong number stands somewhere in the sources, or is a number word with a suffix ("yirmisi") that it does not read as a number. And 15 answerable questions are refused with their evidence among the sources, mostly table cells and identifiers.
+
+**Speed** (B, the client's clock, the integrated GPU, one question at a time): sources 4.5 s (90th percentile 5.1), first token 18.4 s (24.4, longest 45.3), whole answer 22.7 s (31.5, longest 47.8). Within the 16 GB tier's budget for the answer (a minute to the first token, two to the end); not for the sources (3 s), which the chat sends after reranking: sending the first stage's order at once is the fix. B writes a little more than A (22.7 against 19.8 s for the whole answer): the sentences' JSON.
+
+**The chat server ran out of memory in run A.** llama-server keeps up to 8 GiB of earlier prompts in host memory by default (`--cache-ram`), and the 5 GB container was OOM-killed four times in an hour, failing the 8 answers in flight. With `--cache-ram 0` (now in the stack and in what synapsectl renders) run B peaked at 584 MiB, with no restart.
+
 ## Limits
 
 - 75 questions: one answerable question is 1.5 points; the gap between the models is five to ten times that, the gap between contexts is not.
 - Hand scoring is one reader's; the ids re-scored are listed in [eval/answers/README.md](../../eval/answers/README.md).
 - The retrieved context is BM25 reranked; the first stage that will ship ([embeddings.md](embeddings.md#choice)) finds more on paraphrased questions, which this run does not use.
-- Answers are not yet verified against their sources (ADR 0010, query rule 10), and refusal before generation (rule 6) is not in the loop: both would change refusals and false refusals.
+- The 75-question runs above have neither verification nor refusal before generation; the product's runs ("In the product") have both.
 
 ## Next steps
 
 1. A scorer that also accepts a golden answer's wording varied (a judge that compares the answer's facts, not its words), so the script agrees with the hand scoring; numbers are done.
 2. The same bake-off on the paraphrased questions with the shipping first stage.
-3. Answer verification (ADR 0010, query rule 10) measured on these outputs: how many of the wrong numbers it catches.
+3. ~~Answer verification measured~~ Done in the product's run (above): 8 answers written again, 2 sentences removed, and none of the 19 wrong answers caught. Next: check each number against the source its own sentence cites, with its unit, and read number words with suffixes.
+4. The 15 answerable questions the model refuses with their evidence among its sources: the prompt and the context (table rows, identifiers), measured on the same run.
+5. Sources on screen within 3 seconds in the chat: send the first stage's order at once, the reranked order after.
