@@ -29,9 +29,12 @@ FROM ${PYTHON}
 RUN python -m pip uninstall --yes pip \
  && groupadd --system --gid 10001 synapse \
  && useradd --system --uid 10001 --gid synapse --no-create-home --shell /usr/sbin/nologin synapse
-# OCR (docs/benchmarks/ocr.md): Debian's Tesseract, with the official "best" Turkish and
-# English models pinned by release and checksum (the same files the benchmark measured).
+# Debian security updates published after the base image was built (the image scan fails on
+# any HIGH or CRITICAL finding that has a fix), then OCR (docs/benchmarks/ocr.md): Debian's
+# Tesseract, with the official "best" Turkish and English models pinned by release and
+# checksum (the same files the benchmark measured).
 RUN apt-get update \
+ && apt-get upgrade --yes --no-install-recommends \
  && apt-get install --yes --no-install-recommends tesseract-ocr \
  && rm -rf /var/lib/apt/lists/*
 ADD --checksum=sha256:e0c3338dc17503dc7d335a507c9ae01b2b46cfd07561171e1e1ac55d85e8e438 \
