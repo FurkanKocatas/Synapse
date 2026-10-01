@@ -34,6 +34,7 @@ class HitView(BaseModel):
     lexical_rank: int | None
     dense_rank: int | None
     reranked: bool
+    rerank_score: float | None
 
 
 class SearchView(BaseModel):
@@ -75,6 +76,7 @@ async def search(body: SearchRequest, session: FullSession, request: Request) ->
                 lexical_rank=hit.lexical_rank,
                 dense_rank=hit.dense_rank,
                 reranked=hit.reranked,
+                rerank_score=hit.rerank_score,
             )
             for hit in found.hits
         ],

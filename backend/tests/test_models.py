@@ -17,7 +17,9 @@ from synapse.kernel.config import Settings
 from synapse.models.llama import LlamaChat, LlamaEmbedder, LlamaReranker, LlamaServer, collapse
 from synapse.models.public import (
     EMBEDDING_DIMENSIONS,
+    ChatDelta,
     ChatMessage,
+    ChatReply,
     ModelResponseError,
     ModelTimeoutError,
     ModelUnavailableError,
@@ -32,6 +34,8 @@ class FakeLlama:
         self.requests: list[tuple[str, dict[str, Any]]] = []
         self.words: dict[str, int] = {}
         self.reply: dict[str, Any] = {}
+        # Server-sent events a streamed chat call gets, each a JSON object or a raw line.
+        self.events: list[dict[str, Any] | str] = []
         self.status = 200
 
     def id(self, word: str) -> int:
@@ -43,6 +47,12 @@ class FakeLlama:
         self.requests.append((request.url.path, body))
         if self.status != 200:
             return httpx2.Response(self.status, json={"error": {"message": "broken"}})
+        if body.get("stream"):
+            lines = [e if isinstance(e, str) else f"data: {json.dumps(e)}" for e in self.events]
+            content = "".join(f"{line}\n\n" for line in [*lines, "data: [DONE]"])
+            return httpx2.Response(
+                200, content=content.encode(), headers={"Content-Type": "text/event-stream"}
+            )
         routes = {
             "/tokenize": self._tokenize,
             "/detokenize": self._detokenize,
@@ -185,6 +195,87 @@ async def test_chat_asks_for_deterministic_json_and_reads_timings() -> None:
     fake.reply = {"choices": []}
     with pytest.raises(ModelResponseError, match="no message"):
         await LlamaChat(fake.server()).complete([ChatMessage("user", "Merhaba")])
+
+
+def delta(text: str) -> dict[str, Any]:
+    return {"choices": [{"index": 0, "delta": {"content": text}}]}
+
+
+async def test_chat_streams_deltas_then_the_whole_reply_with_timings() -> None:
+    fake = FakeLlama()
+    fake.events = [
+        {"choices": [{"index": 0, "delta": {"role": "assistant"}}]},
+        delta('{"answer": "12 '),
+        ": a comment line, ignored",
+        delta('Mart"}'),
+        delta(""),
+        {"choices": [], "timings": {"prompt_n": 2800, "prompt_ms": 16600.0, "predicted_n": 9}},
+    ]
+    schema = {"type": "object", "properties": {"answer": {"type": "string"}}}
+    parts = [
+        part
+        async for part in LlamaChat(fake.server()).stream(
+            [ChatMessage("user", "Ne zaman?")], schema=schema, max_tokens=300
+        )
+    ]
+    ((_, body),) = fake.requests
+    assert body["stream"] is True
+    assert body["max_tokens"] == 300
+    assert body["response_format"]["json_schema"]["schema"] == schema
+    assert parts[:2] == [ChatDelta('{"answer": "12 '), ChatDelta('Mart"}')]
+    (reply,) = parts[2:]
+    assert isinstance(reply, ChatReply)
+    assert reply.content == '{"answer": "12 Mart"}'
+    assert (reply.prompt_tokens, reply.prompt_seconds, reply.generated_tokens) == (2800, 16.6, 9)
+
+
+@pytest.mark.parametrize(
+    ("events", "message"),
+    [
+        (["data: {not json"], "streamed no JSON"),
+        (["data: [1]"], "streamed list"),
+        ([{"error": {"message": "context full"}}], "streamed an error"),
+        ([{"choices": [{"index": 0}]}], "streamed no delta"),
+    ],
+)
+async def test_bad_streams_are_typed(events: list[dict[str, Any] | str], message: str) -> None:
+    fake = FakeLlama()
+    fake.events = events
+    with pytest.raises(ModelResponseError, match=message):
+        async for _ in LlamaChat(fake.server("chat")).stream([ChatMessage("user", "Merhaba")]):
+            pass
+
+
+@pytest.mark.parametrize(
+    ("status", "error"), [(503, ModelUnavailableError), (400, ModelResponseError)]
+)
+async def test_stream_errors_are_typed(status: int, error: type[Exception]) -> None:
+    fake = FakeLlama()
+    fake.status = status
+    with pytest.raises(error, match=f"chat: /v1/chat/completions answered {status}: broken"):
+        async for _ in LlamaChat(fake.server("chat")).stream([ChatMessage("user", "Merhaba")]):
+            pass
+
+
+@pytest.mark.parametrize(
+    ("raised", "error"),
+    [
+        (httpx2.ConnectError("refused"), ModelUnavailableError),
+        (httpx2.ReadTimeout("slow"), ModelTimeoutError),
+    ],
+)
+async def test_stream_transport_failures_are_typed(
+    raised: Exception, error: type[Exception]
+) -> None:
+    def fail(request: httpx2.Request) -> httpx2.Response:
+        raise raised
+
+    server = LlamaServer(
+        "chat", "http://model:8080", KEY, timeout=5, transport=httpx2.MockTransport(fail)
+    )
+    with pytest.raises(error, match="chat: /v1/chat/completions"):
+        async for _ in LlamaChat(server).stream([ChatMessage("user", "Merhaba")]):
+            pass
 
 
 @pytest.mark.parametrize(

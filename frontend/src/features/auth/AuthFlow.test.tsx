@@ -33,6 +33,7 @@ describe("sign-in flow", () => {
           ? { status: 200, body: { auth_level: "full", csrf_token: "c2", user } }
           : { status: 401, body: { error: "not_authenticated" } };
       }
+      if (call.path === "/api/conversations") return { status: 200, body: [] };
       signedIn = true;
       return { status: 200, body: { auth_level: "full", csrf_token: "c1", user: null } };
     });

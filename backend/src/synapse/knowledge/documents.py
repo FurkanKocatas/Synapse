@@ -10,6 +10,8 @@ Rules:
 - A document or version the user may not read answers "not found", the same as a missing one,
   so identifiers cannot be probed.
 - Deleting marks the document; it leaves search at once. Purging the bytes is a background job.
+- Reading a page in the viewer is audited (``kb.document.view``), as ADR 0008 asks of every
+  document view.
 """
 
 from collections.abc import Callable
@@ -96,6 +98,33 @@ class CollectionAccess:
 
 
 @dataclass(frozen=True)
+class PageChunk:
+    ordinal: int
+    text: str
+    page_start: int
+    page_end: int
+
+
+@dataclass(frozen=True)
+class PageView:
+    """One page of a version as the viewer shows it: its text and the chunks on it."""
+
+    document_id: UUID
+    title: str
+    version: int
+    number: int
+    # How many pages the version has.
+    pages: int
+    kind: str
+    label: str | None
+    text: str
+    # ``layer`` (the file's own text) or ``ocr``.
+    text_source: str
+    media_type: str
+    chunks: list[PageChunk]
+
+
+@dataclass(frozen=True)
 class StoredFile:
     sha256: bytes
     filename: str
@@ -126,6 +155,17 @@ class _NewVersion:
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+_PAGE = (
+    "SELECT v.id, d.title, b.media_type, "
+    "(SELECT count(*) FROM document_pages c WHERE c.version_id = v.id), "
+    "p.kind, p.label, p.text, p.text_source "
+    "FROM document_versions v JOIN documents d ON d.id = v.document_id "
+    "JOIN blobs b ON b.sha256 = v.blob_sha256 "
+    "JOIN document_pages p ON p.version_id = v.id "
+    "WHERE v.document_id = %s AND v.version = %s AND p.number = %s"
+)
 
 
 _READABLE_COLLECTIONS = (
@@ -308,6 +348,46 @@ class DocumentService:
         if found is None:
             raise NotFoundError
         return found
+
+    async def page(
+        self, viewer: Uploader, document_id: UUID, version: int, number: int
+    ) -> PageView:
+        now = self._now()
+        async with self._db.tenant_transaction(self._tenant_id) as connection:
+            if not await _has_document(connection, viewer.user_id, document_id, "read"):
+                raise NotFoundError
+            cursor = await connection.execute(_PAGE, (document_id, version, number))
+            row = await cursor.fetchone()
+            if row is None:
+                raise NotFoundError
+            version_id, title, media_type, pages, kind, label, text, text_source = row
+            cursor = await connection.execute(
+                "SELECT ordinal, text, page_start, page_end FROM document_chunks "
+                "WHERE version_id = %s AND page_start <= %s AND page_end >= %s ORDER BY ordinal",
+                (version_id, number, number),
+            )
+            chunks = [PageChunk(*chunk) for chunk in await cursor.fetchall()]
+            await self._audit(
+                connection,
+                "kb.document.view",
+                viewer,
+                document_id,
+                now,
+                {"version": version, "page": number},
+            )
+        return PageView(
+            document_id,
+            title,
+            version,
+            number,
+            pages,
+            kind,
+            label,
+            text,
+            text_source,
+            media_type,
+            chunks,
+        )
 
     async def delete(self, uploader: Uploader, document_id: UUID) -> None:
         now = self._now()

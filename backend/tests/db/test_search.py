@@ -251,6 +251,9 @@ async def test_the_reranker_orders_the_first_fifteen(
     assert found.reranked
     assert "öncelikle" in found.hits[0].text
     assert [h.reranked for h in found.hits] == [True] * RERANK_TOP + [False] * 3
+    assert found.hits[0].rerank_score == 1.0
+    assert {h.rerank_score for h in found.hits[1:RERANK_TOP]} == {0.0}
+    assert found.hits[-1].rerank_score is None
     assert "rerank" in found.milliseconds
 
     failing = search(world, database, reranker=Prefers("öncelik", fail=True))

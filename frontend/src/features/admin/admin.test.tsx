@@ -130,10 +130,14 @@ describe("users page", () => {
 
   it("sends members who open an administration page back home", async () => {
     window.history.replaceState(null, "", "/admin/users");
-    fakeApi(() => ({
-      status: 200,
-      body: { auth_level: "full", csrf_token: "c", user: { ...admin, role: "member" } },
-    }));
+    fakeApi((call) =>
+      call.path === "/api/conversations"
+        ? { status: 200, body: [] }
+        : {
+            status: 200,
+            body: { auth_level: "full", csrf_token: "c", user: { ...admin, role: "member" } },
+          },
+    );
     render(<App />);
     expect(await screen.findByText(m.home_welcome({ name: "Admin" }))).toBeInTheDocument();
     expect(window.location.pathname).toBe("/");

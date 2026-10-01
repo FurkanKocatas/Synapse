@@ -4,7 +4,7 @@ Adapters implement them (``llama.py``); no other code talks to a model server. A
 fails raises a ``ModelError`` subclass, which callers show or record; it is never swallowed.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -65,6 +65,13 @@ class ChatReply:
     generated_seconds: float | None = None
 
 
+@dataclass(frozen=True)
+class ChatDelta:
+    """Text the model has just generated, while it goes on."""
+
+    text: str
+
+
 class ChatModel(Protocol):
     async def complete(
         self,
@@ -74,4 +81,15 @@ class ChatModel(Protocol):
         max_tokens: int = 1024,
     ) -> ChatReply:
         """The model's reply; with ``schema``, JSON the server constrains to it."""
+        ...
+
+    def stream(
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        schema: Mapping[str, Any] | None = None,
+        max_tokens: int = 1024,
+    ) -> AsyncGenerator[ChatDelta | ChatReply]:
+        """The reply as it is generated: deltas, then the whole reply with its timings, last.
+        Closing the iterator early cancels the generation."""
         ...

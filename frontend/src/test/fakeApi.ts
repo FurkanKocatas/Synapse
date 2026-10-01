@@ -11,7 +11,13 @@ export interface Call {
   raw: unknown;
 }
 
-type Handler = (call: Call) => { status: number; body?: unknown; headers?: Record<string, string> };
+// ``text`` is sent as it is (server-sent events, for example); ``body`` as JSON.
+type Handler = (call: Call) => {
+  status: number;
+  body?: unknown;
+  text?: string;
+  headers?: Record<string, string>;
+};
 
 export function fakeApi(handler: Handler) {
   const calls: Call[] = [];
@@ -26,9 +32,10 @@ export function fakeApi(handler: Handler) {
         raw: init.body,
       };
       calls.push(call);
-      const { status, body, headers } = handler(call);
+      const { status, body, text, headers } = handler(call);
+      const content = text ?? (body === undefined ? null : JSON.stringify(body));
       return Promise.resolve(
-        new Response(body === undefined ? null : JSON.stringify(body), {
+        new Response(content, {
           status,
           headers: { "Content-Type": "application/json", ...headers },
         }),

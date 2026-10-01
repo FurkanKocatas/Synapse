@@ -49,6 +49,39 @@ export async function apiUpload<T>(path: string, file: Blob): Promise<T> {
   return send<T>("POST", path, file, { "Content-Type": "application/octet-stream" });
 }
 
+/** POSTs JSON and hands back the response body as it streams (the chat's server-sent events).
+ * Aborting ``signal`` closes the connection, which the server takes as a cancellation. */
+export async function apiStream(
+  path: string,
+  body: unknown,
+  signal: AbortSignal,
+): Promise<ReadableStream<Uint8Array>> {
+  const headers: Record<string, string> = {
+    [CLIENT_HEADER]: "web",
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+  };
+  if (csrfToken !== null) headers[CSRF_HEADER] = csrfToken;
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: "POST",
+      headers,
+      credentials: "same-origin",
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    throw new NetworkError(error);
+  }
+  if (!response.ok) {
+    throw new ApiError(response.status, await errorCode(response), retryAfter(response));
+  }
+  if (response.body === null) throw new ApiError(response.status, "unexpected", null);
+  return response.body;
+}
+
 async function send<T>(
   method: Method,
   path: string,

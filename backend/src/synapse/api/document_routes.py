@@ -216,6 +216,58 @@ async def download(
     )
 
 
+class PageChunkView(BaseModel):
+    ordinal: int
+    text: str
+    page_start: int
+    page_end: int
+
+
+class PageView(BaseModel):
+    document_id: UUID
+    title: str
+    version: int
+    number: int
+    pages: int
+    kind: str
+    label: str | None
+    text: str
+    text_source: str
+    media_type: str
+    chunks: list[PageChunkView]
+
+
+@router.get("/api/documents/{document_id}/versions/{version}/pages/{number}")
+async def page(
+    document_id: UUID, version: int, number: int, session: FullSession, request: Request
+) -> PageView:
+    """A page's text and the chunks on it, for the viewer a citation opens."""
+    try:
+        found = await _documents(request).page(
+            Uploader(session.user_id, client_ip(request)), document_id, version, number
+        )
+    except NotFoundError as error:
+        raise ApiError(status.HTTP_404_NOT_FOUND, "not_found") from error
+    return PageView(
+        document_id=found.document_id,
+        title=found.title,
+        version=found.version,
+        number=found.number,
+        pages=found.pages,
+        kind=found.kind,
+        label=found.label,
+        text=found.text,
+        text_source=found.text_source,
+        media_type=found.media_type,
+        chunks=[
+            PageChunkView(
+                ordinal=c.ordinal, text=c.text, page_start=c.page_start, page_end=c.page_end
+            )
+            for c in found.chunks
+        ],
+    )
+
+
 @router.delete("/api/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete(document_id: UUID, session: FullSession, request: Request) -> None:
     try:

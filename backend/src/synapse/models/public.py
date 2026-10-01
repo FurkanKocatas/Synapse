@@ -9,6 +9,7 @@ from synapse.models.llama import LlamaChat, LlamaEmbedder, LlamaReranker, LlamaS
 from synapse.models.ports import (
     EMBEDDING_DIMENSIONS,
     EMBEDDING_MODEL,
+    ChatDelta,
     ChatMessage,
     ChatModel,
     ChatReply,
@@ -60,6 +61,7 @@ def models_from(settings: Settings) -> Models:
 __all__ = [
     "EMBEDDING_DIMENSIONS",
     "EMBEDDING_MODEL",
+    "ChatDelta",
     "ChatMessage",
     "ChatModel",
     "ChatReply",

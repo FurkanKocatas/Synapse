@@ -17,11 +17,13 @@ from synapse.api import (
     admin_routes,
     audit_routes,
     auth_routes,
+    chat_routes,
     document_routes,
     passkey_routes,
     search_routes,
 )
 from synapse.api.deps import ApiError, public_endpoint
+from synapse.chat.public import Answerer, Conversations
 from synapse.dbadmin import migrate
 from synapse.identity.public import (
     AccountService,
@@ -98,6 +100,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(passkey_routes.router)
     app.include_router(document_routes.router)
     app.include_router(search_routes.router)
+    app.include_router(chat_routes.router)
 
     @app.exception_handler(ApiError)
     async def api_error(_: Request, error: ApiError) -> JSONResponse:
@@ -189,8 +192,14 @@ def _attach_services(app: FastAPI, settings: Settings, database: Database, model
     app.state.blobs = blobs
     app.state.upload_max_bytes = settings.upload_max_mb * 1024 * 1024
     app.state.documents = DocumentService(database, blobs, tenant_id=tenant_id)
-    app.state.search = Search(
+    search = Search(
         database, tenant_id=tenant_id, embedder=models.embedder, reranker=models.reranker
+    )
+    app.state.search = search
+    app.state.conversations = Conversations(
+        database,
+        tenant_id=tenant_id,
+        answerer=Answerer(search, models.chat, refuse_below=settings.chat_refuse_below),
     )
     app.state.accounts = AccountService(database, tenant_id=tenant_id)
     app.state.profile = ProfileService(database, tenant_id=tenant_id)

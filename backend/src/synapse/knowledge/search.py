@@ -106,6 +106,9 @@ class Hit:
     lexical_rank: int | None
     dense_rank: int | None
     reranked: bool = False
+    # The reranker's score (a logit): the one score with a meaning of its own, which refusal
+    # before generation is calibrated on (ADR 0010, query rule 6). None when not reranked.
+    rerank_score: float | None = None
 
 
 @dataclass(frozen=True)
@@ -188,7 +191,7 @@ class Search:
                 found, hits=found.hits[:limit], warnings=[*found.warnings, "reranking_unavailable"]
             )
         order = sorted(range(len(top)), key=lambda i: -scores[i])
-        reranked = [replace(top[i], reranked=True) for i in order]
+        reranked = [replace(top[i], reranked=True, rerank_score=scores[i]) for i in order]
         return Found(
             [*reranked, *rest][:limit],
             reranked=True,

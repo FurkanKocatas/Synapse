@@ -18,8 +18,8 @@ import { EnrollPage } from "@/features/auth/EnrollPage";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { MfaPage } from "@/features/auth/MfaPage";
 import { placeFor, sessionQuery, type Place } from "@/features/auth/session";
+import { ChatPage } from "@/features/chat/ChatPage";
 import { LibraryPage } from "@/features/library/LibraryPage";
-import { HomePage } from "@/pages/HomePage";
 
 interface RouterContext {
   queryClient: QueryClient;
@@ -56,7 +56,10 @@ const routes = [
     getParentRoute: () => rootRoute,
     path: "/",
     beforeLoad: guard("/"),
-    component: HomePage,
+    // ?c=<id> opens a conversation; a search change keeps the page, and an answer streaming.
+    validateSearch: (search: Record<string, unknown>): { c?: string } =>
+      typeof search.c === "string" ? { c: search.c } : {},
+    component: ChatPage,
   }),
   createRoute({
     getParentRoute: () => rootRoute,

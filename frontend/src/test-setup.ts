@@ -10,3 +10,4 @@ afterEach(cleanup);
 
 // jsdom does not implement scrolling; the router calls it on navigation.
 window.scrollTo = () => undefined;
+Element.prototype.scrollIntoView = () => undefined;

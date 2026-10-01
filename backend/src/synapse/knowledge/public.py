@@ -1,12 +1,15 @@
 """The knowledge package's public interface. Other packages import from here only."""
 
 from synapse.knowledge.blobs import BlobStore, Incoming, LocalBlobStore, Receiver, TooLargeError
+from synapse.knowledge.chunking import estimate_tokens
 from synapse.knowledge.documents import (
     CollectionAccess,
     DocumentService,
     DocumentSummary,
     DuplicateError,
     NotFoundError,
+    PageChunk,
+    PageView,
     StoredFile,
     Uploaded,
     Uploader,
@@ -18,6 +21,7 @@ from synapse.knowledge.parsing import LightParser, Page, Parsed, ParseError, Par
 from synapse.knowledge.processing import Processor, Reindexed, reindex
 from synapse.knowledge.rapid import RapidOcrEngine
 from synapse.knowledge.search import MAX_QUERY, Found, Hit, Search
+from synapse.knowledge.turkish import lower
 
 __all__ = [
     "MAX_QUERY",
@@ -34,8 +38,10 @@ __all__ = [
     "MediaType",
     "NotFoundError",
     "Page",
+    "PageChunk",
     "PageReader",
     "PageReading",
+    "PageView",
     "ParseError",
     "Parsed",
     "Parser",
@@ -53,5 +59,7 @@ __all__ = [
     "Uploader",
     "VersionInfo",
     "detect",
+    "estimate_tokens",
+    "lower",
     "reindex",
 ]

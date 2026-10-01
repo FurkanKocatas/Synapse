@@ -139,6 +139,7 @@ layers = [
     "synapse.cli",
     "synapse.accounts_cli | synapse.audit_cli | synapse.worker_cli",
     "synapse.api | synapse.migrations",
+    "synapse.chat",
     "synapse.knowledge",
     "synapse.jobs",
     "synapse.identity | synapse.authz | synapse.dbadmin | synapse.models",
@@ -176,7 +177,7 @@ allow_indirect_imports = true
 [[tool.importlinter.contracts]]
 name = "Knowledge is used only through synapse.knowledge.public"
 type = "forbidden"
-source_modules = ["synapse.api", "synapse.cli", "synapse.worker_cli"]
+source_modules = ["synapse.api", "synapse.chat", "synapse.cli", "synapse.worker_cli"]
 forbidden_modules = [
     "synapse.knowledge.blobs",
     "synapse.knowledge.chunking",
@@ -201,8 +202,26 @@ allow_indirect_imports = true
 [[tool.importlinter.contracts]]
 name = "Models are used only through synapse.models.public"
 type = "forbidden"
-source_modules = ["synapse.api", "synapse.cli", "synapse.knowledge", "synapse.worker_cli"]
+source_modules = [
+    "synapse.api",
+    "synapse.chat",
+    "synapse.cli",
+    "synapse.knowledge",
+    "synapse.worker_cli",
+]
 forbidden_modules = ["synapse.models.llama", "synapse.models.ports"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Chat is used only through synapse.chat.public"
+type = "forbidden"
+source_modules = ["synapse.api", "synapse.cli"]
+forbidden_modules = [
+    "synapse.chat.answering",
+    "synapse.chat.conversations",
+    "synapse.chat.numerals",
+    "synapse.chat.verification",
+]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]

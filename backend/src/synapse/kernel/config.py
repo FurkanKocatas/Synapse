@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     chat_key_file: Path = Path("/run/secrets/chat_key")
     # The longest a model call may take; a chat answer on the CPU alone takes about a minute.
     model_timeout_seconds: float = Field(default=180, ge=1, le=900)
+    # Refusal before generation (ADR 0010, query rule 6): a question whose best reranker score
+    # (a logit of bge-reranker-v2-m3) is below this is answered "not found" without calling the
+    # chat model. Calibrated on the golden set (docs/benchmarks/refusal.md).
+    chat_refuse_below: float = Field(default=-1.0, ge=-100, le=100)
     # The address users open, such as https://synapse.example.org. Passkeys are bound to its
     # host name, so they stop working if it changes; unset means passkeys are unavailable.
     public_url: str | None = Field(
