@@ -19,14 +19,16 @@ Rules, each covered by a property test (tests/test_chunking.py):
    line taken for a heading by mistake (layout parsers mark "KARAR TARİHİ : 17.06.2025" as
    one) still reaches search; headings just above a table stay in its heading path instead.
 
-Every chunk keeps its heading path and pages; the deterministic context prefix (title, type,
-date, number, heading path, page) is built from them when the chunk is indexed.
+Every chunk keeps its heading path and pages. Search indexes it with its document's context in
+front (``document_context``: the file's name and the document's first 30 words), which raised
+BM25's Hit@1 from 0.57 to 0.66 on the golden set (docs/benchmarks/embeddings.md).
 """
 
 import math
 import re
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
+from pathlib import PurePath
 from typing import Literal
 
 from synapse.knowledge.language import Language, language
@@ -36,10 +38,9 @@ from synapse.knowledge.turkish import lower
 ChunkKind = Literal["text", "table", "table_summary"]
 type TokenCounter = Callable[[str], int]
 
-# The multilingual tokenizers the embedding candidates share (XLM-R's, used by e5 and bge-m3)
-# give 4.18 characters per token on the corpus's Turkish text at the median and 3.65 at the
-# densest tenth of pages. Until the embedder is chosen (phase 4, step 6), 3.6 keeps the estimate
-# on the safe side of the real count.
+# bge-m3's tokenizer (XLM-R's, ADR 0018) gives 4.18 characters per token on the corpus's
+# Turkish text at the median and 3.65 at the densest tenth of pages; 3.6 keeps the estimate on
+# the safe side of the real count. The embedding adapter cuts at the model's own count anyway.
 CHARS_PER_TOKEN = 3.6
 
 
@@ -232,6 +233,29 @@ def indexed_text(chunk: Chunk) -> str:
     ("2024 YILI BÜTÇESİ") is found through this; entity offsets point into it.
     """
     return "\n".join([*chunk.heading_path, chunk.text])
+
+
+OPENING_WORDS = 30
+OPENING_CHUNKS = 5
+_NAME_SEPARATORS = re.compile(r"[_.-]+")
+
+
+def document_context(filename: str, chunks: Sequence[Chunk]) -> str:
+    """What every chunk of a document is indexed with in front (ADR 0010, ingestion rule 9).
+
+    The file's name as uploaded, separators as spaces ("63_insan-kay.pdf": "63 insan kay"), and
+    the document's first 30 words, from its first chunks together: a first chunk can be a lone
+    "T.C.". Usually the issuing body, the document type and its number; within a point of a
+    hand-written title on the golden set. Only what ingestion knows.
+    """
+    name = " ".join(_NAME_SEPARATORS.sub(" ", PurePath(filename).stem).split())
+    words = " ".join(indexed_text(c) for c in chunks[:OPENING_CHUNKS]).split()
+    return "\n".join(part for part in (name, " ".join(words[:OPENING_WORDS])) if part)
+
+
+def contextual_text(context: str, heading_path: Sequence[str], text: str) -> str:
+    """A chunk's indexed text with its document's context in front: what is embedded."""
+    return "\n".join(part for part in (context, *heading_path, text) if part)
 
 
 def chunk(

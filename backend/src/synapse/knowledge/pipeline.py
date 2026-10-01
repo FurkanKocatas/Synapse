@@ -6,6 +6,7 @@ from synapse.jobs.queue import Job, JsonValue, Queue
 
 PARSE_TASK = "ingest.parse_version"
 OCR_TASK = "ingest.ocr_version"
+EMBED_TASK = "ingest.embed_version"
 
 
 def parse_job(document_id: UUID, version_id: UUID) -> Job:
@@ -20,3 +21,10 @@ def ocr_job(document_id: UUID, version_id: UUID) -> Job:
     # parsing.
     args: dict[str, JsonValue] = {"version_id": str(version_id)}
     return Job(OCR_TASK, Queue.OCR, args, lock=f"document:{document_id}")
+
+
+def embed_job(document_id: UUID, version_id: UUID) -> Job:
+    # Its own queue too: on a machine with a GPU the embedding server is the bottleneck, not the
+    # worker's CPU.
+    args: dict[str, JsonValue] = {"version_id": str(version_id)}
+    return Job(EMBED_TASK, Queue.EMBED, args, lock=f"document:{document_id}")

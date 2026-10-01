@@ -5,7 +5,17 @@ from itertools import pairwise
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from synapse.knowledge.chunking import Chunk, ChunkingConfig, chunk, join_continued_tables
+from synapse.knowledge.chunking import (
+    OPENING_CHUNKS,
+    OPENING_WORDS,
+    Chunk,
+    ChunkingConfig,
+    chunk,
+    contextual_text,
+    document_context,
+    indexed_text,
+    join_continued_tables,
+)
 from synapse.knowledge.structure import Block, Table, row_text
 
 CONFIG = ChunkingConfig(target_tokens=30, max_tokens=50, soft_min_tokens=10)
@@ -212,3 +222,42 @@ def test_heading_path_follows_the_sections() -> None:
         ("BİRİNCİ KISIM Genel Hükümler", "İKİNCİ BÖLÜM Kuruluş", "Madde 4"),
     ]
     assert [c.page_start for c in chunks] == [1, 2]
+
+
+def sections(count: int, paragraph: str) -> list[Chunk]:
+    """One chunk per section: a level 1 heading always starts a new one."""
+    blocks = []
+    for n in range(count):
+        blocks += [
+            Block("heading", f"BÖLÜM {n}", 1, level=1),
+            Block("paragraph", paragraph.format(n=n), 1),
+        ]
+    return run(blocks)
+
+
+def test_the_document_context_is_its_file_name_and_first_30_words() -> None:
+    chunks = sections(10, "a{n} b{n} c{n} d{n} e{n} f{n} g{n} h{n}")
+    name, opening = document_context("2026_16-meclis.kararı.pdf", chunks).split("\n")
+    assert name == "2026 16 meclis kararı"
+    first = " ".join(indexed_text(c) for c in chunks).split()
+    assert opening.split() == first[:OPENING_WORDS]
+    assert document_context("bos.pdf", []) == "bos"
+    assert document_context("", chunks) == opening
+
+
+def test_the_opening_words_come_from_the_first_five_chunks_only() -> None:
+    # A few words a chunk: the first five hold fewer than 30, and the sixth is not read.
+    chunks = sections(10, "a{n}")
+    assert len(chunks) == 10
+    opening = document_context("x.pdf", chunks).split("\n")[1].split()
+    assert opening == " ".join(indexed_text(c) for c in chunks[:OPENING_CHUNKS]).split()
+    assert len(opening) < OPENING_WORDS
+    assert "a4" in opening
+    assert "a5" not in opening
+
+
+def test_the_embedded_text_is_the_context_then_the_indexed_text() -> None:
+    assert contextual_text("ad\nilk sözler", ("BÖLÜM 1", "Madde 4"), "Belediye kurulur.") == (
+        "ad\nilk sözler\nBÖLÜM 1\nMadde 4\nBelediye kurulur."
+    )
+    assert contextual_text("", (), "Metin.") == "Metin."

@@ -23,6 +23,7 @@ from synapse.knowledge.public import (
     TesseractEngine,
     TwoEngineReader,
 )
+from synapse.models.public import Embedder, Models, models_from
 
 log = structlog.get_logger(__name__)
 
@@ -41,23 +42,37 @@ async def run(
     concurrency: int,
     once: bool,
     reader: PageReader | None = None,
+    embedder: Embedder | None = None,
 ) -> None:
     """Process jobs until stopped; with ``once``, until the queues are empty.
 
-    ``reader`` replaces the OCR engines (tests use a stand-in; the engines are exercised by the
-    full-stack smoke test, in the image that ships them).
+    ``reader`` replaces the OCR engines and ``embedder`` the embedding server (tests use
+    stand-ins; the real ones are exercised by the full-stack smoke test). Without either, the
+    embedding server is the one the settings name, if any.
     """
     connection = settings.database(application_name="synapse-worker")
     database = Database(connection, max_size=concurrency + 1)
     await database.open()
     app = build_app(connection.conninfo())
     reader = reader or page_reader(settings)
-    processor = Processor(database, LocalBlobStore(settings.blob_dir), LightParser(), reader)
+    models = Models() if embedder else models_from(settings)
+    processor = Processor(
+        database,
+        LocalBlobStore(settings.blob_dir),
+        LightParser(),
+        reader,
+        embedder or models.embedder,
+    )
     for task in processor.tasks():
         register(app, task)
     try:
         async with app.open_async():
-            log.info("worker.started", queues=[q.value for q in queues], concurrency=concurrency)
+            log.info(
+                "worker.started",
+                queues=[q.value for q in queues],
+                concurrency=concurrency,
+                embedding=processor.embeds,
+            )
             await app.run_worker_async(
                 queues=[q.value for q in queues],
                 concurrency=concurrency,
@@ -66,6 +81,7 @@ async def run(
             )
     finally:
         reader.close()
+        await models.close()
         await database.close()
 
 

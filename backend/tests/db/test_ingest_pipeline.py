@@ -17,9 +17,12 @@ from synapse import accounts_cli, worker_cli
 from synapse.api.app import create_app
 from synapse.api.deps import CLIENT_HEADER, CSRF_HEADER
 from synapse.jobs.queue import Job, Queue, enqueue
+from synapse.jobs.worker import BadJobError
 from synapse.kernel.config import Settings
 from synapse.kernel.database import Database
 from synapse.knowledge.ocr import OcrError, PageReading
+from synapse.knowledge.public import LightParser, LocalBlobStore, Processor
+from synapse.models.public import ModelUnavailableError
 from tests import knowledge_samples as samples
 from tests.db.conftest import TestDatabase
 
@@ -42,6 +45,23 @@ class StandInReader:
 
     def close(self) -> None:
         pass
+
+
+@dataclass
+class StandInEmbedder:
+    """Points each text's vector along the axis of its length; the real model runs in the
+    full-stack smoke test."""
+
+    fail: bool = False
+    model: str = "bge-m3"
+    dimensions: int = 1024
+    texts: list[str] = field(default_factory=list)
+
+    async def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        if self.fail:
+            raise ModelUnavailableError("embedding", "/tokenize: connection refused")
+        self.texts.extend(texts)
+        return [[1.0 if i == len(t) % self.dimensions else 0.0 for i in range(1024)] for t in texts]
 
 
 @dataclass(frozen=True)
@@ -113,6 +133,7 @@ def run_worker(
     world: World,
     reader: StandInReader | None = None,
     queues: Sequence[Queue] = (Queue.INGEST, Queue.OCR),
+    embedder: StandInEmbedder | None = None,
 ) -> StandInReader:
     # Other test modules leave jobs for their own tenants and blob directories; only this
     # module's jobs are this worker's business.
@@ -124,7 +145,11 @@ def run_worker(
     # A worker run with once=True stops as soon as it finds no job, even while a running job is
     # about to enqueue the next one (parsing enqueues OCR); run again until nothing is left.
     for _ in range(5):
-        asyncio.run(worker_cli.run(world.worker, queues, concurrency=2, once=True, reader=reader))
+        asyncio.run(
+            worker_cli.run(
+                world.worker, queues, concurrency=2, once=True, reader=reader, embedder=embedder
+            )
+        )
         left = world.db.execute(
             "SELECT count(*) FROM synapse.procrastinate_jobs "
             "WHERE status = 'todo' AND queue_name = ANY(%s) AND args->>'tenant_id' = %s",
@@ -343,3 +368,138 @@ def test_finished_pages_are_chunked_with_their_entities(world: World, editor: Te
     # The scanned page is chunked from its OCR text, once OCR has read it.
     assert chunks(scan["version_id"]) == [(0, "text", "Karar 2026/35 okundu.", 1, 1, 32)]
     assert entities(scan["version_id"]) == [("decision_number", "2026/35", "2026/35")]
+
+
+ALL_QUEUES = (Queue.INGEST, Queue.OCR, Queue.EMBED)
+TEXT = "Karar 2026/35 kabul edildi ve 15.03.2026 tarihinde sunuldu."
+
+
+def vectors(world: World, version_id: str) -> list[list[float] | None]:
+    rows = world.db.execute(
+        "SELECT embedding::text FROM synapse.document_chunks WHERE version_id = %s "
+        "ORDER BY ordinal",
+        (version_id,),
+    ).fetchall()
+    return [
+        None if text is None else [float(v) for v in text.strip("[]").split(",")]
+        for (text,) in rows
+    ]
+
+
+def indexing(world: World, version_id: str) -> tuple[str | None, str | None]:
+    row = world.db.execute(
+        "SELECT context, embedded_with FROM synapse.document_versions WHERE id = %s",
+        (version_id,),
+    ).fetchone()
+    assert row is not None
+    return row[0], row[1]
+
+
+def test_chunks_are_embedded_with_their_document_context(world: World, editor: TestClient) -> None:
+    body = upload(editor, samples.pdf(TEXT), "meclis_kararı-2026.pdf")
+    embedder = StandInEmbedder()
+    run_worker(world, queues=ALL_QUEUES, embedder=embedder)
+
+    context = f"meclis kararı 2026\n{TEXT}"
+    assert version_state(world, body["version_id"]) == ("ready", None)
+    assert indexing(world, body["version_id"]) == (context, "bge-m3")
+    # What was embedded is the context, then the chunk as search indexes it.
+    assert embedder.texts == [f"{context}\n{TEXT}"]
+    (vector,) = vectors(world, body["version_id"])
+    assert vector is not None
+    assert len(vector) == 1024
+    assert vector.index(1.0) == len(embedder.texts[0]) % 1024
+    listed = editor.get(f"/api/collections/{body['collection_id']}/documents").json()
+    assert [d["status"] for d in listed] == ["ready"]
+
+
+def test_without_an_embedding_model_versions_stay_parsed(world: World, editor: TestClient) -> None:
+    body = upload(editor, samples.pdf(TEXT), "modelsiz.pdf")
+    run_worker(world, queues=ALL_QUEUES)
+    assert version_state(world, body["version_id"]) == ("parsed", None)
+    assert indexing(world, body["version_id"]) == (f"modelsiz\n{TEXT}", None)
+    assert vectors(world, body["version_id"]) == [None]
+    queued = world.db.execute(
+        "SELECT count(*) FROM synapse.procrastinate_jobs WHERE task_name = 'ingest.embed_version' "
+        "AND args->>'version_id' = %s",
+        (body["version_id"],),
+    ).fetchone()
+    assert queued == (0,)
+
+
+def test_a_retried_embedding_job_embeds_only_the_chunks_left(
+    world: World, editor: TestClient
+) -> None:
+    body = upload(editor, samples.pdf(TEXT), "yarim.pdf")
+    run_worker(world, queues=[Queue.INGEST], embedder=StandInEmbedder())
+    assert version_state(world, body["version_id"]) == ("parsed", None)
+    # As if an earlier run had embedded the chunk and then crashed before marking the version.
+    world.db.execute(
+        "UPDATE synapse.document_chunks "
+        "SET embedding = array_fill(0.5::real, ARRAY[1024])::halfvec WHERE version_id = %s",
+        (body["version_id"],),
+    )
+    world.db.execute(
+        "UPDATE synapse.document_versions SET status = 'embedding' WHERE id = %s",
+        (body["version_id"],),
+    )
+    embedder = StandInEmbedder()
+    run_worker(world, queues=[Queue.EMBED], embedder=embedder)
+    assert embedder.texts == []
+    assert version_state(world, body["version_id"]) == ("ready", None)
+    (vector,) = vectors(world, body["version_id"])
+    assert vector == [0.5] * 1024
+
+
+async def test_an_unreachable_model_leaves_the_version_parsed_and_retryable(
+    world: World, editor: TestClient
+) -> None:
+    body = upload(editor, samples.pdf(TEXT), "erisilemez.pdf")
+    await asyncio.to_thread(run_worker, world, None, [Queue.INGEST], StandInEmbedder())
+    version = {"version_id": body["version_id"]}
+    database = Database(world.worker.database("test-embed"), max_size=2)
+    await database.open()
+    try:
+        failing = Processor(
+            database,
+            LocalBlobStore(world.worker.blob_dir),
+            LightParser(),
+            StandInReader(),
+            StandInEmbedder(fail=True),
+        )
+        with pytest.raises(ModelUnavailableError):
+            await failing.embed(world.tenant_id, version)
+        assert version_state(world, body["version_id"]) == ("embedding", None)
+        # The worker calls this after the last attempt.
+        await failing.give_up_embed(world.tenant_id, version, "ModelUnavailableError")
+    finally:
+        await database.close()
+    # Not failed: the text is there, and a later run with the model reachable finishes the job.
+    assert version_state(world, body["version_id"]) == ("parsed", None)
+    assert embedding_failure(world, body["version_id"]) == "model_unavailable"
+    assert pages(world, body["version_id"])[0][4].startswith("Karar 2026/35")
+    await asyncio.to_thread(run_worker, world, None, [Queue.EMBED], StandInEmbedder())
+    assert version_state(world, body["version_id"]) == ("ready", None)
+    assert embedding_failure(world, body["version_id"]) is None
+
+
+def embedding_failure(world: World, version_id: str) -> str | None:
+    row = world.db.execute(
+        "SELECT embedding_failure FROM synapse.document_versions WHERE id = %s", (version_id,)
+    ).fetchone()
+    assert row is not None
+    failure: str | None = row[0]
+    return failure
+
+
+async def test_an_embedding_job_without_a_model_is_refused(world: World) -> None:
+    database = Database(world.worker.database("test-embed"), max_size=1)
+    await database.open()
+    try:
+        processor = Processor(
+            database, LocalBlobStore(world.worker.blob_dir), LightParser(), StandInReader()
+        )
+        with pytest.raises(BadJobError, match="no embedding model"):
+            await processor.embed(world.tenant_id, {"version_id": str(uuid.uuid4())})
+    finally:
+        await database.close()
