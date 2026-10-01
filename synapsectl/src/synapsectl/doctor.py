@@ -17,8 +17,9 @@ from enum import StrEnum
 from pathlib import Path
 
 from synapsectl.config import SynapseConfig, Tier
+from synapsectl.models import SERVER_IMAGES, Accelerator, gpu_groups, problems
 from synapsectl.render import render
-from synapsectl.secrets import required_files
+from synapsectl.secrets import APP_UID, required_files
 
 GIB = 1024**3
 MIN_MEMORY = {Tier.CPU_16: 16, Tier.CPU_32: 32, Tier.GPU: 32}
@@ -146,6 +147,51 @@ def check_rendered(config: SynapseConfig) -> Check:
     return Check("rendered files", Status.OK, "match synapse.toml")
 
 
+def check_models(config: SynapseConfig) -> Check:
+    directory, accelerator = config.models.dir, Accelerator(config.models.accelerator)
+    found = problems(directory, accelerator, verify=False)
+    if found:
+        return Check("models", Status.FAIL, "; ".join(found) + " (run: synapsectl models fetch)")
+    return Check("models", Status.OK, f"the {accelerator} files are in {directory}")
+
+
+def check_gpu(config: SynapseConfig, dri: Path = Path("/dev/dri")) -> Check:
+    groups = gpu_groups(dri)
+    if Accelerator(config.models.accelerator) is Accelerator.CPU:
+        if groups:
+            return Check(
+                "gpu",
+                Status.WARN,
+                "a GPU is present but the models run on the CPU; with models.accelerator = "
+                f'"vulkan" and models.gpu_groups = {list(groups)}, embedding is twice as fast and '
+                "reranking fits its 3-second budget (docs/benchmarks/embeddings.md)",
+            )
+        return Check("gpu", Status.OK, "no GPU; the models run on the CPU")
+    if not groups:
+        return Check("gpu", Status.FAIL, f"models.accelerator is vulkan but {dri} has no GPU")
+    missing = sorted(set(groups) - set(config.models.gpu_groups))
+    if missing:
+        return Check(
+            "gpu", Status.FAIL, f"models.gpu_groups lacks {missing}, which own {dri}'s devices"
+        )
+    # The server image itself, as the user and groups it runs with, must see the GPU.
+    group_flags = [
+        flag for group in config.models.gpu_groups for flag in ("--group-add", str(group))
+    ]
+    probe = _run(
+        [
+            *("docker", "run", "--rm", "--device", f"{dri}:/dev/dri"),
+            *("--user", f"{APP_UID}:{APP_UID}", *group_flags),
+            *(SERVER_IMAGES["vulkan"], "--list-devices"),
+        ]
+    )
+    devices = [line.strip() for line in (probe.stdout if probe else "").splitlines()]
+    found_gpu = next((line for line in devices if line.startswith("Vulkan0")), None)
+    if probe is None or probe.returncode != 0 or found_gpu is None:
+        return Check("gpu", Status.FAIL, "the Vulkan server image cannot see the GPU")
+    return Check("gpu", Status.OK, found_gpu)
+
+
 def run_checks(config: SynapseConfig, *, stack_running: bool = False) -> list[Check]:
     checks: list[Callable[[], Check]] = [
         check_docker,
@@ -156,5 +202,7 @@ def run_checks(config: SynapseConfig, *, stack_running: bool = False) -> list[Ch
         lambda: check_port(config.network.https_port, running=stack_running),
         lambda: check_secrets(config),
         lambda: check_rendered(config),
+        lambda: check_models(config),
+        lambda: check_gpu(config),
     ]
     return [check() for check in checks]

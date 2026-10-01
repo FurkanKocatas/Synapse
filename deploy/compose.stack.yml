@@ -30,6 +30,33 @@ x-db-env: &db-env
   SYNAPSE_DB_PORT: "5432"
   SYNAPSE_DB_NAME: synapse
 
+# The model servers (ADR 0018), in the "models" profile: they need the model files in
+# SYNAPSE_MODELS_DIR (default .dev/models; synapsectl models fetch). On the CPU here; for a GPU
+# through Vulkan add -f deploy/compose.vulkan.yml. The same images and arguments as installations
+# (synapsectl/render.py); the API and the worker call them when SYNAPSE_STACK_MODELS=1:
+#   SYNAPSE_STACK_MODELS=1 docker compose -f deploy/compose.stack.yml --profile models up -d
+x-model-server: &model-server
+  image: ghcr.io/ggml-org/llama.cpp:server-b11243@sha256:f9115c95639e60abc09d4ea83b26fd4d56c66aa1174594393335a514da00c283
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  user: "10001:10001"
+  networks: [internal]
+  profiles: [models]
+  volumes: ["${SYNAPSE_MODELS_DIR:-../.dev/models}:/models:ro"]
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+    interval: 10s
+    timeout: 5s
+    retries: 30
+    start_period: 60s
+
+x-embed-env: &embed-env
+  SYNAPSE_EMBED_URL: ${SYNAPSE_STACK_MODELS:+http://llm-embed:8080}
+  SYNAPSE_EMBED_KEY_FILE: /run/secrets/embed_key
+
 services:
   db:
     build: ./postgres
@@ -81,7 +108,11 @@ services:
     <<: *app
     command: [api]
     environment:
-      <<: *db-env
+      <<: [*db-env, *embed-env]
+      SYNAPSE_RERANK_URL: ${SYNAPSE_STACK_MODELS:+http://llm-rerank:8080}
+      SYNAPSE_RERANK_KEY_FILE: /run/secrets/rerank_key
+      SYNAPSE_CHAT_URL: ${SYNAPSE_STACK_MODELS:+http://llm-chat:8080}
+      SYNAPSE_CHAT_KEY_FILE: /run/secrets/chat_key
       SYNAPSE_API_HOST: 0.0.0.0
       SYNAPSE_API_PORT: "8000"
       SYNAPSE_DB_USER: synapse_api
@@ -92,7 +123,8 @@ services:
       # Only the web front on the internal network may set X-Forwarded-For.
       SYNAPSE_TRUSTED_PROXY_IPS: ${SYNAPSE_STACK_SUBNET:-172.29.0.0/24}
       SYNAPSE_PUBLIC_URL: http://localhost:${SYNAPSE_STACK_PORT:-8480}
-    secrets: [db_synapse_api, csrf_key, totp_key, audit_signing_key]
+    secrets:
+      [db_synapse_api, csrf_key, totp_key, audit_signing_key, embed_key, rerank_key, chat_key]
     volumes: [blobs:/var/lib/synapse/blobs]
     depends_on:
       migrate: { condition: service_completed_successfully }
@@ -108,10 +140,10 @@ services:
     <<: *app
     command: [worker, --concurrency, "2"]
     environment:
-      <<: *db-env
+      <<: [*db-env, *embed-env]
       SYNAPSE_DB_USER: synapse_worker
       SYNAPSE_DB_PASSWORD_FILE: /run/secrets/db_synapse_worker
-    secrets: [db_synapse_worker]
+    secrets: [db_synapse_worker, embed_key]
     # Workers read uploaded files, never write them.
     volumes: [blobs:/var/lib/synapse/blobs:ro]
     depends_on:
@@ -144,6 +176,30 @@ services:
       timeout: 5s
       retries: 6
 
+  llm-embed:
+    <<: *model-server
+    command:
+      [-m, /models/bge-m3-f16.gguf, --embedding, --pooling, cls, -c, "8192", -np, "16", -b, "512",
+       -ub, "512", --api-key-file, /run/secrets/embed_key]
+    secrets: [embed_key]
+    mem_limit: 1536m
+
+  llm-rerank:
+    <<: *model-server
+    command:
+      [-m, /models/bge-reranker-v2-m3-f16.gguf, --reranking, -c, "8192", -np, "16", -b, "512",
+       -ub, "512", --api-key-file, /run/secrets/rerank_key]
+    secrets: [rerank_key]
+    mem_limit: 1536m
+
+  llm-chat:
+    <<: *model-server
+    command:
+      [-m, /models/Qwen3.5-4B-Q4_K_M.gguf, -c, "16384", --parallel, "2", --jinja,
+       --reasoning-budget, "0", --api-key-file, /run/secrets/chat_key]
+    secrets: [chat_key]
+    mem_limit: 5g
+
 networks:
   internal:
     ipam:
@@ -160,6 +216,9 @@ secrets:
   csrf_key: { file: ../.dev/secrets/csrf_key }
   totp_key: { file: ../.dev/secrets/totp_key }
   audit_signing_key: { file: ../.dev/secrets/audit_signing_key }
+  embed_key: { file: ../.dev/secrets/embed_key }
+  rerank_key: { file: ../.dev/secrets/rerank_key }
+  chat_key: { file: ../.dev/secrets/chat_key }
 
 volumes:
   db-data:

@@ -13,6 +13,7 @@ from typing import Self
 import tomli_w
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from synapsectl.models import Accelerator
 from synapsectl.modules import BY_NAME
 
 # Lower-case DNS labels separated by dots; the length limit is a separate constraint because
@@ -81,6 +82,24 @@ class Images(Strict):
     version: str = Field(default="dev", pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
+class Models(Strict):
+    """The model servers (ADR 0018): where their files are and what runs them."""
+
+    # GGUF files on the host (synapsectl models fetch, or the offline bundle).
+    dir: Path = Path("/var/lib/synapse/models")
+    # vulkan: a GPU through Vulkan (integrated ones included), with /dev/dri passed in.
+    accelerator: Accelerator = Accelerator.CPU
+    # The host groups that own /dev/dri's devices (render, video); the servers run as 10001
+    # and need them to open the GPU. Found by synapsectl init.
+    gpu_groups: tuple[int, ...] = ()
+
+    @model_validator(mode="after")
+    def _groups_for_vulkan(self) -> Self:
+        if self.accelerator is Accelerator.VULKAN and not self.gpu_groups:
+            raise ValueError("models.gpu_groups is required for vulkan (the groups of /dev/dri)")
+        return self
+
+
 class Modules(Strict):
     enabled: tuple[str, ...] = ()
 
@@ -103,6 +122,7 @@ class SynapseConfig(Strict):
     network: Network = Network()
     paths: Paths = Paths()
     images: Images = Images()
+    models: Models = Models()
     modules: Modules = Modules()
 
 

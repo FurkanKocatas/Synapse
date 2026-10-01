@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from synapsectl import config as cfg
 from synapsectl import wizard
 from synapsectl.config import SynapseConfig, Tier, TlsMode
+from synapsectl.models import Accelerator
 
 
 def test_configuration_round_trips_through_toml(config: SynapseConfig, tmp_path: Path) -> None:
@@ -49,6 +50,12 @@ def test_slugs_transliterate_turkish() -> None:
     assert wizard.slug_of("!!!") == "organization"
 
 
+@pytest.fixture(autouse=True)
+def no_gpu(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The machine running the tests may have a GPU; the wizard's questions must not depend on it.
+    monkeypatch.setattr(wizard, "gpu_groups", lambda: ())
+
+
 def test_wizard_with_defaults_produces_a_valid_configuration() -> None:
     result = wizard.run(ask=lambda _prompt: "")
     assert result.instance.slug == "example-organization"
@@ -57,7 +64,9 @@ def test_wizard_with_defaults_produces_a_valid_configuration() -> None:
 
 
 def test_wizard_uses_the_answers() -> None:
-    answers = iter(["Acme Hukuk", "", "ai.acme.example", "en", "cpu-32", "acme", "it@acme.example"])
+    answers = iter(
+        ["Acme Hukuk", "", "ai.acme.example", "en", "cpu-32", "", "acme", "it@acme.example"]
+    )
     result = wizard.run(ask=lambda _prompt: next(answers))
     assert result.instance.slug == "acme-hukuk"
     assert result.instance.locale == "en"
@@ -69,7 +78,7 @@ def test_wizard_asks_for_certificate_files_for_provided_tls(tmp_path: Path) -> N
     (tmp_path / "c.pem").write_text("C", encoding="utf-8")
     (tmp_path / "k.pem").write_text("K", encoding="utf-8")
     answers = iter(
-        ["Acme", "", "", "", "", "provided", str(tmp_path / "c.pem"), str(tmp_path / "k.pem")]
+        ["Acme", "", "", "", "", "", "provided", str(tmp_path / "c.pem"), str(tmp_path / "k.pem")]
     )
     result = wizard.run(ask=lambda _prompt: next(answers))
     assert result.tls.mode is TlsMode.PROVIDED
@@ -85,3 +94,14 @@ def test_suggested_tier_follows_installed_memory(monkeypatch: pytest.MonkeyPatch
     assert wizard.suggested_tier() is Tier.CPU_16
     memory(32)
     assert wizard.suggested_tier() is Tier.CPU_32
+
+
+def test_wizard_runs_the_models_on_a_gpu_it_finds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(wizard, "gpu_groups", lambda: (44, 992))
+    result = wizard.run(ask=lambda _prompt: "")
+    assert result.models.accelerator is Accelerator.VULKAN
+    assert result.models.gpu_groups == (44, 992)
+    answers = iter(["", "", "", "", "", "cpu", ""])
+    on_cpu = wizard.run(ask=lambda _prompt: next(answers))
+    assert on_cpu.models.accelerator is Accelerator.CPU
+    assert on_cpu.models.gpu_groups == ()

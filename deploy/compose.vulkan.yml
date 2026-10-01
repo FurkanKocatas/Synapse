@@ -1,0 +1,33 @@
+# The model servers on a GPU through Vulkan, integrated ones included (ADR 0018): added to
+# compose.stack.yml's "models" profile. The encoders run with 8-bit weights there, as
+# installations do (synapsectl/render.py). The servers run as 10001 and need the groups that own
+# /dev/dri's devices:
+#
+#   export SYNAPSE_RENDER_GID=$(stat -c %g /dev/dri/renderD128) SYNAPSE_VIDEO_GID=$(stat -c %g /dev/dri/card0)
+#   SYNAPSE_STACK_MODELS=1 docker compose -f deploy/compose.stack.yml -f deploy/compose.vulkan.yml \
+#     --profile models up -d
+x-gpu: &gpu
+  image: ghcr.io/ggml-org/llama.cpp:server-vulkan-b11243@sha256:fb1b039d27638fb22a5e7e59e97729534e73fe621f430ef496666ec01ac0630b
+  devices: ["/dev/dri:/dev/dri"]
+  group_add:
+    - ${SYNAPSE_RENDER_GID:?the group of /dev/dri/renderD128}
+    - ${SYNAPSE_VIDEO_GID:?the group of /dev/dri/card0}
+
+services:
+  llm-embed:
+    <<: *gpu
+    command:
+      [-m, /models/bge-m3-q8_0.gguf, --embedding, --pooling, cls, -c, "8192", -np, "16", -b, "512",
+       -ub, "512", -ngl, "99", --api-key-file, /run/secrets/embed_key]
+
+  llm-rerank:
+    <<: *gpu
+    command:
+      [-m, /models/bge-reranker-v2-m3-q8_0.gguf, --reranking, -c, "8192", -np, "16", -b, "512",
+       -ub, "512", -ngl, "99", --api-key-file, /run/secrets/rerank_key]
+
+  llm-chat:
+    <<: *gpu
+    command:
+      [-m, /models/Qwen3.5-4B-Q4_K_M.gguf, -c, "16384", --parallel, "2", --jinja,
+       --reasoning-budget, "0", -ngl, "99", --api-key-file, /run/secrets/chat_key]

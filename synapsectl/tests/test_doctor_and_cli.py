@@ -5,11 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from synapsectl import cli, doctor, render, secrets
+from synapsectl import cli, doctor, models, render, secrets
 from synapsectl import config as cfg
 from synapsectl.apply import ApplyError
-from synapsectl.config import SynapseConfig, Tier
+from synapsectl.config import Models, SynapseConfig, Tier
 from synapsectl.doctor import Status
+from synapsectl.models import Accelerator
 
 
 def prepared(config: SynapseConfig) -> SynapseConfig:
@@ -155,3 +156,55 @@ def test_cli_apply_reports_a_failed_step(
     monkeypatch.setattr(cli, "apply", fail)
     assert cli.main(["--config", str(target), "apply"]) == 1
     assert "Start the database: failed" in capsys.readouterr().err
+
+
+def test_model_files_are_checked(config: SynapseConfig, tmp_path: Path) -> None:
+    configured = config.model_copy(update={"models": Models(dir=tmp_path / "models")})
+    result = doctor.check_models(configured)
+    assert result.status is Status.FAIL
+    assert "bge-m3-f16.gguf missing" in result.detail
+    assert "synapsectl models fetch" in result.detail
+    (tmp_path / "models").mkdir()
+    for model in models.required(Accelerator.CPU):
+        with (tmp_path / "models" / model.name).open("wb") as handle:
+            handle.truncate(model.size)
+    assert doctor.check_models(configured).status is Status.OK
+
+
+LISTED = "Available devices:\n  Vulkan0: AMD Radeon Graphics (RADV REMBRANDT) (9422 MiB)\n"
+
+
+def test_gpu_check(monkeypatch: pytest.MonkeyPatch, config: SynapseConfig, tmp_path: Path) -> None:
+    dri = tmp_path / "dri"
+    dri.mkdir()
+    assert doctor.check_gpu(config, dri).status is Status.OK
+    (dri / "renderD128").write_text("", encoding="utf-8")
+    present = doctor.check_gpu(config, dri)
+    assert present.status is Status.WARN
+    assert f"models.gpu_groups = [{os.getgid()}]" in present.detail
+
+    gpu = config.model_copy(
+        update={"models": Models(accelerator=Accelerator.VULKAN, gpu_groups=(os.getgid(),))}
+    )
+    commands: list[list[str]] = []
+
+    def probe(command: list[str]) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return completed(0, LISTED)
+
+    monkeypatch.setattr(doctor, "_run", probe)
+    found = doctor.check_gpu(gpu, dri)
+    assert found.status is Status.OK
+    assert found.detail.startswith("Vulkan0: AMD Radeon Graphics")
+    (command,) = commands
+    assert command[command.index("--user") + 1] == "10001:10001"
+    assert command[command.index("--group-add") + 1] == str(os.getgid())
+    assert command[-2:] == [models.SERVER_IMAGES["vulkan"], "--list-devices"]
+
+    monkeypatch.setattr(doctor, "_run", lambda _command: completed(0, "Available devices:\n"))
+    assert "cannot see the GPU" in doctor.check_gpu(gpu, dri).detail
+    other = config.model_copy(
+        update={"models": Models(accelerator=Accelerator.VULKAN, gpu_groups=(12345,))}
+    )
+    assert "lacks" in doctor.check_gpu(other, dri).detail
+    assert "has no GPU" in doctor.check_gpu(gpu, tmp_path / "none").detail

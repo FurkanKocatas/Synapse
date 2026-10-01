@@ -5,9 +5,11 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
-from synapsectl import render, secrets
-from synapsectl.config import SynapseConfig, Tier, Tls, TlsMode
+from synapsectl import models, render, secrets
+from synapsectl.config import Models, SynapseConfig, Tier, Tls, TlsMode
+from synapsectl.models import Accelerator
 
 
 def test_secrets_are_private_and_generated_once(config: SynapseConfig) -> None:
@@ -120,3 +122,56 @@ def test_docker_compose_accepts_the_rendered_file(config: SynapseConfig) -> None
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_model_servers_are_hardened_internal_and_keyed(config: SynapseConfig) -> None:
+    services = render.compose(config)["services"]
+    for name in render.SERVERS:
+        server = services[name]
+        assert server["read_only"] is True, name
+        assert server["cap_drop"] == ["ALL"], name
+        assert server["security_opt"] == ["no-new-privileges:true"], name
+        assert server["networks"] == ["internal"], name
+        assert "ports" not in server, name
+        assert server["user"] == "10001:10001", name
+        assert server["volumes"] == [f"{config.models.dir}:/models:ro"], name
+        assert server["image"] == models.SERVER_IMAGES["cpu"], name
+        assert "devices" not in server, name
+        assert "-ngl" not in server["command"], name
+        (key,) = server["secrets"]
+        assert server["command"][-2:] == ["--api-key-file", f"/run/secrets/{key}"], name
+    assert services["llm-embed"]["command"][:2] == ["-m", "/models/bge-m3-f16.gguf"]
+    assert services["llm-rerank"]["command"][:2] == ["-m", "/models/bge-reranker-v2-m3-f16.gguf"]
+    chat = services["llm-chat"]["command"]
+    assert chat[chat.index("--reasoning-budget") + 1] == "0"
+
+
+def test_vulkan_passes_the_gpu_and_its_groups_in(config: SynapseConfig) -> None:
+    gpu = config.model_copy(
+        update={"models": Models(accelerator=Accelerator.VULKAN, gpu_groups=(44, 992))}
+    )
+    services = render.compose(gpu)["services"]
+    for name in render.SERVERS:
+        server = services[name]
+        assert server["image"] == models.SERVER_IMAGES["vulkan"], name
+        assert server["devices"] == ["/dev/dri:/dev/dri"], name
+        assert server["group_add"] == ["44", "992"], name
+        assert server["command"][server["command"].index("-ngl") + 1] == "99", name
+    assert services["llm-embed"]["command"][:2] == ["-m", "/models/bge-m3-q8_0.gguf"]
+    with pytest.raises(ValidationError, match="gpu_groups"):
+        Models(accelerator=Accelerator.VULKAN)
+
+
+def test_the_api_and_the_worker_call_the_model_servers(config: SynapseConfig) -> None:
+    rendered = render.compose(config)
+    api, worker = rendered["services"]["api"], rendered["services"]["worker"]
+    assert api["environment"]["SYNAPSE_EMBED_URL"] == "http://llm-embed:8080"
+    assert api["environment"]["SYNAPSE_RERANK_URL"] == "http://llm-rerank:8080"
+    assert api["environment"]["SYNAPSE_CHAT_URL"] == "http://llm-chat:8080"
+    assert api["environment"]["SYNAPSE_CHAT_KEY_FILE"] == "/run/secrets/chat_key"
+    assert {"embed_key", "rerank_key", "chat_key"} <= set(api["secrets"])
+    # The worker only embeds.
+    assert worker["environment"]["SYNAPSE_EMBED_URL"] == "http://llm-embed:8080"
+    assert "SYNAPSE_CHAT_URL" not in worker["environment"]
+    assert "chat_key" not in worker["secrets"]
+    assert {"embed_key", "rerank_key", "chat_key"} <= set(rendered["secrets"])

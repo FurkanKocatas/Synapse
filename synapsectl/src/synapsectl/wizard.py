@@ -10,6 +10,7 @@ import unicodedata
 from collections.abc import Callable
 
 from synapsectl.config import Instance, SynapseConfig, Tier, Tls, TlsMode
+from synapsectl.models import Accelerator, gpu_groups
 from synapsectl.modules import CATALOGUE
 
 Ask = Callable[[str], str]
@@ -44,6 +45,14 @@ def run(ask: Ask = input) -> SynapseConfig:
     hostname = _choose(ask, "Host name users will open", f"synapse.{slug}.local")
     locale = _choose(ask, "Default language (tr, en)", "tr")
     tier = Tier(_choose(ask, "Hardware tier (cpu-16, cpu-32, gpu)", suggested_tier().value))
+    # A GPU, integrated ones included, runs the models through Vulkan (ADR 0018).
+    groups = gpu_groups()
+    default = Accelerator.VULKAN if groups else Accelerator.CPU
+    accelerator = Accelerator(_choose(ask, "Run the models on (vulkan: the GPU, cpu)", default))
+    models = {
+        "accelerator": accelerator,
+        "gpu_groups": groups if accelerator is Accelerator.VULKAN else (),
+    }
 
     mode = TlsMode(_choose(ask, "TLS (internal, provided, acme)", TlsMode.INTERNAL.value))
     if mode is TlsMode.INTERNAL:
@@ -76,6 +85,7 @@ def run(ask: Ask = input) -> SynapseConfig:
             ),
             "hardware": tier,
             "tls": tls,
+            "models": models,
             "modules": {"enabled": chosen},
         }
     )

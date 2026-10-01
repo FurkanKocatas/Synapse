@@ -53,3 +53,13 @@ psycopg is the PostgreSQL driver for the backend ([ADR 0017](adr/0017-data-acces
 ## Models shipped in bundles
 
 The OCR models in the application image are listed above. Each model added to a bundle gets a row here: name, source, licence, whether redistribution inside an appliance is permitted, and the date checked.
+
+The model servers' files ([ADR 0018](adr/0018-model-defaults.md)), pinned by SHA-256 in [synapsectl/models.py](../synapsectl/src/synapsectl/models.py), checked 2026-10-01:
+
+| Model | Source | Licence | Redistribution in an appliance |
+|---|---|---|---|
+| bge-m3 (`bge-m3-q8_0.gguf`, `bge-m3-f16.gguf`) | `BAAI/bge-m3` at `5617a9f6`, converted with llama.cpp b11243 | MIT | Allowed; the licence text ships with the third-party notices |
+| bge-reranker-v2-m3 (`bge-reranker-v2-m3-q8_0.gguf`, `-f16.gguf`) | `BAAI/bge-reranker-v2-m3` at `953dc6f6`, converted the same way | Apache-2.0 | Allowed, with the licence and any NOTICE |
+| Qwen3.5-4B (`Qwen3.5-4B-Q4_K_M.gguf`) | `unsloth/Qwen3.5-4B-GGUF` at `e87f1764`, a quantisation of `Qwen/Qwen3.5-4B` | Apache-2.0 | Allowed, with the licence and any NOTICE |
+
+The servers run llama.cpp's own images (`ghcr.io/ggml-org/llama.cpp`, build b11243, pinned by digest): llama.cpp is MIT; the images' Ubuntu packages carry their own licences in `/usr/share/doc`, as in any Ubuntu image. Gemma 4, the other chat candidate measured, is Apache-2.0 too, unlike the Gemma releases before it (ADR 0016's "Gemma terms").

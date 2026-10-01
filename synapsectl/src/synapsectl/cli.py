@@ -1,13 +1,14 @@
 """``synapsectl``: init, render, doctor and apply (ADR 0012)."""
 
 import argparse
+import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from pydantic import ValidationError
 
-from synapsectl import __version__, config, doctor, render, secrets, wizard
+from synapsectl import __version__, config, doctor, models, render, secrets, wizard
 from synapsectl.apply import ApplyError, FirstAdmin, apply
 
 DEFAULT_CONFIG = Path("/etc/synapse/synapse.toml")
@@ -39,6 +40,19 @@ def build_parser() -> argparse.ArgumentParser:
     up.add_argument(
         "--admin-password-file", type=Path, help="Read its password from this file, not a prompt"
     )
+    files = commands.add_parser(
+        "models", help="Get or check the model files (default: as synapse.toml sets them)."
+    )
+    files.add_argument("action", choices=["fetch", "check"])
+    files.add_argument("--dir", type=Path, help="Model directory (default: models.dir)")
+    files.add_argument(
+        "--accelerator",
+        choices=[a.value for a in models.Accelerator],
+        help="Files for this accelerator (default: models.accelerator)",
+    )
+    files.add_argument(
+        "--verify", action="store_true", help="check: also compare every file's SHA-256 (slow)"
+    )
     return parser
 
 
@@ -47,6 +61,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "init":
             return _init(args.config, args.source)
+        if args.command == "models" and args.dir and args.accelerator:
+            accelerator = models.Accelerator(args.accelerator)
+            return _models(args.action, args.dir, accelerator, verify=args.verify)
         loaded = config.load(args.config)
     except FileNotFoundError as error:
         print(f"error: {error.filename} not found (run: synapsectl init)", file=sys.stderr)
@@ -54,13 +71,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValidationError as error:
         print(f"error: invalid configuration:\n{error}", file=sys.stderr)
         return 1
-    if args.command == "apply":
-        return _apply(loaded, args)
-    if args.command == "render":
-        for path in render.write(loaded, render.render(loaded)):
-            print(f"rendered {path}")
-        return 0
-    results = doctor.run_checks(loaded, stack_running=args.running)
+    commands: dict[str, Callable[[], int]] = {
+        "apply": lambda: _apply(loaded, args),
+        "models": lambda: _models(
+            args.action,
+            args.dir or loaded.models.dir,
+            models.Accelerator(args.accelerator or loaded.models.accelerator),
+            verify=args.verify,
+        ),
+        "render": lambda: _render(loaded),
+        "doctor": lambda: _doctor(loaded, running=args.running),
+    }
+    return commands[args.command]()
+
+
+def _render(loaded: config.SynapseConfig) -> int:
+    for path in render.write(loaded, render.render(loaded)):
+        print(f"rendered {path}")
+    return 0
+
+
+def _doctor(loaded: config.SynapseConfig, *, running: bool) -> int:
+    results = doctor.run_checks(loaded, stack_running=running)
     for result in results:
         print(f"{result.status:<4}  {result.name}: {result.detail}")
     return 1 if any(result.status is doctor.Status.FAIL for result in results) else 0
@@ -79,6 +111,22 @@ def _init(path: Path, source: Path | None) -> int:
     print(f"rendered files in {chosen.paths.render_dir}")
     print("next: synapsectl doctor, then synapsectl apply --admin-email ... --admin-name ...")
     return 0
+
+
+def _models(action: str, directory: Path, accelerator: models.Accelerator, *, verify: bool) -> int:
+    if action == "fetch":
+        try:
+            models.fetch(directory, accelerator)
+        except (models.FetchError, OSError, subprocess.CalledProcessError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        return 0
+    found = models.problems(directory, accelerator, verify=verify)
+    for problem in found:
+        print(f"error: {problem}", file=sys.stderr)
+    if not found:
+        print(f"model files for {accelerator}: all present in {directory}")
+    return 1 if found else 0
 
 
 def _apply(loaded: config.SynapseConfig, args: argparse.Namespace) -> int:

@@ -3,10 +3,43 @@
 # migrations, a tenant and an account created with the CLI, then a sign-in through the web
 # front. Runs in its own compose project and removes everything it created when it exits.
 #
-# Usage: tools/stack_smoke.sh      (needs Docker; used by CI)
+# Usage: tools/stack_smoke.sh                      (needs Docker; used by CI)
+#        tools/stack_smoke.sh --with-models [--vulkan]
+#
+# --with-models also starts the model servers (ADR 0018) from the files in SYNAPSE_MODELS_DIR
+# (default .dev/models; synapsectl models fetch): documents must reach "ready" with their
+# vectors, and the API's own adapters must get answers from the reranker and the chat model.
+# --vulkan runs them on the GPU (deploy/compose.vulkan.yml). CI has no model files.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+with_models="" vulkan=""
+for argument in "$@"; do
+  case "$argument" in
+    --with-models) with_models=1 ;;
+    --vulkan) vulkan=1 ;;
+    *) echo "unknown argument: $argument" >&2; exit 2 ;;
+  esac
+done
+files=(-f deploy/compose.stack.yml)
+model_servers=()
+if [ -n "$with_models" ]; then
+  models_dir="$(realpath "${SYNAPSE_MODELS_DIR:-.dev/models}")"
+  accelerator=cpu
+  if [ -n "$vulkan" ]; then
+    accelerator=vulkan
+    files+=(-f deploy/compose.vulkan.yml)
+    SYNAPSE_RENDER_GID="$(stat -c %g /dev/dri/renderD128)"
+    SYNAPSE_VIDEO_GID="$(stat -c %g /dev/dri/card0)"
+    export SYNAPSE_RENDER_GID SYNAPSE_VIDEO_GID
+  fi
+  uv run --directory synapsectl synapsectl --config /nonexistent models check \
+    --dir "$models_dir" --accelerator "$accelerator"
+  export SYNAPSE_STACK_MODELS=1 SYNAPSE_MODELS_DIR="$models_dir"
+  files+=(--profile models)
+  model_servers=(llm-embed llm-rerank llm-chat)
+fi
 
 project="synapse-smoke-$$"
 port="${SYNAPSE_SMOKE_PORT:-8481}"
@@ -17,7 +50,7 @@ export SYNAPSE_STACK_PORT="$port" SYNAPSE_STACK_ENV="$env_name"
 # A subnet of its own, so it can run next to a development stack.
 export SYNAPSE_STACK_SUBNET="${SYNAPSE_SMOKE_SUBNET:-172.29.201.0/24}"
 
-stack() { docker compose -p "$project" -f deploy/compose.stack.yml "$@"; }
+stack() { docker compose -p "$project" "${files[@]}" "$@"; }
 cleanup() {
   status=$?
   if [ "$status" -ne 0 ]; then
@@ -51,8 +84,8 @@ stack run --rm --no-deps -T -v "$password_file:/run/password:ro" api \
   user create --email editor@smoke.example --name "Smoke Editor" --role editor \
   --password-file /run/password >/dev/null
 
-step "Start the API, the worker and the web front"
-stack up -d --wait api worker web
+step "Start the API, the worker and the web front${with_models:+, and the model servers}"
+stack up -d --wait api worker web "${model_servers[@]}"
 
 base="http://127.0.0.1:$port"
 step "Check the web front and the API through it"
@@ -93,12 +126,15 @@ editor "$base/api/collections/$collection/documents" | grep -q '"title":"Karar 2
 editor -o "$sample.back" "$base/api/documents/$document/versions/1/file"
 cmp "$sample" "$sample.back"
 
-# Waits until a document's first version is parsed; fails on failed or after $2 seconds.
+# Waits until a document's first version is done (parsed, or ready with the model servers);
+# fails on failed or after $2 seconds.
+done_status="${with_models:+ready}"
+done_status="${done_status:-parsed}"
 wait_parsed() {
   local status=""
   for _ in $(seq "$2"); do
     status="$(editor "$base/api/documents/$1/versions" | json "[0]['status']")"
-    if [ "$status" = "parsed" ]; then return 0; fi
+    if [ "$status" = "$done_status" ]; then return 0; fi
     if [ "$status" = "failed" ]; then break; fi
     sleep 1
   done
@@ -130,6 +166,42 @@ grep -q "^ocr tesseract-tur+eng+rapidocr-latin " <<<"$read_back"
 grep -q "Karar 2026/35 kabul edildi" <<<"$read_back"
 grep -q "15.03.2026" <<<"$read_back"
 rm -f "$editor_jar" "$sample" "$sample.back"
+
+if [ -n "$with_models" ]; then
+  step "Check the vectors, and the reranker and the chat model through the API's adapters"
+  vectors="$(stack exec -T db psql -U postgres -d synapse -Atc \
+    "SELECT count(*) FILTER (WHERE c.embedding IS NULL), count(*), min(v.embedded_with)
+     FROM synapse.document_chunks c JOIN synapse.document_versions v ON v.id = c.version_id
+     WHERE v.document_id IN ('$document', '$scanned')")"
+  echo "chunks without a vector, chunks, model: $vectors"
+  grep -qE '^0\|[1-9][0-9]*\|bge-m3$' <<<"$vectors"
+  stack exec -T api python - <<'PYTHON'
+import asyncio, json
+from synapse.kernel.config import get_settings
+from synapse.models.public import ChatMessage, models_from
+
+async def main() -> None:
+    models = models_from(get_settings())
+    assert models.reranker and models.chat, "the API has no reranker or chat model"
+    scores = await models.reranker.rerank(
+        "Belediye meclisi hangi kararı aldı?",
+        ["Hava bugün yağmurlu.", "Belediye meclisi 2026/35 sayılı kararı kabul etti."],
+    )
+    print("rerank scores:", [round(s, 2) for s in scores])
+    assert scores[1] > scores[0]
+    schema = {"type": "object", "properties": {"answer": {"type": "string"}}, "required": ["answer"]}
+    reply = await models.chat.complete(
+        [ChatMessage("user", "Kaynak: Karar 2026/35 kabul edildi. Soru: Hangi karar kabul edildi?")],
+        schema=schema,
+        max_tokens=100,
+    )
+    print("chat:", reply.content, f"({reply.prompt_seconds} s prompt)")
+    assert "2026/35" in json.loads(reply.content)["answer"]
+    await models.close()
+
+asyncio.run(main())
+PYTHON
+fi
 
 step "Check the audit log recorded the sign-in and is intact"
 report="$(stack exec -T api synapse audit verify | tail -n 1)"

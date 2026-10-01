@@ -27,6 +27,9 @@ class SecretFile:
 
 
 DATABASE_ROLES = ("synapse_migrator", "synapse_api", "synapse_worker", "synapse_scheduler")
+# One API key per model server (ADR 0009), read by the server and by the processes calling it,
+# all running as APP_UID.
+MODEL_KEYS = ("embed_key", "rerank_key", "chat_key")
 
 REQUIRED = (
     SecretFile("postgres_superuser", POSTGRES_UID),
@@ -35,6 +38,7 @@ REQUIRED = (
     SecretFile("csrf_key", APP_UID),
     SecretFile("totp_key", APP_UID),
     SecretFile("audit_signing_key", APP_UID),
+    *(SecretFile(name, APP_UID) for name in MODEL_KEYS),
 )
 TLS_FILES = (SecretFile("tls_certificate", APP_UID), SecretFile("tls_private_key", APP_UID))
 
@@ -66,7 +70,7 @@ def generate(config: SynapseConfig) -> list[str]:
     for name in ("postgres_superuser", *(f"db_{role}" for role in DATABASE_ROLES)):
         if _write_once(directory / name, _random_text()):
             created.append(name)
-    for name in ("csrf_key", "totp_key", "audit_signing_key"):
+    for name in ("csrf_key", "totp_key", "audit_signing_key", *MODEL_KEYS):
         if _write_once(directory / name, _random_text()):
             created.append(name)
     superuser = (directory / "postgres_superuser").read_text(encoding="utf-8").strip()

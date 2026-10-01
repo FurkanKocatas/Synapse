@@ -28,6 +28,10 @@ SECRET_FILES = (
     "csrf_key",
     "totp_key",
     "audit_signing_key",
+    # The model servers' API keys (deploy/compose.stack.yml, "models" profile).
+    "embed_key",
+    "rerank_key",
+    "chat_key",
 )
 
 
