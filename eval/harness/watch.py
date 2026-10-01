@@ -259,6 +259,7 @@ def measure(repo: str, sha: str, deadline: float) -> None:
         "--commit",
         sha,
         "--wait-ready",
+        *(["--fresh-ingestion"] if fresh else []),
     ]
     baseline = REPO / "eval" / "harness" / "baseline.json"
     if baseline.exists():

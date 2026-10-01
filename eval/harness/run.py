@@ -24,7 +24,9 @@ Writes report.json and report.md to ``--out``. With ``--baseline`` (eval/harness
 it applies the gates and exits 1 when one fails:
 
 - a retrieval metric (Hit@1, Hit@10, MRR, all questions, each set) more than 0.01 below the
-  baseline (ADR 0010: "more than 1 point");
+  baseline (ADR 0010: "more than 1 point"); 0.02 after a fresh ingestion (``--fresh-ingestion``),
+  since two ingestions of the same code differ by that much (HNSW graphs and GPU vectors are not
+  bit for bit the same: 0.011 to 0.015 measured on 2026-10-01);
 - any unsupported number in a final answer;
 - fewer unanswerable questions refused than the baseline, beyond one question (34 questions:
   one is 3 points, and two runs of the model can differ by one);
@@ -61,6 +63,7 @@ from synapse.knowledge.public import Hit  # noqa: E402
 
 PARAPHRASED = QUESTIONS.parent / "paraphrased.jsonl"
 RETRIEVAL_DROP = 0.01
+RETRIEVAL_DROP_FRESH = 0.02
 ANSWER_DROP = 0.03
 REFUSAL_SLACK = 1
 TARGETS = {
@@ -88,28 +91,38 @@ def retrieval(
 ) -> dict[str, Any]:
     answerable = [q for q in questions if q["type"] != "unanswerable"]
 
-    def search(question: dict[str, Any]) -> tuple[int | None, float]:
+    def search(question: dict[str, Any]) -> tuple[int | None, float, dict[str, Any]]:
         started = time.perf_counter()
         response = client.post(
             "/api/search", json={"query": question["question"], "limit": 10, "rerank": True}
         )
         response.raise_for_status()
-        hits = [
+        found = response.json()["hits"]
+        hits: list[dict[str, Any]] = [
             {"doc": documents.get(h["document_id"]), "pages": [h["page_start"], h["page_end"]]}
-            for h in response.json()["hits"]
+            for h in found
         ]
         rank = Golden(question).rank(list(range(len(hits))), hits)
-        return rank, time.perf_counter() - started
+        scores = [h["rerank_score"] for h in found if h["rerank_score"] is not None]
+        record = {
+            "id": question["id"],
+            "type": question["type"],
+            "rank": rank,
+            "best": round(max(scores), 3) if scores else None,
+            "hits": [[h["doc"], *h["pages"]] for h in hits],
+        }
+        return rank, time.perf_counter() - started, record
 
     results = parallel(answerable, search, concurrency)
     ranks: dict[str, list[int | None]] = defaultdict(list)
-    for question, (rank, _) in zip(answerable, results, strict=True):
+    for question, (rank, _, _) in zip(answerable, results, strict=True):
         ranks[question["type"]].append(rank)
         ranks["all"].append(rank)
     report: dict[str, Any] = {
         kind: _rounded(metrics(ranks[kind])) for kind in (*TYPES, "all") if ranks[kind]
     }
-    report["seconds_median"] = round(statistics.median(s for _, s in results), 2)
+    report["seconds_median"] = round(statistics.median(s for _, s, _ in results), 2)
+    report["records"] = [record for _, _, record in results]
     return report
 
 
@@ -192,13 +205,16 @@ def _as_shown(source: dict[str, Any]) -> str:
     return source_text(hit)
 
 
-def gates(report: dict[str, Any], baseline: dict[str, Any]) -> list[dict[str, Any]]:
+def gates(
+    report: dict[str, Any], baseline: dict[str, Any], *, fresh: bool = False
+) -> list[dict[str, Any]]:
     """Each gate with its value, its bar and whether it passed."""
     found = []
     for questions in ("as_written", "paraphrased"):
         for metric in ("hit@1", "hit@10", "mrr"):
             path = f"retrieval.{questions}.all.{metric}"
-            bar = round(_get(baseline, path) - RETRIEVAL_DROP, 3)
+            drop = RETRIEVAL_DROP_FRESH if fresh else RETRIEVAL_DROP
+            bar = round(_get(baseline, path) - drop, 3)
             found.append(_gate(path, _get(report, path), ">=", bar))
     found.append(
         _gate("answers.unsupported_numbers", _get(report, "answers.unsupported_numbers"), "<=", 0)
@@ -299,6 +315,9 @@ def main() -> int:
     options.add_argument(
         "--wait-ready", action="store_true", help="first wait until every document is processed"
     )
+    options.add_argument(
+        "--fresh-ingestion", action="store_true", help="the corpus was just ingested again"
+    )
     args = options.parse_args()
     started = time.monotonic()
     documents = json.loads(args.documents.read_text(encoding="utf-8"))["documents"]
@@ -327,7 +346,16 @@ def main() -> int:
     report["targets"] = targets(report)
     report["gates"] = []
     if args.baseline:
-        report["gates"] = gates(report, json.loads(args.baseline.read_text(encoding="utf-8")))
+        baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
+        report["gates"] = gates(report, baseline, fresh=args.fresh_ingestion)
+    report["fresh_ingestion"] = args.fresh_ingestion
+    # Each question's retrieval goes to a file of its own, not into the report.
+    for questions in ("as_written", "paraphrased"):
+        records = report["retrieval"][questions].pop("records")
+        args.out.mkdir(parents=True, exist_ok=True)
+        with (args.out / f"retrieval-{questions}.jsonl").open("w", encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     failed = [g for g in report["gates"] if not g["ok"]]
     report["verdict"] = "no baseline" if not args.baseline else ("fail" if failed else "pass")
     args.out.mkdir(parents=True, exist_ok=True)
