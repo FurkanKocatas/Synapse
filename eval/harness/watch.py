@@ -113,14 +113,15 @@ def comment(repo: str, sha: str, body: Path) -> None:
 
 
 def fingerprint() -> str:
-    digest = hashlib.sha256()
+    """The ingestion's files as git tracks them at the checked-out commit: ``__pycache__`` and
+    anything else untracked in those directories does not count."""
+    lines = []
     for name in INGESTION:
-        path = REPO / name
-        files = sorted(p for p in path.rglob("*") if p.is_file()) if path.is_dir() else [path]
-        for file in files:
-            digest.update(str(file.relative_to(REPO)).encode())
-            digest.update(file.read_bytes() if file.exists() else b"missing")
-    return digest.hexdigest()
+        try:
+            lines.append(f"{name} {run('git', 'rev-parse', f'HEAD:{name}').strip()}")
+        except RuntimeError:
+            lines.append(f"{name} missing")
+    return hashlib.sha256("\n".join(lines).encode()).hexdigest()
 
 
 def stack_env() -> dict[str, str]:
@@ -171,7 +172,7 @@ def upgrade(timeout: float) -> bool:
                 raise
             time.sleep(30)
     current = fingerprint()
-    stored = STATE / "ingestion"
+    stored = STATE / "ingestion-tree"
     fresh = stored.exists() and stored.read_text() != current
     uv = ["uv", "run", "--directory", "backend", "python", "../eval/retrieval/product.py"]
     access = [
