@@ -17,13 +17,17 @@ from synapse.knowledge.ocr import PageReader, PageReading, TesseractEngine, TwoE
 from synapse.knowledge.parsing import LightParser, Page, Parsed, ParseError, Parser
 from synapse.knowledge.processing import Processor
 from synapse.knowledge.rapid import RapidOcrEngine
+from synapse.knowledge.search import MAX_QUERY, Found, Hit, Search
 
 __all__ = [
+    "MAX_QUERY",
     "BlobStore",
     "CollectionAccess",
     "DocumentService",
     "DocumentSummary",
     "DuplicateError",
+    "Found",
+    "Hit",
     "Incoming",
     "LightParser",
     "LocalBlobStore",
@@ -38,6 +42,7 @@ __all__ = [
     "Processor",
     "RapidOcrEngine",
     "Receiver",
+    "Search",
     "StoredFile",
     "TesseractEngine",
     "TooLargeError",

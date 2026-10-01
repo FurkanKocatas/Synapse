@@ -19,6 +19,7 @@ from synapse.api import (
     auth_routes,
     document_routes,
     passkey_routes,
+    search_routes,
 )
 from synapse.api.deps import ApiError, public_endpoint
 from synapse.dbadmin import migrate
@@ -35,7 +36,8 @@ from synapse.kernel.config import Settings, get_settings
 from synapse.kernel.database import Database
 from synapse.kernel.logging import configure_logging
 from synapse.kernel.secrets import read_key
-from synapse.knowledge.public import DocumentService, LocalBlobStore
+from synapse.knowledge.public import DocumentService, LocalBlobStore, Search
+from synapse.models.public import Models, models_from
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
@@ -66,11 +68,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise StartupError("SYNAPSE_TENANT_ID is not set; the installer writes it")
         database = Database(settings.database(application_name="synapse-api"))
         await database.open()
-        _attach_services(app, settings, database)
-        log.info("api.started", version=__version__, schema_revision=expected_revision)
+        models = models_from(settings)
+        _attach_services(app, settings, database, models)
+        log.info(
+            "api.started",
+            version=__version__,
+            schema_revision=expected_revision,
+            models=[server.service for server in models.servers],
+        )
         try:
             yield
         finally:
+            await models.close()
             await database.close()
 
     app = FastAPI(
@@ -88,6 +97,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(account_routes.router)
     app.include_router(passkey_routes.router)
     app.include_router(document_routes.router)
+    app.include_router(search_routes.router)
 
     @app.exception_handler(ApiError)
     async def api_error(_: Request, error: ApiError) -> JSONResponse:
@@ -147,7 +157,7 @@ def _not_ready() -> JSONResponse:
     return JSONResponse({"status": "not_ready", "version": __version__}, status_code=503)
 
 
-def _attach_services(app: FastAPI, settings: Settings, database: Database) -> None:
+def _attach_services(app: FastAPI, settings: Settings, database: Database, models: Models) -> None:
     """The services every request uses, built once at startup."""
     tenant_id = settings.tenant_id
     if tenant_id is None:  # pragma: no cover  (checked by the caller)
@@ -179,6 +189,9 @@ def _attach_services(app: FastAPI, settings: Settings, database: Database) -> No
     app.state.blobs = blobs
     app.state.upload_max_bytes = settings.upload_max_mb * 1024 * 1024
     app.state.documents = DocumentService(database, blobs, tenant_id=tenant_id)
+    app.state.search = Search(
+        database, tenant_id=tenant_id, embedder=models.embedder, reranker=models.reranker
+    )
     app.state.accounts = AccountService(database, tenant_id=tenant_id)
     app.state.profile = ProfileService(database, tenant_id=tenant_id)
 

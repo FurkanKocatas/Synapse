@@ -66,6 +66,16 @@ def word() -> bytes:
     return buffer.getvalue()
 
 
+def paragraphs(*texts: str) -> bytes:
+    """A Word document of these paragraphs: Turkish letters intact (``pdf`` is ASCII only)."""
+    document = docx.Document()
+    for text in texts:
+        document.add_paragraph(text)
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
 def word_with_merged_cells() -> bytes:
     """A table whose title cell spans both columns and whose first column spans two rows."""
     document = docx.Document()

@@ -22,7 +22,7 @@ from synapse.kernel.config import Settings
 from synapse.kernel.database import Database
 from synapse.knowledge.ocr import OcrError, PageReading
 from synapse.knowledge.public import LightParser, LocalBlobStore, Processor
-from synapse.models.public import ModelUnavailableError
+from synapse.models.public import Embedder, ModelUnavailableError
 from tests import knowledge_samples as samples
 from tests.db.conftest import TestDatabase
 
@@ -75,6 +75,14 @@ class World:
 
 @pytest.fixture(scope="module")
 def world(test_database: TestDatabase, tmp_path_factory: pytest.TempPathFactory) -> Iterator[World]:
+    yield from make_world(test_database, tmp_path_factory)
+
+
+def make_world(
+    test_database: TestDatabase, tmp_path_factory: pytest.TempPathFactory
+) -> Iterator[World]:
+    """A tenant of its own with an editor, the API's and the worker's settings (other test
+    modules build theirs with it too)."""
     api = test_database.settings("synapse_api")
     blobs = tmp_path_factory.mktemp("blobs")
     common = {
@@ -133,7 +141,7 @@ def run_worker(
     world: World,
     reader: StandInReader | None = None,
     queues: Sequence[Queue] = (Queue.INGEST, Queue.OCR),
-    embedder: StandInEmbedder | None = None,
+    embedder: Embedder | None = None,
 ) -> StandInReader:
     # Other test modules leave jobs for their own tenants and blob directories; only this
     # module's jobs are this worker's business.

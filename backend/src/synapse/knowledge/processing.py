@@ -58,6 +58,7 @@ from synapse.knowledge.ocr import (
 from synapse.knowledge.parsing import Page, Parsed, ParseError, Parser
 from synapse.knowledge.pipeline import EMBED_TASK, OCR_TASK, PARSE_TASK, embed_job, ocr_job
 from synapse.knowledge.structure import Block
+from synapse.knowledge.turkish import lower
 from synapse.models.public import (
     Embedder,
     ModelResponseError,
@@ -348,17 +349,18 @@ async def _store_chunks(connection: AsyncConnection, tenant_id: UUID, version_id
         "SELECT filename FROM document_versions WHERE id = %s", (version_id,)
     )
     row = await cursor.fetchone()
+    context = document_context(row[0] if row else "", chunks)[:MAX_CONTEXT]
     # New chunks have no vectors yet, whatever the old ones had.
     await connection.execute(
         "UPDATE document_versions SET context = %s, embedded_with = NULL WHERE id = %s",
-        (document_context(row[0] if row else "", chunks)[:MAX_CONTEXT], version_id),
+        (context, version_id),
     )
     await connection.execute("DELETE FROM document_chunks WHERE version_id = %s", (version_id,))
     async with connection.cursor() as insert:
         await insert.executemany(
             "INSERT INTO document_chunks (tenant_id, version_id, ordinal, kind, text, "
-            "heading_path, page_start, page_end, tokens, content_hash, simhash) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "heading_path, page_start, page_end, tokens, content_hash, simhash, search) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             [
                 (
                     tenant_id,
@@ -372,6 +374,8 @@ async def _store_chunks(connection: AsyncConnection, tenant_id: UUID, version_id
                     c.tokens,
                     content_hash(c.text),
                     simhash(c.text),
+                    # What lexical search reads (migration 0015): lower-cased the Turkish way.
+                    lower(contextual_text(context, c.heading_path, c.text)),
                 )
                 for c in chunks
             ],
