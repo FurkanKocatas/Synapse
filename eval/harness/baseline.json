@@ -1,0 +1,166 @@
+{
+ "commit": "a7cd80ee87e0c623bdd6ac7079b1a89cb64d0998",
+ "concurrency": 1,
+ "questions": 225,
+ "retrieval": {
+  "as_written": {
+   "factual": {
+    "hit@1": 0.877,
+    "hit@5": 0.985,
+    "hit@10": 0.985,
+    "mrr": 0.922
+   },
+   "identifier": {
+    "hit@1": 0.806,
+    "hit@5": 0.968,
+    "hit@10": 0.984,
+    "mrr": 0.884
+   },
+   "table": {
+    "hit@1": 0.86,
+    "hit@5": 0.977,
+    "hit@10": 0.977,
+    "mrr": 0.911
+   },
+   "multi_document": {
+    "hit@1": 0.0,
+    "hit@5": 0.857,
+    "hit@10": 0.857,
+    "mrr": 0.343
+   },
+   "all": {
+    "hit@1": 0.754,
+    "hit@5": 0.963,
+    "hit@10": 0.969,
+    "mrr": 0.843
+   },
+   "seconds_median": 4.52
+  },
+  "paraphrased": {
+   "factual": {
+    "hit@1": 0.6,
+    "hit@5": 0.785,
+    "hit@10": 0.815,
+    "mrr": 0.681
+   },
+   "identifier": {
+    "hit@1": 0.645,
+    "hit@5": 0.839,
+    "hit@10": 0.887,
+    "mrr": 0.724
+   },
+   "table": {
+    "hit@1": 0.651,
+    "hit@5": 0.86,
+    "hit@10": 0.884,
+    "mrr": 0.733
+   },
+   "multi_document": {
+    "hit@1": 0.0,
+    "hit@5": 0.571,
+    "hit@10": 0.571,
+    "mrr": 0.213
+   },
+   "all": {
+    "hit@1": 0.56,
+    "hit@5": 0.796,
+    "hit@10": 0.827,
+    "mrr": 0.656
+   },
+   "seconds_median": 4.5
+  }
+ },
+ "answers": {
+  "correct": 0.686,
+  "correct_by_type": {
+   "factual": 0.692,
+   "identifier": 0.71,
+   "table": 0.744,
+   "multi_document": 0.476
+  },
+  "cited": 0.66,
+  "answerable_refused": 0.084,
+  "unanswerable_refused": 0.912,
+  "unanswerable_refused_count": 31,
+  "unanswerable": 34,
+  "failed": 0,
+  "unsupported_numbers": 0,
+  "retried": 8,
+  "sentences_removed": 2,
+  "seconds": {
+   "sources": {
+    "median": 4.5,
+    "p90": 5.1
+   },
+   "first_token": {
+    "median": 18.1,
+    "p90": 24.4
+   },
+   "answer": {
+    "median": 21.9,
+    "p90": 30.9
+   }
+  }
+ },
+ "minutes": 111.3,
+ "targets": [
+  {
+   "path": "retrieval.as_written.all.hit@10",
+   "value": 0.969,
+   "sign": ">=",
+   "bar": 0.95,
+   "ok": true,
+   "name": "hit@10, as written"
+  },
+  {
+   "path": "retrieval.as_written.all.hit@1",
+   "value": 0.754,
+   "sign": ">=",
+   "bar": 0.75,
+   "ok": true,
+   "name": "hit@1, as written"
+  },
+  {
+   "path": "retrieval.as_written.identifier.hit@1",
+   "value": 0.806,
+   "sign": ">=",
+   "bar": 0.98,
+   "ok": false,
+   "name": "identifier hit@1, as written"
+  },
+  {
+   "path": "answers.unanswerable_refused",
+   "value": 0.912,
+   "sign": ">=",
+   "bar": 0.9,
+   "ok": true,
+   "name": "unanswerable refused"
+  },
+  {
+   "path": "answers.answerable_refused",
+   "value": 0.084,
+   "sign": "<=",
+   "bar": 0.05,
+   "ok": false,
+   "name": "answerable refused"
+  },
+  {
+   "path": "answers.seconds.first_token.median",
+   "value": 18.1,
+   "sign": "<=",
+   "bar": 60.0,
+   "ok": true,
+   "name": "seconds to the first token, median"
+  },
+  {
+   "path": "answers.seconds.answer.median",
+   "value": 21.9,
+   "sign": "<=",
+   "bar": 120.0,
+   "ok": true,
+   "name": "seconds to the whole answer, median"
+  }
+ ],
+ "gates": [],
+ "verdict": "baseline"
+}

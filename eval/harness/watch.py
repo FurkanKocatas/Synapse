@@ -294,6 +294,8 @@ def measure(repo: str, sha: str, deadline: float) -> None:
 
 
 def main() -> int:
+    # cron's PATH lacks ~/.local/bin, where gh and uv are.
+    os.environ["PATH"] = f"{HOME / '.local' / 'bin'}:{os.environ.get('PATH', '/usr/bin:/bin')}"
     now = dt.datetime.now().astimezone()
     if not START_FROM <= now.time() < START_UNTIL:
         return 0

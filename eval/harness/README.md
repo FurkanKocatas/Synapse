@@ -35,7 +35,7 @@ Set up once on the reference machine (the mini PC):
 
 ```bash
 git clone https://github.com/FurkanKocatas/Synapse.git ~/synapse-ci/repo
-( crontab -l; echo '*/15 * * * * flock -n $HOME/synapse-ci/lock python3 $HOME/synapse-ci/repo/eval/harness/watch.py >> $HOME/synapse-ci/watch.log 2>&1' ) | crontab -
+( crontab -l; echo '*/15 * * * * PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin flock -n $HOME/synapse-ci/lock python3 $HOME/synapse-ci/repo/eval/harness/watch.py >> $HOME/synapse-ci/watch.log 2>&1' ) | crontab -
 ```
 
 It runs from its own clone, never the development checkout; the clone's `.dev` and `eval/corpus/files` link to the development checkout's (secrets, the stack's tenant, the model files, the corpus). It starts runs only between 08:00 and 21:30 and stops whatever runs at 00:05, so the machine is quiet at night; commits that change only documentation are marked and not measured; when several commits arrive, only the newest is measured. The corpus is ingested again (about an hour) only when the code or the model that ingestion depends on changed. State: `~/synapse-ci/state` (the last commit measured, the ingestion's fingerprint, every run's report under `runs/<commit>/`), log: `~/synapse-ci/watch.log`. While a run holds `~/synapse-ci/lock`, the `synapse-golden` stack is the harness's: do not use it by hand.
