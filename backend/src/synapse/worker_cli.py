@@ -20,8 +20,10 @@ from synapse.knowledge.public import (
     PageReader,
     Processor,
     RapidOcrEngine,
+    Reindexed,
     TesseractEngine,
     TwoEngineReader,
+    reindex,
 )
 from synapse.models.public import Embedder, Models, models_from
 
@@ -83,6 +85,28 @@ async def run(
         reader.close()
         await models.close()
         await database.close()
+
+
+class ReindexError(RuntimeError):
+    pass
+
+
+def reindex_all(settings: Settings) -> Reindexed:
+    """``synapse knowledge reindex``, as the worker role: the jobs it queues go to the workers,
+    embedding only when an embedding model is configured."""
+    tenant_id = settings.tenant_id
+    if tenant_id is None:
+        raise ReindexError("SYNAPSE_TENANT_ID is not set")
+
+    async def run() -> Reindexed:
+        database = Database(settings.database(application_name="synapse-reindex"), max_size=1)
+        await database.open()
+        try:
+            return await reindex(database, tenant_id, embed=settings.embed_url is not None)
+        finally:
+            await database.close()
+
+    return asyncio.run(run())
 
 
 def main(settings: Settings, queues: Sequence[Queue], *, concurrency: int, once: bool) -> int:

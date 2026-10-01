@@ -21,7 +21,7 @@ from synapse.jobs.worker import BadJobError
 from synapse.kernel.config import Settings
 from synapse.kernel.database import Database
 from synapse.knowledge.ocr import OcrError, PageReading
-from synapse.knowledge.public import LightParser, LocalBlobStore, Processor
+from synapse.knowledge.public import LightParser, LocalBlobStore, Processor, reindex
 from synapse.models.public import Embedder, ModelUnavailableError
 from tests import knowledge_samples as samples
 from tests.db.conftest import TestDatabase
@@ -511,3 +511,50 @@ async def test_an_embedding_job_without_a_model_is_refused(world: World) -> None
             await processor.embed(world.tenant_id, {"version_id": str(uuid.uuid4())})
     finally:
         await database.close()
+
+
+def embedding_jobs(world: World, version_id: str) -> int:
+    row = world.db.execute(
+        "SELECT count(*) FROM synapse.procrastinate_jobs WHERE task_name = 'ingest.embed_version' "
+        "AND status = 'todo' AND args->>'version_id' = %s",
+        (version_id,),
+    ).fetchone()
+    assert row is not None
+    count: int = row[0]
+    return count
+
+
+async def test_reindex_chunks_old_versions_again_and_queues_embedding(
+    world: World, editor: TestClient
+) -> None:
+    old = upload(editor, samples.pdf(TEXT), "eski.pdf")
+    plain = upload(editor, samples.pdf(TEXT), "vektorsuz.pdf")
+    # Without an embedding model: both parsed, without vectors.
+    await asyncio.to_thread(run_worker, world, None, [Queue.INGEST])
+    # As if old had been chunked before lexical search existed (migration 0015).
+    world.db.execute(
+        "UPDATE synapse.document_chunks SET search = NULL WHERE version_id = %s",
+        (old["version_id"],),
+    )
+    database = Database(world.worker.database("test-reindex"), max_size=1)
+    await database.open()
+    try:
+        without_model = await reindex(database, world.tenant_id, embed=False)
+        assert without_model.rechunked == 1
+        assert without_model.embedding_queued == 0
+        searchable = world.db.execute(
+            "SELECT search FROM synapse.document_chunks WHERE version_id = %s",
+            (old["version_id"],),
+        ).fetchone()
+        assert searchable is not None
+        assert searchable[0].startswith("eski")
+        assert embedding_jobs(world, old["version_id"]) == 0
+        with_model = await reindex(database, world.tenant_id, embed=True)
+        assert with_model.rechunked == 0
+    finally:
+        await database.close()
+    assert embedding_jobs(world, old["version_id"]) == 1
+    assert embedding_jobs(world, plain["version_id"]) == 1
+    await asyncio.to_thread(run_worker, world, None, [Queue.EMBED], StandInEmbedder())
+    assert version_state(world, old["version_id"]) == ("ready", None)
+    assert version_state(world, plain["version_id"]) == ("ready", None)

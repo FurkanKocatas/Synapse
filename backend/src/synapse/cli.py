@@ -94,6 +94,14 @@ def build_parser() -> argparse.ArgumentParser:
         "admins", help="Print how many active administrators SYNAPSE_TENANT_ID has."
     )
 
+    knowledge = commands.add_parser("knowledge", help="Knowledge base maintenance.")
+    knowledge_commands = knowledge.add_subparsers(dest="knowledge_command", required=True)
+    knowledge_commands.add_parser(
+        "reindex",
+        help="Chunk again versions stored before lexical search, and queue embedding for "
+        "versions whose chunks lack vectors (needs SYNAPSE_EMBED_URL).",
+    )
+
     audit = commands.add_parser("audit", help="Audit log checks.")
     audit_commands = audit.add_subparsers(dest="audit_command", required=True)
     audit_commands.add_parser("verify", help="Recompute the whole hash chain; exit 1 if broken.")
@@ -114,7 +122,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return worker_cli.main(settings, queues, concurrency=args.concurrency, once=args.once)
     try:
         return _run_admin_command(args)
-    except (accounts_cli.CommandError, audit_cli.AuditCommandError, PasswordPolicyError) as error:
+    except (
+        accounts_cli.CommandError,
+        audit_cli.AuditCommandError,
+        PasswordPolicyError,
+        worker_cli.ReindexError,
+    ) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
@@ -135,6 +148,9 @@ def _run_admin_command(args: argparse.Namespace) -> int:
             print(report)
             return 0 if intact else 1
         print(audit_cli.checkpoint(settings))
+    elif args.command == "knowledge":
+        done = worker_cli.reindex_all(settings)
+        print(f"chunked again: {done.rechunked}, embedding queued: {done.embedding_queued}")
     elif args.command == "tenant":
         if args.if_missing and args.id is None:
             raise accounts_cli.CommandError("--if-missing needs --id")

@@ -267,6 +267,46 @@ class Processor:
             )
 
 
+@dataclass(frozen=True)
+class Reindexed:
+    rechunked: int
+    embedding_queued: int
+
+
+async def reindex(database: Database, tenant_id: UUID, *, embed: bool) -> Reindexed:
+    """Index again what search would miss (``synapse knowledge reindex``).
+
+    Versions whose chunks were stored before lexical search (migration 0015: no ``search``) are
+    cut again from their pages; with ``embed`` (an embedding model is configured), they and any
+    version with chunks still lacking a vector (models installed later, or ``embedding_failure``)
+    get an embedding job. Each version is locked as the jobs lock it, and only ``parsed`` or
+    ``ready`` ones are touched, so a running job is never raced.
+    """
+    async with database.tenant_transaction(tenant_id) as connection:
+        cursor = await connection.execute(
+            "SELECT v.id, bool_or(c.search IS NULL), bool_or(c.embedding IS NULL) "
+            "FROM document_versions v JOIN documents d ON d.id = v.document_id "
+            "JOIN document_chunks c ON c.version_id = v.id "
+            "WHERE d.deleted_at IS NULL AND v.status IN ('parsed', 'ready') GROUP BY v.id"
+        )
+        candidates = [row for row in await cursor.fetchall() if row[1] or (embed and row[2])]
+    rechunked = queued = 0
+    for version_id, unsearchable, _ in candidates:
+        async with database.tenant_transaction(tenant_id) as connection:
+            claimed = await _claim(connection, version_id, "parsed", "ready")
+            if claimed is None:
+                continue
+            if unsearchable:
+                await _store_chunks(connection, tenant_id, version_id)
+                await _set_status(connection, version_id, "parsed")
+                rechunked += 1
+            if embed:
+                await enqueue(connection, tenant_id, embed_job(claimed.document_id, version_id))
+                queued += 1
+    log.info("ingest.reindexed", rechunked=rechunked, embedding_queued=queued)
+    return Reindexed(rechunked, queued)
+
+
 def _version_id(args: Args) -> UUID:
     try:
         return UUID(str(args["version_id"]))
