@@ -124,8 +124,10 @@ export function PdfPage({
   }, [pdf.data, number, passage]);
 
   if (pdf.isError || failed) return null;
+  // shrink-0: in the viewer's column of flex items, a box that hides its overflow would be
+  // shrunk to nothing to fit the panel.
   return (
-    <div ref={box} className="relative w-full overflow-hidden rounded-lg border bg-white">
+    <div ref={box} className="relative w-full shrink-0 overflow-hidden rounded-lg border bg-white">
       <canvas ref={canvas} className="block" />
       <div ref={layer} className="textLayer" />
     </div>

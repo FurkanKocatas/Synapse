@@ -3,6 +3,7 @@
 import hashlib
 import io
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -184,3 +185,12 @@ def test_the_development_stack_runs_what_installations_run() -> None:
         tail = ["--api-key-file", f"/run/secrets/{key}"]
         assert cpu_command[2:] == [*arguments, *tail], name
         assert gpu_command[2:] == [*arguments, "-ngl", "99", *tail], name
+
+
+def test_the_api_queues_for_as_many_chat_slots_as_the_server_has() -> None:
+    # backend/src/synapse/chat/answering.py's CHAT_SLOTS: turns beyond it wait in the API and
+    # see their place in the queue instead of waiting unseen inside llama-server.
+    answering = DEPLOY.parent / "backend" / "src" / "synapse" / "chat" / "answering.py"
+    (slots,) = re.findall(r"^CHAT_SLOTS = (\d+)$", answering.read_text(encoding="utf-8"), re.M)
+    _, _, arguments = render.SERVERS["llm-chat"]
+    assert arguments[arguments.index("--parallel") + 1] == slots
