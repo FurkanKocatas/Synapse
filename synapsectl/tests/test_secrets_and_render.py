@@ -144,6 +144,7 @@ def test_model_servers_are_hardened_internal_and_keyed(config: SynapseConfig) ->
     assert services["llm-rerank"]["command"][:2] == ["-m", "/models/bge-reranker-v2-m3-f16.gguf"]
     chat = services["llm-chat"]["command"]
     assert chat[chat.index("--reasoning-budget") + 1] == "0"
+    assert chat[chat.index("--cache-ram") + 1] == "0"
 
 
 def test_vulkan_passes_the_gpu_and_its_groups_in(config: SynapseConfig) -> None:

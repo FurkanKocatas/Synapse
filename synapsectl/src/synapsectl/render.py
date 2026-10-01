@@ -46,11 +46,24 @@ _ENCODER = ["-c", "8192", "-np", "16", "-b", "512", "-ub", "512"]
 SERVERS = {
     "llm-embed": ("embedding", "embed_key", ["--embedding", "--pooling", "cls", *_ENCODER]),
     "llm-rerank": ("reranking", "rerank_key", ["--reranking", *_ENCODER]),
-    # Two answers at a time on the 16 GB tier (ADR 0009), 8,192 tokens each; thinking off.
+    # Two answers at a time on the 16 GB tier (ADR 0009), 8,192 tokens each; thinking off. No
+    # prompt cache in host memory: llama-server keeps up to 8 GiB of earlier prompts there by
+    # default, which took the chat server past its 5 GB limit three times in 45 minutes of the
+    # answer benchmark, and each answer's sources differ, so it would save little.
     "llm-chat": (
         "chat",
         "chat_key",
-        ["-c", "16384", "--parallel", "2", "--jinja", "--reasoning-budget", "0"],
+        [
+            "-c",
+            "16384",
+            "--parallel",
+            "2",
+            "--jinja",
+            "--reasoning-budget",
+            "0",
+            "--cache-ram",
+            "0",
+        ],
     ),
 }
 
