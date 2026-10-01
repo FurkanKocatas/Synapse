@@ -1,0 +1,45 @@
+/* The text PDF.js lays over a drawn page: invisible, selectable, placed and sized by the
+   variables PDF.js sets on each span (--font-height, --scale-x, --rotate) and on the layer
+   (--total-scale-factor, --min-font-size). The cited passage shows through it. */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  transform-origin: 0 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.textLayer span,
+.textLayer br {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.textLayer .markedContent {
+  display: contents;
+}
+
+.textLayer .cited {
+  background: rgb(250 204 21 / 0.45);
+  border-radius: 2px;
+}
+
+.textLayer ::selection {
+  background: rgb(59 130 246 / 0.3);
+}

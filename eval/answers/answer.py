@@ -13,7 +13,8 @@ chunks as numbered sources, from the corpus as eval/retrieval chunks it:
 The model answers in Turkish as JSON (``answer``, ``citations``, ``sufficient``), with a
 grammar the server enforces, thinking off. Scored per question: correct when the answer
 contains the golden answer (or every answer part), after Turkish lower-casing, plain
-apostrophes and dashes, and numbers written as digits (numerals.py); an unanswerable question
+apostrophes and dashes, and numbers written as digits (the product's own rules, which its
+answer verification uses: backend/src/synapse/chat/numerals.py); an unanswerable question
 is right when the model says the sources do not suffice; cited when a cited source holds the
 evidence. Timings from the server: prompt
 tokens and seconds (the time to the first token), generated tokens and seconds.
@@ -37,8 +38,8 @@ sys.path.insert(0, str(HERE.parent / "retrieval"))
 sys.path.insert(0, str(HERE.parent / "golden"))
 
 from check import fold  # noqa: E402
-from numerals import numeric  # noqa: E402
 from score import PREFIX, QUESTIONS, WORK, Bm25, Golden  # noqa: E402
+from synapse.chat.numerals import numeric  # noqa: E402
 
 SOURCES = 6
 PARSER = "light-context"

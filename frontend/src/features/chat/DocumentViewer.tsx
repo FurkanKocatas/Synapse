@@ -8,6 +8,7 @@ import { apiRequest } from "@/lib/api";
 import { m } from "@/paraglide/messages.js";
 
 import { passageRanges, type Source } from "./chatApi";
+import { PdfPage } from "./PdfPage";
 
 interface PageChunk {
   ordinal: number;
@@ -117,6 +118,14 @@ export function DocumentViewer({ source, onClose }: { source: Source; onClose: (
           )}
           {cited !== undefined && (
             <p className="text-xs text-muted-foreground">{m.viewer_cited()}</p>
+          )}
+          {page.data.media_type === "application/pdf" && (
+            <PdfPage
+              documentId={source.document_id}
+              version={source.version}
+              number={number}
+              passage={cited?.text ?? null}
+            />
           )}
           <PageText text={page.data.text} passage={cited?.text ?? null} />
         </>

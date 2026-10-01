@@ -9,6 +9,7 @@ import { getLocale } from "@/paraglide/runtime.js";
 import { fakeApi, type Call } from "@/test/fakeApi";
 
 import { answerParts, passageRanges, type Source, type StoredTurn } from "./chatApi";
+import { markPassage } from "./PdfPage";
 import { serverEvents } from "./sse";
 import { advance, isRunning, started } from "./useLiveTurn";
 
@@ -60,6 +61,12 @@ const answered: StoredTurn = {
 function sse(events: [string, unknown][]): string {
   return events.map(([name, data]) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`).join("");
 }
+
+// PDF.js needs a canvas, which jsdom does not have; the page is drawn in the browser only.
+vi.mock("./PdfPage", async (original) => ({
+  ...(await original<typeof import("./PdfPage")>()),
+  PdfPage: () => null,
+}));
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -259,6 +266,18 @@ describe("chat pieces", () => {
       "Belediye   meclisi\n7 üyeden oluşur.",
     ]);
     expect(passageRanges(pageText, "Burada olmayan bir cümle var.")).toEqual([]);
+  });
+
+  it("marks the cited passage in a PDF page's text layer", () => {
+    const layer = document.createElement("div");
+    layer.innerHTML =
+      "<span>Giriş.</span><br><span>Belediye meclisi</span><span>7 üyeden oluşur.</span>" +
+      "<span>Son.</span>";
+    expect(markPassage(layer, "Belediye meclisi 7 üyeden oluşur.")).toBe(2);
+    expect([...layer.querySelectorAll(".cited")].map((span) => span.textContent)).toEqual([
+      "Belediye meclisi",
+      "7 üyeden oluşur.",
+    ]);
   });
 
   it("follows the events of a turn", () => {
