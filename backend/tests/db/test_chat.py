@@ -151,7 +151,8 @@ async def test_a_question_is_answered_stored_and_audited(
     events = await ask(conversations(world, database, chat), editor.user_id, "Meclis kaç üyeli?")
     started = events[0]
     assert isinstance(started, Started) and started.ordinal == 1
-    assert isinstance(events[1], Sources)
+    assert isinstance(events[1], Sources) and not events[1].ranked
+    assert isinstance(events[2], Sources) and events[2].ranked
     answer = events[-1]
     assert isinstance(answer, Answer)
     assert (answer.status, answer.text, answer.citations) == (
@@ -323,11 +324,12 @@ def test_the_endpoints_stream_answers_and_manage_conversations(
     assert response.headers["content-type"].startswith("text/event-stream")
     events = events_of(response.text)
     names = [name for name, _ in events]
-    assert names[:3] == ["turn", "sources", "generating"]
+    assert names[:4] == ["turn", "sources", "sources", "generating"]
     assert names[-1] == "answer" and "delta" in names
     turn = events[0][1]
     assert turn["ordinal"] == 1
-    (source,) = events[1][1]["sources"]
+    assert events[1][1]["ranked"] is False and events[2][1]["ranked"] is True
+    (source,) = events[2][1]["sources"]
     assert (source["number"], source["page_start"]) == (1, 1)
     assert "".join(d["text"] for n, d in events if n == "delta") == "Meclis 7 üyeden oluşur. [1]"
     assert events[-1][1] == {
@@ -369,7 +371,7 @@ def test_without_a_chat_model_the_answer_fails_after_its_sources(
 ) -> None:
     ingest(world, editor, COUNCIL)
     events = events_of(editor.client.post("/api/chat", json={"question": "Meclis?"}).text)
-    assert [n for n, _ in events] == ["turn", "sources", "answer"]
+    assert [n for n, _ in events] == ["turn", "sources", "sources", "answer"]
     assert (events[-1][1]["status"], events[-1][1]["error"]) == ("failed", "chat_unconfigured")
 
 

@@ -89,4 +89,4 @@ Without the 8 questions A lost to the crashes, A has 144 of 183 right (0.787) an
 2. The same bake-off on the paraphrased questions with the shipping first stage.
 3. ~~Answer verification measured~~ Done in the product's run (above): 8 answers written again, 2 sentences removed, and none of the 19 wrong answers caught. Next: check each number against the source its own sentence cites, with its unit, and read number words with suffixes.
 4. The 15 answerable questions the model refuses with their evidence among its sources: the prompt and the context (table rows, identifiers), measured on the same run.
-5. Sources on screen within 3 seconds in the chat: send the first stage's order at once, the reranked order after.
+5. ~~Sources on screen within 3 seconds in the chat~~ Done after these runs: the first stage's order goes at once, the reranked order after ([design/answers.md](../design/answers.md)); the harness measures it.

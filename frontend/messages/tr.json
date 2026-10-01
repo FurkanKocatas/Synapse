@@ -215,5 +215,6 @@
   "viewer_next": "Sonraki sayfa",
   "viewer_ocr": "Bu sayfanın metni OCR ile okundu; hata içerebilir.",
   "viewer_download": "Aslını indir",
-  "viewer_cited": "Atıf yapılan bölüm vurgulandı."
+  "viewer_cited": "Atıf yapılan bölüm vurgulandı.",
+  "chat_ranking": "Kaynaklar sıralanıyor"
 }

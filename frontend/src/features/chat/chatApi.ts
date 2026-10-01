@@ -57,7 +57,8 @@ export interface Conversation {
 export type ChatEvent =
   | { event: "turn"; data: { conversation_id: string; ordinal: number } }
   | { event: "rewritten"; data: { question: string } }
-  | { event: "sources"; data: { sources: Source[]; warnings: string[] } }
+  // ranked false: the first stage's order, replaced when the reranker has answered.
+  | { event: "sources"; data: { sources: Source[]; warnings: string[]; ranked: boolean } }
   | { event: "queued"; data: { position: number } }
   | { event: "generating"; data: Record<string, never> }
   | { event: "delta"; data: { text: string } }

@@ -50,6 +50,7 @@ export function fromLive(turn: LiveTurn): ShownTurn {
   let progress: string | null = null;
   if (isRunning(turn)) {
     if (turn.sources === null) progress = m.chat_searching();
+    else if (!turn.ranked) progress = m.chat_ranking();
     else if (turn.queuePosition !== null)
       progress = m.chat_queued({ position: String(turn.queuePosition) });
     else if (turn.retrying) progress = m.chat_retrying();

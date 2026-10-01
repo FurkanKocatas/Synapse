@@ -2,7 +2,8 @@
 
 ``POST /api/chat`` answers as server-sent events (docs/design/answers.md), in this order:
 ``turn`` (where the turn is stored), ``rewritten`` (a follow-up as it was searched),
-``sources`` (what the answer rests on, within seconds), ``queued`` (the chat model is busy:
+``sources`` (what the answer rests on: first in the fused order, ``ranked`` false, within a
+second, then reranked), ``queued`` (the chat model is busy:
 the position), ``generating``, ``delta`` (the answer as it is written), ``retrying`` (the text
 so far is discarded: it stated a number no source holds), and ``answer`` last, the verified
 answer. Closing the connection cancels the turn. A failure after the stream has started is an
@@ -162,6 +163,7 @@ def _sse(event: Started | Event) -> str:
                     for n, h in enumerate(event.hits, start=1)
                 ],
                 "warnings": event.warnings,
+                "ranked": event.ranked,
             }
         case Queued():
             name, data = "queued", {"position": event.position}

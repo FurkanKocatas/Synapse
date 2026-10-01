@@ -215,5 +215,6 @@
   "viewer_next": "Next page",
   "viewer_ocr": "This page's text was read by OCR and may contain errors.",
   "viewer_download": "Download the original",
-  "viewer_cited": "The cited passage is highlighted."
+  "viewer_cited": "The cited passage is highlighted.",
+  "chat_ranking": "Ranking the sources"
 }

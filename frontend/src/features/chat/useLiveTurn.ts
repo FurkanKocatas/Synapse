@@ -14,6 +14,8 @@ export interface LiveTurn {
   // Null until search has answered.
   sources: Source[] | null;
   warnings: string[];
+  // False while the sources are in the first stage's order.
+  ranked: boolean;
   queuePosition: number | null;
   generating: boolean;
   retrying: boolean;
@@ -32,6 +34,7 @@ export function started(question: string, conversationId: string | null): LiveTu
     rewritten: null,
     sources: null,
     warnings: [],
+    ranked: false,
     queuePosition: null,
     generating: false,
     retrying: false,
@@ -50,7 +53,12 @@ export function advance(turn: LiveTurn, event: ChatEvent): LiveTurn {
     case "rewritten":
       return { ...turn, rewritten: event.data.question };
     case "sources":
-      return { ...turn, sources: event.data.sources, warnings: event.data.warnings };
+      return {
+        ...turn,
+        sources: event.data.sources,
+        warnings: event.data.warnings,
+        ranked: event.data.ranked,
+      };
     case "queued":
       return { ...turn, queuePosition: event.data.position };
     case "generating":

@@ -95,7 +95,8 @@ describe("chat", () => {
           status: 200,
           text: sse([
             ["turn", { conversation_id: "k1", ordinal: 1 }],
-            ["sources", { sources: [source], warnings: ["reranking_unavailable"] }],
+            ["sources", { sources: [source], warnings: [], ranked: false }],
+            ["sources", { sources: [source], warnings: ["reranking_unavailable"], ranked: true }],
             ["generating", {}],
             ["delta", { text: "Meclis 7 üyeden " }],
             ["delta", { text: "oluşur. [1]" }],
@@ -175,7 +176,7 @@ describe("chat", () => {
           status: 200,
           text: sse([
             ["turn", { conversation_id: "k2", ordinal: 1 }],
-            ["sources", { sources: [source], warnings: [] }],
+            ["sources", { sources: [source], warnings: [], ranked: true }],
             ["answer", { status: "not_found", text: "", citations: [], error: null, stripped: 0 }],
           ]),
         };
@@ -284,6 +285,16 @@ describe("chat pieces", () => {
     let turn = started("Soru?", null);
     expect(isRunning(turn)).toBe(true);
     turn = advance(turn, { event: "turn", data: { conversation_id: "k", ordinal: 2 } });
+    turn = advance(turn, {
+      event: "sources",
+      data: { sources: [source], warnings: [], ranked: false },
+    });
+    expect(turn.ranked).toBe(false);
+    turn = advance(turn, {
+      event: "sources",
+      data: { sources: [source], warnings: [], ranked: true },
+    });
+    expect(turn.ranked).toBe(true);
     turn = advance(turn, { event: "queued", data: { position: 2 } });
     expect(turn.queuePosition).toBe(2);
     turn = advance(turn, { event: "generating", data: {} });

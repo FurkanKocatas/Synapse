@@ -69,8 +69,12 @@ class StandInSearch:
         self.reranked = reranked
         self.queries: list[str] = []
 
-    async def search(self, user_id: UUID, query: str, *, limit: int = 10) -> Found:
+    async def candidates(self, user_id: UUID, query: str, *, limit: int = 15) -> Found:
         self.queries.append(query)
+        # The first stage's order: the reranker's, reversed.
+        return Found(self.hits[:limit][::-1], reranked=False, warnings=[], milliseconds={})
+
+    async def rerank(self, query: str, found: Found, *, limit: int) -> Found:
         return Found(self.hits[:limit], reranked=self.reranked, warnings=[], milliseconds={})
 
 
@@ -279,9 +283,10 @@ async def test_an_answer_streams_after_its_sources_and_is_verified() -> None:
     hits = [hit("Kurul yedi üyeden oluşur.", n=0), hit("Toplantı ayda bir yapılır.", n=1)]
     chat = StandInChat(says(("Kurul 7 üyeden oluşur.", [1])))
     events = await events_of(answerer(hits, chat), "Kurul kaç üyeden oluşur?")
-    assert isinstance(events[0], Sources)
-    assert events[0].hits == hits
-    assert isinstance(events[1], Generating)
+    # The first stage's order at once, then the reranker's.
+    assert events[0] == Sources(hits[::-1], [], ranked=False)
+    assert events[1] == Sources(hits, [], ranked=True)
+    assert isinstance(events[2], Generating)
     assert "".join(e.text for e in events if isinstance(e, Delta)) == "Kurul 7 üyeden oluşur. [1]"
     answer = final(events)
     assert (answer.status, answer.text, answer.citations) == (

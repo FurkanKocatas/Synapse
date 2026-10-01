@@ -5,7 +5,9 @@ ADR 0010's query rules, in order (docs/design/answers.md):
 1. A follow-up is rewritten into a standalone question by the chat model, only when the
    conversation has earlier turns; the rewritten question is what is searched and answered.
 2. to 5. Search (knowledge/search.py): the user's documents only, words and meaning fused, the
-   first 15 reranked.
+   first 15 reranked. The context from the fused order is sent at once (``Sources`` with
+   ``ranked`` false, a fraction of a second in), and again in the reranker's order when it
+   answers (seconds later): the sources are on screen within ADR 0009's 3 seconds.
 6. **Refusal before generation**: when the reranker's best score is below ``refuse_below``
    (the setting ``chat_refuse_below``, calibrated on the golden set: docs/benchmarks/refusal.md),
    the answer is "not found" and the chat model is not called. The sources found are still
@@ -142,10 +144,12 @@ class Rewritten:
 
 @dataclass(frozen=True)
 class Sources:
-    """What the answer will rest on, numbered from 1 as the model sees them."""
+    """What the answer will rest on, numbered from 1 as the model sees them. Not ``ranked``: the
+    first stage's order, sent first and replaced by the reranked one."""
 
     hits: list[Hit]
     warnings: list[str]
+    ranked: bool = True
 
 
 @dataclass(frozen=True)
@@ -375,7 +379,11 @@ class Answerer:
                 seconds["rewrite"] = _since(started)
                 if standalone != question:
                     yield Rewritten(standalone)
-            found = await self._search.search(user_id, standalone, limit=RERANKED)
+            found = await self._search.candidates(user_id, standalone, limit=RERANKED)
+            seconds["candidates"] = _since(started)
+            if first := assemble(found.hits):
+                yield Sources(first, found.warnings, ranked=False)
+            found = await self._search.rerank(standalone, found, limit=RERANKED)
             seconds["search"] = _since(started)
             best = _best(found)
             context = assemble(found.hits)

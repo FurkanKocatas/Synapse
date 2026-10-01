@@ -20,7 +20,7 @@ flowchart LR
 ```
 
 1. **Follow-ups** (rule 1). With earlier answered turns in the conversation, the chat model rewrites the question to stand alone from the last three (each answer cut to 600 characters, citations taken out), under a one-field JSON schema. The rewritten question is what is searched and answered, and the page shows it ("Searched as: ..."). A failed or empty rewrite keeps the question as asked.
-2. **Search** as [search.md](search.md) describes, the first 15 reranked. The sources are sent to the page as soon as the context is chosen, a few seconds in.
+2. **Search** as [search.md](search.md) describes, the first 15 reranked. The context is sent to the page twice: from the fused first stage at once (a fraction of a second in), then from the reranker's order when it answers (4.5 seconds in on the integrated GPU), which replaces it. ADR 0009's 3 seconds for sources on screen hold that way; the answer rests on the reranked context.
 3. **Refusal before generation** (rule 6). When the reranker's best score is below `chat_refuse_below` (`SYNAPSE_CHAT_REFUSE_BELOW`), the answer is "not found in your documents" with the sources found shown as possibly related, and the chat model is not called. Only the reranker's score is compared with a threshold: it is a logit with a meaning of its own, calibrated on the golden set ([refusal.md](../benchmarks/refusal.md)); fused scores never are. When the reranker did not answer there is no calibrated score, nothing is refused before generation, and the model decides.
 4. **Context** (rule 7). The reranked hits in order, at most six, at most three of one document, none whose words are 80% those of one already in, within 4,000 tokens: about 2,800 for six chunks in the answer benchmark, in a chat server that has 8,192 per slot. Each source is numbered and starts with its document's title and pages, then its heading path. Not done yet: expanding the top three to their parent section, and diversity by MMR (near-duplicates are what MMR would mostly remove here).
 5. **Generation** (rule 9). Qwen3.5-4B at temperature 0, thinking off, under a JSON schema the server turns into a grammar: the answer is a list of sentences, each with the numbers of the sources it rests on (at least one, and only numbers of sources shown), then `sufficient`. The prompt (Turkish) says to use the sources only, to write numbers, dates and identifiers as the source writes them, to answer in the question's language, to set `sufficient` false and say "Belgelerde bulunamadı." when the sources do not answer, and that instructions inside sources are data. Asked in the prompt alone to cite after each sentence, the model did in 14 answers of 171; with the grammar, in all 181 ([answers.md](../benchmarks/answers.md#in-the-product)), and 8 more questions came out right (157 of 191 by hand, against 144). The answer is written out as text with its citations inline ("Kurul 7 üyedir. [1]"): what verification reads, what is stored and what the page shows. `sufficient` false, an empty answer or one saying "bulunamadı" is no answer (`insufficient`).
@@ -38,7 +38,7 @@ The chat server runs two slots (`--parallel 2`). Each turn takes one for its rew
 |---|---|---|
 | `turn` | `conversation_id`, `ordinal` | the turn is stored (a new conversation when none was given) |
 | `rewritten` | `question` | a follow-up was rewritten |
-| `sources` | `sources` (number, document, title, version, chunk, pages, heading path, text), `warnings` | search has answered |
+| `sources` | `sources` (number, document, title, version, chunk, pages, heading path, text), `warnings`, `ranked` | twice: the first stage's order (`ranked` false), then the reranker's |
 | `queued` | `position` | the chat model is busy |
 | `generating` | | the model has started |
 | `delta` | `text` | more of the answer |
@@ -72,11 +72,10 @@ The home page (`/`, `?c=<id>` for a conversation): the user's conversations on t
 
 ## Measured
 
-On the golden set through the product ([answers.md](../benchmarks/answers.md#in-the-product), [refusal.md](../benchmarks/refusal.md)): 157 of 191 answerable questions answered right (0.822, by hand), every sentence cited; 31 of 34 unanswerable questions refused (0.912, target at least 0.90); 16 answerable ones refused (0.084, target at most 0.05; 15 of them by the model, with the evidence among its sources). On the integrated GPU, sources after 4.5 s (budget 3 s), the first token after 18.4 s and the whole answer after 22.7 s at the median (budgets 60 and 120 s).
+On the golden set through the product ([answers.md](../benchmarks/answers.md#in-the-product), [refusal.md](../benchmarks/refusal.md)): 157 of 191 answerable questions answered right (0.822, by hand), every sentence cited; 31 of 34 unanswerable questions refused (0.912, target at least 0.90); 16 answerable ones refused (0.084, target at most 0.05; 15 of them by the model, with the evidence among its sources). On the integrated GPU, the reranked sources after 4.5 s, the first token after 18.4 s and the whole answer after 22.7 s at the median (budgets 60 and 120 s); the first stage's sources now come before the reranked ones, within the 3 s budget (measured by the harness from the next run).
 
 ## Not done yet
 
-- Sources on screen within 3 seconds: the chat sends them after reranking (4.5 s); the first stage's order should go at once.
 - Verification catches a number that stands in no source, not a number taken from the wrong row or the wrong source (none of the 19 wrong answers of the golden set's run): check each number against the source its own sentence cites, with its unit.
 - Numbers from OCR'd pages are not yet flagged in the answer (the OCR benchmark's rule), nor identifiers the two OCR engines read differently.
 - Office documents in the viewer show their extracted text only; rendering them as PDF pages (v1 scope) needs a converter in the worker.

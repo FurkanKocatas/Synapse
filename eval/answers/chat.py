@@ -62,9 +62,10 @@ def ask(client: httpx2.Client, question: str) -> dict[str, Any]:
                 data = json.loads(line.removeprefix("data: "))
                 elapsed = round(time.perf_counter() - started, 2)
                 if name == "sources":
+                    # The first are on screen first; the answer rests on the last.
                     seen["sources"] = data["sources"]
                     seen["warnings"] = data["warnings"]
-                    seen["sources_seconds"] = elapsed
+                    seen.setdefault("sources_seconds", elapsed)
                 elif name == "delta":
                     seen.setdefault("first_token_seconds", elapsed)
                     seen["deltas"] += 1
