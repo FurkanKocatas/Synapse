@@ -349,12 +349,13 @@ def main() -> int:
         baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
         report["gates"] = gates(report, baseline, fresh=args.fresh_ingestion)
     report["fresh_ingestion"] = args.fresh_ingestion
-    # Each question's retrieval goes to a file of its own, not into the report.
+    # Each question's retrieval goes to a file of its own, not into the report (and not into
+    # ``records``, which holds the answers written below).
     for questions in ("as_written", "paraphrased"):
-        records = report["retrieval"][questions].pop("records")
+        retrieved = report["retrieval"][questions].pop("records")
         args.out.mkdir(parents=True, exist_ok=True)
         with (args.out / f"retrieval-{questions}.jsonl").open("w", encoding="utf-8") as handle:
-            for record in records:
+            for record in retrieved:
                 handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     failed = [g for g in report["gates"] if not g["ok"]]
     report["verdict"] = "no baseline" if not args.baseline else ("fail" if failed else "pass")
