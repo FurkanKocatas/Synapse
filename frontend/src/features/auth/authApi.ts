@@ -18,6 +18,8 @@ export interface Session {
   user: User | null;
   // Only while a second factor is pending: the kinds the account has.
   second_factors?: SecondFactor[] | null;
+  // For a signed-in user: what this installation offers.
+  features?: { classic_chat: boolean } | null;
 }
 
 export type SecondFactor = "totp" | "passkey";

@@ -15,6 +15,7 @@ from synapse.chat.answering import (
 )
 from synapse.chat.conversations import (
     Asker,
+    ClassicChatDisabledError,
     ConversationNotFoundError,
     Conversations,
     ConversationSummary,
@@ -29,6 +30,7 @@ __all__ = [
     "Answer",
     "Answerer",
     "Asker",
+    "ClassicChatDisabledError",
     "ConversationNotFoundError",
     "ConversationSummary",
     "ConversationView",

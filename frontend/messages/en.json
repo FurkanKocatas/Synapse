@@ -290,5 +290,15 @@
   "admin_audit_broken": "The chain is broken: {problem}",
   "chat_recent": "Recent conversations",
   "chat_answer": "Answer",
-  "chat_general_note": "This answer does not rest on your documents; it is from general knowledge."
+  "chat_general_note": "This answer does not rest on your documents; it is from general knowledge.",
+  "nav_chat_corporate": "Corporate chat",
+  "nav_chat_classic": "Classic chat",
+  "chat_classic_lead": "A free conversation, apart from your documents: write, ask, summarise, translate.",
+  "chat_classic_placeholder": "Ask or request anything",
+  "chat_classic_scope": "Apart from your documents",
+  "chat_classic_scope_hint": "The classic chat searches none of your documents; answers come from the model's general knowledge.",
+  "chat_classic_example_mail": "Write a short invitation e-mail for tomorrow's meeting",
+  "chat_classic_example_plan": "List the risks of a new project as bullet points",
+  "chat_classic_example_excel": "How do I match two Excel tables by a column?",
+  "error_classic_chat_disabled": "The classic chat is turned off in this installation."
 }

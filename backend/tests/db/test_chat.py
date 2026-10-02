@@ -23,6 +23,7 @@ from synapse.chat.public import (
     Answer,
     Answerer,
     Asker,
+    ClassicChatDisabledError,
     ConversationNotFoundError,
     Conversations,
     Sources,
@@ -109,12 +110,14 @@ async def database(world: World) -> AsyncIterator[Database]:
     await db.close()
 
 
-def conversations(world: World, database: Database, chat: ScriptedChat) -> Conversations:
+def conversations(
+    world: World, database: Database, chat: ScriptedChat, *, classic: bool = True
+) -> Conversations:
     search = Search(
         database, tenant_id=world.tenant_id, embedder=BagOfWords(), reranker=Prefers("meclis")
     )
     answerer = Answerer(search, chat, refuse_below=-1.0)
-    return Conversations(database, tenant_id=world.tenant_id, answerer=answerer)
+    return Conversations(database, tenant_id=world.tenant_id, answerer=answerer, classic=classic)
 
 
 async def ask(
@@ -214,6 +217,45 @@ async def test_a_greeting_is_stored_as_conversation_without_sources(
     assert [t.kind for t in view.turns] == ["documents", "conversation"]
     *_, (action, outcome, details) = audited(world, conversation)
     assert (action, outcome, details["kind"]) == ("chat.question", "success", "conversation")
+
+
+async def test_a_classic_conversation_is_listed_apart_and_can_be_turned_off(
+    world: World, editor: Editor, database: Database
+) -> None:
+    service = conversations(world, database, ScriptedChat(reply="İşte taslak."))
+    asker = Asker(editor.user_id, "192.0.2.7")
+    events = [e async for e in service.ask(asker, "Bir e-posta yaz", mode="classic")]
+    started = events[0]
+    assert isinstance(started, Started)
+    answer = events[-1]
+    assert isinstance(answer, Answer)
+    assert (answer.status, answer.kind, answer.text) == ("answered", "general", "İşte taslak.")
+    classic = [c.id for c in await service.list(editor.user_id, "classic")]
+    corporate = [c.id for c in await service.list(editor.user_id, "corporate")]
+    assert started.conversation_id in classic and started.conversation_id not in corporate
+    view = await service.get(editor.user_id, started.conversation_id)
+    assert view.mode == "classic"
+    # A conversation keeps its mode, whatever a later question asks for.
+    again = [
+        e async for e in service.ask(asker, "Daha kısa", started.conversation_id, mode="corporate")
+    ]
+    assert isinstance(again[-1], Answer) and again[-1].kind == "general"
+
+    closed = conversations(world, database, ScriptedChat(), classic=False)
+    with pytest.raises(ClassicChatDisabledError):
+        await ask_in(closed, asker, "Merhaba", None, "classic")
+    with pytest.raises(ClassicChatDisabledError):
+        await ask_in(closed, asker, "Merhaba", started.conversation_id, "corporate")
+
+
+async def ask_in(
+    service: Conversations,
+    asker: Asker,
+    question: str,
+    conversation: uuid.UUID | None,
+    mode: Literal["corporate", "classic"],
+) -> list[object]:
+    return [e async for e in service.ask(asker, question, conversation, mode=mode)]
 
 
 async def test_a_follow_up_continues_with_its_history(
@@ -376,6 +418,8 @@ def test_the_endpoints_stream_answers_and_manage_conversations(
     }
 
     conversation = turn["conversation_id"]
+    assert client.get("/api/auth/session").json()["features"] == {"classic_chat": True}
+    assert client.get("/api/conversations?mode=classic").json() == []
     listed = client.get("/api/conversations").json()
     assert listed[0]["id"] == conversation
     detail = client.get(f"/api/conversations/{conversation}").json()

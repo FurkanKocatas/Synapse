@@ -18,8 +18,9 @@ import { ShinyText } from "@/components/reactbits/ShinyText";
 import { cn } from "@/lib/utils";
 import { m } from "@/paraglide/messages.js";
 
-import type { AnswerKind, Feedback, Source, StoredTurn, TurnStatus } from "./chatApi";
+import type { AnswerKind, ChatMode, Feedback, Source, StoredTurn, TurnStatus } from "./chatApi";
 import { AnswerActions } from "./Feedback";
+import { Markdown } from "./Markdown";
 import { AnswerText, SourceRow } from "./Sources";
 import { isRunning, type LiveTurn } from "./useLiveTurn";
 
@@ -67,8 +68,15 @@ export function fromStored(turn: StoredTurn): ShownTurn {
   };
 }
 
-function stageOf(turn: LiveTurn): Stage | null {
+function stageOf(turn: LiveTurn, mode: ChatMode): Stage | null {
   if (!isRunning(turn)) return null;
+  if (mode === "classic") {
+    const text =
+      turn.queuePosition === null
+        ? m.chat_generating()
+        : m.chat_queued({ position: String(turn.queuePosition) });
+    return { step: "write", text, alone: true };
+  }
   if (turn.sources === null) {
     return turn.generating
       ? { step: "write", text: m.chat_generating(), alone: true }
@@ -81,7 +89,7 @@ function stageOf(turn: LiveTurn): Stage | null {
   return { step: "write", text: turn.retrying ? m.chat_retrying() : m.chat_generating() };
 }
 
-export function fromLive(turn: LiveTurn): ShownTurn {
+export function fromLive(turn: LiveTurn, mode: ChatMode = "corporate"): ShownTurn {
   return {
     question: turn.question,
     rewritten: turn.rewritten,
@@ -93,7 +101,7 @@ export function fromLive(turn: LiveTurn): ShownTurn {
     citations: turn.answer?.citations ?? [],
     stripped: turn.answer?.stripped ?? 0,
     feedback: null,
-    stage: stageOf(turn),
+    stage: stageOf(turn, mode),
     error: turn.error,
     live: true,
     kind: turn.answer?.kind ?? "documents",
@@ -108,10 +116,12 @@ const WARNINGS: Record<string, () => string> = {
 /** One question and its answer: the question as a heading, the steps while it is answered,
  * the sources, the answer with its citations, and what can be done with it. */
 export function TurnView({
+  mode = "corporate",
   turn,
   onOpen,
   feedbackFor,
 }: {
+  mode?: ChatMode;
   turn: ShownTurn;
   onOpen: (source: Source) => void;
   // Where to store feedback; absent while the turn is being answered.
@@ -183,14 +193,15 @@ export function TurnView({
             <LogoMark className="size-5" />
             {m.chat_answer()}
           </p>
-          {turn.kind === "general" && (
+          {turn.kind === "general" && mode === "corporate" && (
             <p className="mb-3 flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-[13px] text-subtle-foreground">
               <InfoIcon className="size-4 shrink-0" aria-hidden="true" />
               {m.chat_general_note()}
             </p>
           )}
           <div aria-live="polite" className="[&>*:first-child]:mt-0">
-            {turn.text !== "" && writing && (
+            {turn.text !== "" && writing && !grounded && <Markdown text={turn.text} />}
+            {turn.text !== "" && writing && grounded && (
               <AnswerText
                 text={turn.text}
                 sources={turn.sources ?? []}

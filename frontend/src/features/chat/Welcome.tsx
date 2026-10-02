@@ -4,7 +4,10 @@ import {
   ArrowUpRightIcon,
   ChatTeardropTextIcon,
   CoinsIcon,
+  EnvelopeSimpleIcon,
   GavelIcon,
+  ListChecksIcon,
+  TableIcon,
   type Icon,
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
@@ -16,14 +19,21 @@ import { SpotlightCard } from "@/components/reactbits/SpotlightCard";
 import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
 
-import { chatApi, CONVERSATIONS } from "./chatApi";
+import { CHAT_PATH, chatApi, conversationsKey, type ChatMode } from "./chatApi";
 import { Composer } from "./Composer";
 
-const EXAMPLES: [() => string, Icon][] = [
-  [m.chat_example_budget, CoinsIcon],
-  [m.chat_example_council, GavelIcon],
-  [m.chat_example_retention, ArchiveIcon],
-];
+const EXAMPLES: Record<ChatMode, [() => string, Icon][]> = {
+  corporate: [
+    [m.chat_example_budget, CoinsIcon],
+    [m.chat_example_council, GavelIcon],
+    [m.chat_example_retention, ArchiveIcon],
+  ],
+  classic: [
+    [m.chat_classic_example_mail, EnvelopeSimpleIcon],
+    [m.chat_classic_example_plan, ListChecksIcon],
+    [m.chat_classic_example_excel, TableIcon],
+  ],
+};
 
 const RECENT = 3;
 
@@ -48,12 +58,14 @@ function ago(at: string, now: number): string {
 /** The empty chat: a greeting, the box to ask in, example questions and the last few
  * conversations, each as a card. */
 export function Welcome({
+  mode,
   name,
   running,
   focusKey,
   onAsk,
   onStop,
 }: {
+  mode: ChatMode;
   name: string;
   running: boolean;
   focusKey: unknown;
@@ -62,7 +74,10 @@ export function Welcome({
 }) {
   // The hour is read once, when the page opens; the greeting does not change under the user.
   const [now] = useState(() => Date.now());
-  const conversations = useQuery({ queryKey: CONVERSATIONS, queryFn: chatApi.conversations });
+  const conversations = useQuery({
+    queryKey: conversationsKey(mode),
+    queryFn: () => chatApi.conversations(mode),
+  });
   const recent = (conversations.data ?? []).slice(0, RECENT);
 
   return (
@@ -72,10 +87,16 @@ export function Welcome({
           <BlurText text={greeting(name, new Date(now).getHours())} />
         </h2>
         <p className="mt-2 animate-rise text-base text-subtle-foreground [--i:3]">
-          {m.home_next()}
+          {mode === "classic" ? m.chat_classic_lead() : m.home_next()}
         </p>
         <div className="mt-7 animate-rise [--i:4]">
-          <Composer running={running} focusKey={focusKey} onAsk={onAsk} onStop={onStop} />
+          <Composer
+            mode={mode}
+            running={running}
+            focusKey={focusKey}
+            onAsk={onAsk}
+            onStop={onStop}
+          />
         </div>
 
         <section className="mt-9">
@@ -83,7 +104,7 @@ export function Welcome({
             {m.chat_examples()}
           </h3>
           <ul className="grid gap-3 sm:grid-cols-3">
-            {EXAMPLES.map(([example, IconFor], index) => (
+            {EXAMPLES[mode].map(([example, IconFor], index) => (
               <li
                 key={example()}
                 className="animate-rise"
@@ -127,7 +148,7 @@ export function Welcome({
                   style={{ "--i": 8 + index } as CSSProperties}
                 >
                   <Link
-                    to="/"
+                    to={CHAT_PATH[mode]}
                     search={{ c: conversation.id }}
                     className="lift group flex h-full flex-col gap-2 rounded-2xl border bg-card p-4 shadow-raised outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >

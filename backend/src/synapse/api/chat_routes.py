@@ -1,4 +1,5 @@
-"""Chat: questions answered from the user's documents, and the conversations they make.
+"""Chat: questions answered from the user's documents (a corporate conversation), a plain
+conversation with the chat model (a classic one), and the conversations they make.
 
 ``POST /api/chat`` answers as server-sent events (docs/design/answers.md), in this order:
 ``turn`` (where the turn is stored), ``rewritten`` (a follow-up as it was searched),
@@ -21,12 +22,13 @@ import anyio
 import structlog
 from fastapi import APIRouter, Request, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 from synapse.api.deps import ApiError, FullSession, client_ip
 from synapse.chat.public import (
     Answer,
     Asker,
+    ClassicChatDisabledError,
     ConversationNotFoundError,
     Conversations,
     Delta,
@@ -45,9 +47,16 @@ log = structlog.get_logger(__name__)
 router = APIRouter(tags=["chat"])
 
 
+type Mode = Literal["corporate", "classic"]
+
+
 class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=MAX_QUERY)
     conversation_id: UUID | None = None
+    # A new conversation's mode; an existing one keeps the mode it was started in.
+    mode: Mode = "corporate"
+    # The user's clock, with its offset, so the model knows the day and the hour.
+    now: AwareDatetime | None = None
 
 
 class SourceView(BaseModel):
@@ -80,12 +89,14 @@ class ConversationSummaryView(BaseModel):
     id: UUID
     title: str
     updated_at: datetime
+    mode: Mode
 
 
 class ConversationDetailView(BaseModel):
     id: UUID
     title: str
     turns: list[TurnView]
+    mode: Mode
 
 
 class RenameRequest(BaseModel):
@@ -107,13 +118,20 @@ async def ask(body: AskRequest, session: FullSession, request: Request) -> Strea
     if not question:
         raise ApiError(status.HTTP_422_UNPROCESSABLE_CONTENT, "empty_query")
     events = _conversations(request).ask(
-        Asker(session.user_id, client_ip(request)), question, body.conversation_id
+        Asker(session.user_id, client_ip(request)),
+        question,
+        body.conversation_id,
+        mode=body.mode,
+        now=body.now,
     )
     try:
         first = await anext(events)  # the turn is stored, or the conversation is not the user's
     except ConversationNotFoundError as error:
         await events.aclose()
         raise ApiError(status.HTTP_404_NOT_FOUND, "not_found") from error
+    except ClassicChatDisabledError as error:
+        await events.aclose()
+        raise ApiError(status.HTTP_403_FORBIDDEN, "classic_chat_disabled") from error
 
     async def stream() -> AsyncIterator[str]:
         try:
@@ -193,9 +211,14 @@ def _message(name: str, data: dict[str, object]) -> str:
 
 
 @router.get("/api/conversations")
-async def conversations(session: FullSession, request: Request) -> list[ConversationSummaryView]:
-    found = await _conversations(request).list(session.user_id)
-    return [ConversationSummaryView(id=c.id, title=c.title, updated_at=c.updated_at) for c in found]
+async def conversations(
+    session: FullSession, request: Request, mode: Mode = "corporate"
+) -> list[ConversationSummaryView]:
+    found = await _conversations(request).list(session.user_id, mode)
+    return [
+        ConversationSummaryView(id=c.id, title=c.title, updated_at=c.updated_at, mode=c.mode)
+        for c in found
+    ]
 
 
 @router.get("/api/conversations/{conversation_id}")
@@ -209,6 +232,7 @@ async def conversation(
     return ConversationDetailView(
         id=found.id,
         title=found.title,
+        mode=found.mode,
         turns=[
             TurnView(
                 ordinal=t.ordinal,

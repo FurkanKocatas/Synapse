@@ -1,8 +1,10 @@
-import { ArrowUpIcon, LockSimpleIcon, StopIcon } from "@phosphor-icons/react";
+import { ArrowUpIcon, ChatCircleDotsIcon, LockSimpleIcon, StopIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 
 import { Label } from "@/components/ui/label";
 import { m } from "@/paraglide/messages.js";
+
+import type { ChatMode } from "./chatApi";
 
 const MAX_QUESTION = 1000;
 const MAX_HEIGHT = 200;
@@ -10,11 +12,13 @@ const MAX_HEIGHT = 200;
 /** The box to ask in. Enter sends, Shift and Enter makes a new line; while an answer is
  * being written the send button stops it. ``focusKey`` puts the cursor back when it changes. */
 export function Composer({
+  mode = "corporate",
   running,
   onAsk,
   onStop,
   focusKey,
 }: {
+  mode?: ChatMode;
   running: boolean;
   onAsk: (question: string) => void;
   onStop: () => void;
@@ -58,7 +62,7 @@ export function Composer({
           value={question}
           maxLength={MAX_QUESTION}
           rows={1}
-          placeholder={m.chat_placeholder()}
+          placeholder={mode === "classic" ? m.chat_classic_placeholder() : m.chat_placeholder()}
           onChange={(event) => {
             setQuestion(event.target.value);
             grow();
@@ -72,11 +76,17 @@ export function Composer({
         />
         <div className="flex items-center gap-2 px-2 pb-2 pl-2.5">
           <span
-            title={m.chat_scope_hint()}
+            title={mode === "classic" ? m.chat_classic_scope_hint() : m.chat_scope_hint()}
             className="inline-flex h-7 min-w-0 items-center gap-1.5 rounded-lg px-1.5 text-xs text-subtle-foreground"
           >
-            <LockSimpleIcon className="size-3.5 shrink-0" aria-hidden="true" />
-            <span className="truncate">{m.chat_scope()}</span>
+            {mode === "classic" ? (
+              <ChatCircleDotsIcon className="size-3.5 shrink-0" aria-hidden="true" />
+            ) : (
+              <LockSimpleIcon className="size-3.5 shrink-0" aria-hidden="true" />
+            )}
+            <span className="truncate">
+              {mode === "classic" ? m.chat_classic_scope() : m.chat_scope()}
+            </span>
           </span>
           <span className="flex-1" />
           {running ? (

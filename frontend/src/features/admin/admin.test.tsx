@@ -141,7 +141,7 @@ describe("users page", () => {
   it("sends members who open an administration page back home", async () => {
     window.history.replaceState(null, "", "/admin/users");
     fakeApi((call) =>
-      call.path === "/api/conversations"
+      call.path === "/api/conversations?mode=corporate"
         ? { status: 200, body: [] }
         : {
             status: 200,

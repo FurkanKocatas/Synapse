@@ -290,5 +290,15 @@
   "admin_audit_broken": "Kayıt zincirinde sorun var: {problem}",
   "chat_recent": "Son sohbetler",
   "chat_answer": "Cevap",
-  "chat_general_note": "Bu cevap belgelerinize dayanmıyor; genel bilgiyle yazıldı."
+  "chat_general_note": "Bu cevap belgelerinize dayanmıyor; genel bilgiyle yazıldı.",
+  "nav_chat_corporate": "Kurumsal sohbet",
+  "nav_chat_classic": "Klasik sohbet",
+  "chat_classic_lead": "Belgelerden bağımsız, serbest bir sohbet: yazdırın, sorun, özetletin, çevirtin.",
+  "chat_classic_placeholder": "Bir şey sorun ya da isteyin",
+  "chat_classic_scope": "Belgelerden bağımsız",
+  "chat_classic_scope_hint": "Klasik sohbette belgeleriniz aranmaz; cevaplar modelin genel bilgisinden gelir.",
+  "chat_classic_example_mail": "Yarınki toplantı için kısa bir davet e-postası yaz",
+  "chat_classic_example_plan": "Yeni bir projenin risklerini maddeler hâlinde çıkar",
+  "chat_classic_example_excel": "Excel'de iki tabloyu bir sütuna göre nasıl eşleştiririm?",
+  "error_classic_chat_disabled": "Klasik sohbet bu kurulumda kapalı."
 }

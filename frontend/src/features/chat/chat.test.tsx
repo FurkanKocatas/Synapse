@@ -49,7 +49,7 @@ describe("chat", () => {
           ]),
         };
       }
-      if (call.path === "/api/conversations") {
+      if (call.path === "/api/conversations?mode=corporate") {
         return {
           status: 200,
           body: done ? [{ id: "k1", title: "Meclis kaç üyeli?", updated_at: "2026-10-01" }] : [],
@@ -78,7 +78,11 @@ describe("chat", () => {
     });
     expect(more).toHaveLength(0);
     const ask = calls.find((call) => call.path === "/api/chat");
-    expect(ask?.body).toEqual({ question: "Meclis kaç üyeli?" });
+    expect(ask?.body).toMatchObject({ question: "Meclis kaç üyeli?", mode: "corporate" });
+    // The user's clock with its offset, for the model to know the day.
+    expect((ask?.body as { now: string }).now).toMatch(
+      /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$/,
+    );
     expect(ask?.headers["X-Synapse-CSRF"]).toBe("c");
     await waitFor(() => {
       expect(window.location.search).toContain("c=k1");
@@ -144,7 +148,7 @@ describe("chat", () => {
           ? { status: 401, body: { error: "not_authenticated" } }
           : { status: 200, body: { auth_level: "full", csrf_token: "c", user } };
       }
-      if (call.path === "/api/conversations") {
+      if (call.path === "/api/conversations?mode=corporate") {
         lapsed = true;
         return { status: 401, body: { error: "not_authenticated" } };
       }
@@ -152,12 +156,14 @@ describe("chat", () => {
     });
     render(<App />);
     expect(await screen.findByRole("heading", { name: m.auth_login_title() })).toBeInTheDocument();
-    expect(calls.filter((call) => call.path === "/api/conversations")).toHaveLength(1);
+    expect(calls.filter((call) => call.path === "/api/conversations?mode=corporate")).toHaveLength(
+      1,
+    );
   });
 
   it("lists past conversations in the navigation, by day, and opens one", async () => {
     api((call) => {
-      if (call.path === "/api/conversations") {
+      if (call.path === "/api/conversations?mode=corporate") {
         const today = new Date().toISOString();
         return { status: 200, body: [{ id: "k1", title: "Meclis kaç üyeli?", updated_at: today }] };
       }

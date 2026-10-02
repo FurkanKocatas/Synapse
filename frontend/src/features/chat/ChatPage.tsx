@@ -7,7 +7,14 @@ import { Page } from "@/components/AppShell";
 import { sessionQuery } from "@/features/auth/session";
 import { m } from "@/paraglide/messages.js";
 
-import { chatApi, CONVERSATIONS, conversationKey, type Source } from "./chatApi";
+import {
+  CHAT_PATH,
+  chatApi,
+  CONVERSATIONS,
+  conversationKey,
+  type ChatMode,
+  type Source,
+} from "./chatApi";
 import { Composer } from "./Composer";
 import { ConversationActions } from "./ConversationActions";
 import { DocumentViewer } from "./DocumentViewer";
@@ -20,11 +27,17 @@ export { greeting } from "./Welcome";
 // Pixels from the end within which the reader counts as following the answer.
 const PINNED_WITHIN = 80;
 
-/** The home page: one box to ask in, and the conversation so far. Past conversations are in
- * the navigation; a cited page opens beside the answers. */
-export function ChatPage() {
+/** The classic chat, under /chat: the same page, answering without the documents. */
+export function ClassicChatPage() {
+  return <ChatPage mode="classic" />;
+}
+
+/** A chat: one box to ask in, and the conversation so far. The corporate chat (the home page)
+ * answers from the documents, the classic one is a plain conversation with the model. Past
+ * conversations are in the navigation; a cited page opens beside the answers. */
+export function ChatPage({ mode = "corporate" }: { mode?: ChatMode }) {
   const { data: session } = useSuspenseQuery(sessionQuery);
-  const { c: conversationId } = useSearch({ from: "/app/" });
+  const { c: conversationId } = useSearch({ strict: false });
   const fresh = useLocation({ select: (location) => location.state.fresh });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -35,7 +48,9 @@ export function ChatPage() {
   });
   const live = useLiveTurn({
     onTurn: (id) => {
-      if (id !== conversationId) void navigate({ to: "/", search: { c: id }, replace: true });
+      if (id !== conversationId) {
+        void navigate({ to: CHAT_PATH[mode], search: { c: id }, replace: true });
+      }
     },
     onDone: async (id) => {
       await Promise.all([
@@ -78,7 +93,7 @@ export function ChatPage() {
 
   function ask(question: string) {
     pinned.current = true;
-    void live.ask(question, conversationId ?? null);
+    void live.ask(question, conversationId ?? null, mode);
   }
 
   const stored = conversation.data?.turns ?? [];
@@ -89,7 +104,9 @@ export function ChatPage() {
   const title =
     conversationId !== undefined && conversation.data !== undefined
       ? conversation.data.title
-      : m.chat_new();
+      : mode === "classic"
+        ? m.nav_chat_classic()
+        : m.nav_chat_corporate();
 
   return (
     <Page
@@ -117,6 +134,7 @@ export function ChatPage() {
     >
       {empty ? (
         <Welcome
+          mode={mode}
           name={session?.user?.display_name ?? ""}
           running={running}
           focusKey={fresh}
@@ -139,12 +157,15 @@ export function ChatPage() {
                 shownStored.map((turn) => (
                   <TurnView
                     key={turn.ordinal}
+                    mode={mode}
                     turn={fromStored(turn)}
                     onOpen={setViewing}
                     feedbackFor={{ conversationId: conversation.data.id, ordinal: turn.ordinal }}
                   />
                 ))}
-              {live.turn !== null && <TurnView turn={fromLive(live.turn)} onOpen={setViewing} />}
+              {live.turn !== null && (
+                <TurnView mode={mode} turn={fromLive(live.turn, mode)} onOpen={setViewing} />
+              )}
             </div>
           </div>
           <div className="relative shrink-0 px-3 pb-3 sm:px-8">
@@ -152,7 +173,13 @@ export function ChatPage() {
               aria-hidden="true"
               className="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-linear-to-b from-transparent to-background"
             />
-            <Composer running={running} focusKey={conversationId} onAsk={ask} onStop={live.stop} />
+            <Composer
+              mode={mode}
+              running={running}
+              focusKey={conversationId}
+              onAsk={ask}
+              onStop={live.stop}
+            />
           </div>
         </>
       )}

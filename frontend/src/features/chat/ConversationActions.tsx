@@ -2,7 +2,7 @@ import { AlertDialog } from "@base-ui/react/alert-dialog";
 import { Dialog } from "@base-ui/react/dialog";
 import { Menu } from "@base-ui/react/menu";
 import { DotsThreeIcon, PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useLocation, useNavigate, useSearch } from "@tanstack/react-router";
 import { useState, type SubmitEvent } from "react";
 
 import { FormError } from "@/components/AuthLayout";
@@ -20,7 +20,7 @@ import { useAction } from "@/lib/useAction";
 import { cn } from "@/lib/utils";
 import { m } from "@/paraglide/messages.js";
 
-import { chatApi, CONVERSATIONS, conversationKey } from "./chatApi";
+import { CHAT_PATH, chatApi, CONVERSATIONS, conversationKey, modeOf } from "./chatApi";
 
 interface Named {
   id: string;
@@ -163,6 +163,7 @@ function DeleteDialog({
   onClose: () => void;
 }) {
   const { c: openId } = useSearch({ strict: false });
+  const { pathname } = useLocation();
   const navigate = useNavigate();
   const { run, error, busy } = useAction();
 
@@ -170,7 +171,11 @@ function DeleteDialog({
     if (await run(() => chatApi.remove(conversation.id), [CONVERSATIONS])) {
       onClose();
       if (openId === conversation.id) {
-        await navigate({ to: "/", search: {}, state: () => ({ fresh: Date.now() }) });
+        await navigate({
+          to: CHAT_PATH[modeOf(pathname)],
+          search: {},
+          state: () => ({ fresh: Date.now() }),
+        });
       }
     }
   }

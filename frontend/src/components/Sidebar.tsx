@@ -1,29 +1,42 @@
-import { BooksIcon, ChatsCircleIcon, NotePencilIcon, type Icon } from "@phosphor-icons/react";
-import { Link } from "@tanstack/react-router";
+import {
+  BooksIcon,
+  BuildingsIcon,
+  ChatCircleDotsIcon,
+  NotePencilIcon,
+  type Icon,
+} from "@phosphor-icons/react";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { Link, useLocation } from "@tanstack/react-router";
 import { motion } from "motion/react";
 
+import { sessionQuery } from "@/features/auth/session";
+import { CHAT_PATH, modeOf } from "@/features/chat/chatApi";
 import { ConversationList } from "@/features/chat/ConversationList";
 import { cn } from "@/lib/utils";
 import { m } from "@/paraglide/messages.js";
 
 interface NavItem {
-  to: "/" | "/library";
+  to: "/" | "/chat" | "/library";
   label: () => string;
   icon: Icon;
 }
 
-const ITEMS: NavItem[] = [
-  { to: "/", label: m.nav_chat, icon: ChatsCircleIcon },
-  { to: "/library", label: m.nav_library, icon: BooksIcon },
-];
+const CORPORATE: NavItem = { to: "/", label: m.nav_chat_corporate, icon: BuildingsIcon };
+const CLASSIC: NavItem = { to: "/chat", label: m.nav_chat_classic, icon: ChatCircleDotsIcon };
+const LIBRARY: NavItem = { to: "/library", label: m.nav_library, icon: BooksIcon };
 
-/** The navigation column under the top bar: a new conversation, the pages, and past
- * conversations. ``onNavigate`` closes the drawer it may sit in. */
+/** The navigation column under the top bar: a new conversation (in the chat that is open), the
+ * two chats and the library, and that chat's past conversations. ``onNavigate`` closes the
+ * drawer it may sit in. */
 export function Sidebar({ onNavigate }: { onNavigate?: (() => void) | undefined }) {
+  const { data: session } = useSuspenseQuery(sessionQuery);
+  const { pathname } = useLocation();
+  const classic = session?.features?.classic_chat === true;
+  const items = classic ? [CORPORATE, CLASSIC, LIBRARY] : [CORPORATE, LIBRARY];
   return (
     <div className="flex h-full min-h-0 flex-col gap-1 p-3">
       <Link
-        to="/"
+        to={CHAT_PATH[modeOf(pathname)]}
         search={{}}
         state={() => ({ fresh: Date.now() })}
         onClick={onNavigate}
@@ -37,7 +50,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: (() => void) | undefined 
         {m.chat_new()}
       </Link>
       <nav aria-label={m.app_name()} className="mt-3 flex flex-col gap-0.5">
-        {ITEMS.map((item) => (
+        {items.map((item) => (
           <NavLink key={item.to} item={item} onNavigate={onNavigate} />
         ))}
       </nav>

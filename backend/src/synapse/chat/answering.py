@@ -37,7 +37,12 @@ is answered as conversation without a search. A message whose search finds nothi
 refused as before, so nothing is answered from the model's memory that the documents should
 answer; conversation is answered as conversation; and a question of general knowledge or a
 request for help with writing is answered from general knowledge, marked as not resting on the
-documents, when the setting ``chat_general_answers`` allows it.
+documents, when the setting ``chat_general_answers`` allows it. The same look is taken when
+the model itself finds that the sources do not answer the message (``insufficient``): "what day
+is it" may find a source good enough to try.
+
+A classic conversation (``Answerer.classic``) is a plain conversation with the chat model: no
+search, no sources, a system prompt that only says when it is.
 """
 
 import asyncio
@@ -48,11 +53,26 @@ from collections import Counter, deque
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import aclosing, suppress
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
 import structlog
 
+from synapse.chat.talk import (
+    CLASSIC_CHARS,
+    CLASSIC_SYSTEM,
+    CLASSIC_TOKENS,
+    CLASSIC_TURNS,
+    CONVERSATION_SYSTEM,
+    GENERAL_SYSTEM,
+    REPLY_TOKENS,
+    ROUTE_SCHEMA,
+    ROUTE_SYSTEM,
+    ROUTE_TOKENS,
+    moment,
+    small_talk,
+)
 from synapse.chat.verification import CITATION, Checked, check, cited, fold, strip_unsupported
 from synapse.knowledge.public import Found, Hit, Search, estimate_tokens, lower
 from synapse.models.public import ChatDelta, ChatMessage, ChatModel, ChatReply, ModelError
@@ -101,59 +121,6 @@ REWRITE_SCHEMA = {
     "required": ["question"],
 }
 NOT_FOUND = "bulunamad"
-# Answers that rest on no document: a reply in conversation, or one from general knowledge.
-CONVERSATION_SYSTEM = (
-    "Sen Synapse'sin: bir kurumun belgelerinden, kaynağını göstererek soru cevaplayan bir "
-    "asistan. Şu an belgelerden değil, sohbet olarak cevap veriyorsun. Kısa, sıcak ve doğal "
-    "yaz; mesajın dilinde cevap ver. Kurumun belgeleri, kararları, bütçesi, kişileri ya da "
-    "sayıları hakkında hiçbir bilgi uydurma; böyle bir şey sorulursa bunu belgelerde "
-    "arayabileceğini söyle. Markdown kullanma."
-)
-GENERAL_SYSTEM = (
-    "Sen Synapse'sin: bir kurumun belgelerinden, kaynağını göstererek soru cevaplayan bir "
-    "asistan. Bu mesaj kurumun belgeleriyle ilgili değil; genel bilginle ya da istenen yazma, "
-    "özetleme, çeviri yardımıyla, mesajın dilinde, doğru ve derli toplu cevap ver. Emin "
-    "olmadığın şeyi kesin gibi yazma. Kurum hakkında hiçbir bilgi uydurma. Markdown kullanma; "
-    "liste gerekiyorsa satır başında tire kullan."
-)
-ROUTE_SYSTEM = (
-    "Bir kurumun belge asistanına gelen son mesajın türünü seç. 'conversation': selamlaşma, "
-    "teşekkür, vedalaşma, asistanın kendisine dair bir soru (kim olduğu, ne yapabildiği) ya da "
-    "bilgi istemeyen sohbet. 'general': kurumla ilgisi olmayan, genel bilgiyle cevaplanan bir "
-    "soru (bir kavramın tanımı, bir hesaplama, bir programlama sorusu) ya da metin yazma, "
-    "özetleme, çeviri isteği. 'documents': kurumun kendisi, birimleri, belgeleri, kararları, "
-    "bütçesi, personeli, mevzuatı, tarihleri, sayıları ya da işleyişi hakkında her soru. Emin "
-    "değilsen 'documents' seç."
-)
-ROUTE_SCHEMA = {
-    "type": "object",
-    "properties": {"kind": {"type": "string", "enum": ["conversation", "general", "documents"]}},
-    "required": ["kind"],
-}
-ROUTE_TOKENS = 16
-REPLY_TOKENS = 700
-# A greeting, thanks or farewell, alone or two or three together ("selam, nasılsın"), with an
-# address at most ("hocam"). The whole message must be that: "merhaba, bütçe ne kadar?" is a
-# question and is searched.
-_PHRASES = (
-    r"selam(?:lar)?|slm|merhaba(?:lar)?|mrb|hey|hi|hello|g[uü]nayd[iı]n|"
-    r"iyi (?:g[uü]nler|ak[sş]amlar|geceler|sabahlar|[cç]al[iı][sş]malar)|"
-    r"nas[iı]ls[iı]n(?:[iı]z)?|naber|ne haber|kolay gelsin|"
-    r"(?:[cç]ok )?te[sş]ekk[uü]r(?:ler| ederim| ederiz)?|sa[gğ] ?ol(?:un)?|eyvallah|"
-    r"tamam(?:d[iı]r)?|peki|anlad[iı]m|harika|s[uü]per|"
-    r"ho[sş][cç]a kal(?:[iı]n)?|g[oö]r[uü][sş][uü]r[uü]z|"
-    r"thanks?(?: you)?|bye|good (?:morning|afternoon|evening)"
-)
-_ADDRESS = r"(?: (?:hocam|efendim|dostum|synapse))?"
-# Longer than this, a message is more than a greeting even if every word is one.
-SMALL_TALK_WORDS = 8
-SMALL_TALK = re.compile(rf"(?:(?:{_PHRASES}){_ADDRESS})(?: (?:{_PHRASES}){_ADDRESS}){{0,2}}")
-
-
-def small_talk(message: str) -> bool:
-    """Whether the message is only a greeting, thanks or a farewell."""
-    words = re.sub(r"[^\w\s]", " ", lower(message)).split()
-    return 0 < len(words) <= SMALL_TALK_WORDS and SMALL_TALK.fullmatch(" ".join(words)) is not None
 
 
 def schema(sources: int) -> dict[str, object]:
@@ -436,6 +403,32 @@ def parse(content: str) -> tuple[str, bool]:
     return written(sentences), sufficient
 
 
+@dataclass
+class _Steps:
+    """What the steps of one turn share: the conversation so far, when it is (as the user's
+    clock says), the turn's slot on the chat server, and the timings."""
+
+    history: Sequence[Turn]
+    when: str
+    slot: _Slot
+    started: float = field(default_factory=time.perf_counter)
+    seconds: dict[str, float] = field(default_factory=dict)
+
+    def since(self) -> float:
+        return _since(self.started)
+
+
+@dataclass(frozen=True)
+class _Voice:
+    """How an answer without documents is asked for: its system prompt, how much of the
+    conversation the model sees, and how long the answer may be."""
+
+    system: str
+    turns: int = HISTORY_TURNS
+    chars: int = HISTORY_CHARS
+    max_tokens: int = REPLY_TOKENS
+
+
 class Answerer:
     def __init__(
         self,
@@ -453,76 +446,96 @@ class Answerer:
         self._gate = gate or Gate()
 
     async def answer(
-        self, user_id: UUID, question: str, history: Sequence[Turn] = ()
+        self,
+        user_id: UUID,
+        question: str,
+        history: Sequence[Turn] = (),
+        now: datetime | None = None,
     ) -> AsyncGenerator[Event]:
         """The turn's events, the ``Answer`` last. Closing the iterator cancels the turn."""
-        started = time.perf_counter()
-        seconds: dict[str, float] = {}
-        slot = _Slot(self._gate)
+        steps = _Steps(history, moment(now), _Slot(self._gate))
         try:
             if small_talk(question):
-                turn = self._converse(question, history, slot, started, seconds)
+                turn = self._converse(question, steps)
             else:
-                turn = self._search_and_answer(user_id, question, history, slot, started, seconds)
+                turn = self._search_and_answer(user_id, question, steps)
             async with aclosing(turn) as events:
                 async for event in events:
                     yield event
         finally:
-            slot.release()
+            steps.slot.release()
 
-    async def _converse(
-        self,
-        question: str,
-        history: Sequence[Turn],
-        slot: _Slot,
-        started: float,
-        seconds: dict[str, float],
+    async def classic(
+        self, question: str, history: Sequence[Turn] = (), now: datetime | None = None
     ) -> AsyncGenerator[Event]:
+        """A turn of a classic conversation: the model answers as it would, nothing searched."""
+        steps = _Steps(history, moment(now), _Slot(self._gate))
+        voice = _Voice(
+            CLASSIC_SYSTEM.format(when=steps.when),
+            turns=CLASSIC_TURNS,
+            chars=CLASSIC_CHARS,
+            max_tokens=CLASSIC_TOKENS,
+        )
+        try:
+            if self._chat is None:
+                yield Answer(
+                    "failed",
+                    "",
+                    [],
+                    question,
+                    None,
+                    error="chat_unconfigured",
+                    seconds=steps.seconds,
+                )
+                return
+            async with aclosing(steps.slot.take()) as waiting:
+                async for queued in waiting:
+                    yield queued
+            async with aclosing(self._reply("general", question, None, steps, voice)) as events:
+                async for event in events:
+                    yield event
+        finally:
+            steps.slot.release()
+
+    async def _converse(self, question: str, steps: _Steps) -> AsyncGenerator[Event]:
         """A greeting, thanks or farewell: answered as conversation, nothing searched."""
         if self._chat is None:
             yield Answer(
-                "failed", "", [], question, None, error="chat_unconfigured", seconds=seconds
+                "failed", "", [], question, None, error="chat_unconfigured", seconds=steps.seconds
             )
             return
-        async with aclosing(slot.take()) as waiting:
+        async with aclosing(steps.slot.take()) as waiting:
             async for queued in waiting:
                 yield queued
-        async with aclosing(
-            self._reply("conversation", question, history, None, started, seconds)
-        ) as events:
+        voice = _Voice(CONVERSATION_SYSTEM.format(when=steps.when))
+        async with aclosing(self._reply("conversation", question, None, steps, voice)) as events:
             async for event in events:
                 yield event
 
     async def _search_and_answer(
-        self,
-        user_id: UUID,
-        question: str,
-        history: Sequence[Turn],
-        slot: _Slot,
-        started: float,
-        seconds: dict[str, float],
+        self, user_id: UUID, question: str, steps: _Steps
     ) -> AsyncGenerator[Event]:
+        seconds = steps.seconds
         standalone = question
-        if history and self._chat is not None:
-            async with aclosing(slot.take()) as waiting:
+        if steps.history and self._chat is not None:
+            async with aclosing(steps.slot.take()) as waiting:
                 async for queued in waiting:
                     yield queued
-            standalone = await self._rewrite(question, history)
-            seconds["rewrite"] = _since(started)
+            standalone = await self._rewrite(question, steps.history)
+            seconds["rewrite"] = steps.since()
             if standalone != question:
                 yield Rewritten(standalone)
         found = await self._search.candidates(user_id, standalone, limit=RERANKED)
-        seconds["candidates"] = _since(started)
+        seconds["candidates"] = steps.since()
         if first := assemble(found.hits):
             yield Sources(first, found.warnings, ranked=False)
         found = await self._search.rerank(standalone, found, limit=RERANKED)
-        seconds["search"] = _since(started)
+        seconds["search"] = steps.since()
         best = _best(found)
         context = assemble(found.hits)
         yield Sources(context, found.warnings)
         if not context or (best is not None and best < self._refuse_below):
-            unfounded = self._unfounded(standalone, history, best, slot, started, seconds)
-            async with aclosing(unfounded) as events:
+            async with aclosing(self._unfounded(standalone, best, steps)) as events:
                 async for event in events:
                     yield event
             return
@@ -531,39 +544,44 @@ class Answerer:
                 "failed", "", [], standalone, best, error="chat_unconfigured", seconds=seconds
             )
             return
-        async with aclosing(slot.take()) as waiting:
+        async with aclosing(steps.slot.take()) as waiting:
             async for queued in waiting:
                 yield queued
         yield Generating()
-        generated = self._generate(standalone, context, best, started, seconds)
+        generated = self._generate(standalone, context, best, steps.started, seconds)
         async with aclosing(generated) as events:
             async for event in events:
+                if isinstance(event, Answer) and event.status == "insufficient":
+                    # The model found the sources do not answer it: perhaps it was never a
+                    # question to them. Refused if it is one after all.
+                    unfounded = self._unfounded(standalone, best, steps, refused=event)
+                    async with aclosing(unfounded) as replies:
+                        async for reply in replies:
+                            yield reply
+                    return
                 yield event
 
     async def _unfounded(
-        self,
-        message: str,
-        history: Sequence[Turn],
-        best: float | None,
-        slot: _Slot,
-        started: float,
-        seconds: dict[str, float],
+        self, message: str, best: float | None, steps: _Steps, refused: Answer | None = None
     ) -> AsyncGenerator[Event]:
-        """A message the search found nothing good enough for: refused when it asks about the
-        organisation, answered without documents when it is conversation or general."""
+        """A message the search found nothing good enough for (or whose sources the model
+        found insufficient, ``refused``): refused when it asks about the organisation, answered
+        without documents when it is conversation or general."""
         kind: Kind = "documents"
         if self._chat is not None:
-            async with aclosing(slot.take()) as waiting:
+            async with aclosing(steps.slot.take()) as waiting:
                 async for queued in waiting:
                     yield queued
             kind = await self._route(message)
-            seconds["route"] = _since(started)
+            steps.seconds["route"] = steps.since()
         if kind == "general" and not self._general:
             kind = "documents"
         if kind == "documents":
-            yield Answer("not_found", "", [], message, best, seconds=seconds)
+            yield refused or Answer("not_found", "", [], message, best, seconds=steps.seconds)
             return
-        async with aclosing(self._reply(kind, message, history, best, started, seconds)) as events:
+        system = CONVERSATION_SYSTEM if kind == "conversation" else GENERAL_SYSTEM
+        voice = _Voice(system.format(when=steps.when))
+        async with aclosing(self._reply(kind, message, best, steps, voice)) as events:
             async for event in events:
                 yield event
 
@@ -606,30 +624,29 @@ class Answerer:
         self,
         kind: Literal["conversation", "general"],
         message: str,
-        history: Sequence[Turn],
         best: float | None,
-        started: float,
-        seconds: dict[str, float],
+        steps: _Steps,
+        voice: _Voice,
     ) -> AsyncGenerator[Event]:
-        """An answer that rests on no document, streamed as plain text."""
+        """An answer that rests on no document, streamed as it is written. ``Generating``
+        first: the page starts the answer over (after a refusal it replaces, for one)."""
         assert self._chat is not None  # noqa: S101  (the caller checks)
-        messages = [
-            ChatMessage("system", CONVERSATION_SYSTEM if kind == "conversation" else GENERAL_SYSTEM)
-        ]
-        for turn in history[-HISTORY_TURNS:]:
+        seconds = steps.seconds
+        messages = [ChatMessage("system", voice.system)]
+        for turn in steps.history[-voice.turns :]:
             messages += [
                 ChatMessage("user", turn.question),
-                ChatMessage("assistant", CITATION.sub("", turn.answer)[:HISTORY_CHARS].strip()),
+                ChatMessage("assistant", CITATION.sub("", turn.answer)[: voice.chars].strip()),
             ]
         messages.append(ChatMessage("user", message))
         yield Generating()
         text = ""
         try:
-            stream = self._chat.stream(messages, max_tokens=REPLY_TOKENS)
+            stream = self._chat.stream(messages, max_tokens=voice.max_tokens)
             async with aclosing(stream) as parts:
                 async for part in parts:
                     if isinstance(part, ChatDelta):
-                        seconds.setdefault("first_token", _since(started))
+                        seconds.setdefault("first_token", steps.since())
                         text += part.text
                         yield Delta(part.text)
         except ModelError as error:
@@ -645,7 +662,7 @@ class Answerer:
                 kind=kind,
             )
             return
-        seconds["answer"] = _since(started)
+        seconds["answer"] = steps.since()
         if not text.strip():
             yield Answer(
                 "failed", "", [], message, best, error="empty_reply", seconds=seconds, kind=kind

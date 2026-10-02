@@ -20,7 +20,7 @@ import { EnrollPage } from "@/features/auth/EnrollPage";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { MfaPage } from "@/features/auth/MfaPage";
 import { placeFor, sessionQuery, type Place } from "@/features/auth/session";
-import { ChatPage } from "@/features/chat/ChatPage";
+import { ChatPage, ClassicChatPage } from "@/features/chat/ChatPage";
 import { LibraryPage } from "@/features/library/LibraryPage";
 
 interface RouterContext {
@@ -71,6 +71,21 @@ const signedIn = [
     validateSearch: (search: Record<string, unknown>): { c?: string } =>
       typeof search.c === "string" ? { c: search.c } : {},
     component: ChatPage,
+  }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: "/chat",
+    // The classic chat, where the installation offers it.
+    beforeLoad: async ({ context }) => {
+      const session = await context.queryClient.query(sessionQuery);
+      if (session?.features?.classic_chat !== true) {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- the router's redirect protocol
+        throw redirect({ to: "/" });
+      }
+    },
+    validateSearch: (search: Record<string, unknown>): { c?: string } =>
+      typeof search.c === "string" ? { c: search.c } : {},
+    component: ClassicChatPage,
   }),
   createRoute({ getParentRoute: () => appRoute, path: "/library", component: LibraryPage }),
   createRoute({ getParentRoute: () => appRoute, path: "/account", component: AccountPage }),

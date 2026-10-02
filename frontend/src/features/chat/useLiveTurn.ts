@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 
 import { errorMessage } from "@/features/auth/errors";
 
-import { chatApi, type ChatEvent, type FinalAnswer, type Source } from "./chatApi";
+import { chatApi, type ChatEvent, type ChatMode, type FinalAnswer, type Source } from "./chatApi";
 
 export interface LiveTurn {
   question: string;
@@ -62,7 +62,8 @@ export function advance(turn: LiveTurn, event: ChatEvent): LiveTurn {
     case "queued":
       return { ...turn, queuePosition: event.data.position };
     case "generating":
-      return { ...turn, queuePosition: null, generating: true };
+      // The answer starts (over): after a refusal the server replaces with a reply, for one.
+      return { ...turn, queuePosition: null, generating: true, text: "" };
     case "delta":
       return { ...turn, text: turn.text + event.data.text };
     case "retrying":
@@ -87,13 +88,13 @@ export function useLiveTurn(callbacks: {
   const [turn, setTurn] = useState<LiveTurn | null>(null);
   const controller = useRef<AbortController | null>(null);
 
-  async function ask(question: string, conversationId: string | null) {
+  async function ask(question: string, conversationId: string | null, mode: ChatMode) {
     const abort = new AbortController();
     controller.current = abort;
     let current = started(question, conversationId);
     setTurn(current);
     try {
-      for await (const event of chatApi.ask(question, conversationId, abort.signal)) {
+      for await (const event of chatApi.ask(question, conversationId, mode, abort.signal)) {
         current = advance(current, event);
         setTurn(current);
         if (event.event === "turn") callbacks.onTurn(event.data.conversation_id);

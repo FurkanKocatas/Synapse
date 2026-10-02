@@ -42,10 +42,17 @@ class UserView(BaseModel):
     locale: str
 
 
+class FeaturesView(BaseModel):
+    # The classic chat (the setting chat_classic), beside the assistant over the documents.
+    classic_chat: bool
+
+
 class SessionView(BaseModel):
     auth_level: AuthLevel
     csrf_token: str
     user: UserView | None = None
+    # What this installation offers a signed-in user.
+    features: FeaturesView | None = None
     # While a second factor is pending: which kinds the account has, so the page can offer them.
     second_factors: list[str] | None = None
 
@@ -108,11 +115,13 @@ async def login(
 
 
 @router.get("/session")
-async def current_session(session: AnySession, identity: Identity) -> SessionView:
+async def current_session(session: AnySession, identity: Identity, request: Request) -> SessionView:
+    full = session.auth_level == "full"
     return SessionView(
         auth_level=session.auth_level,
         csrf_token=identity.csrf_token_for(session),
-        user=_user_view(session) if session.auth_level == "full" else None,
+        user=_user_view(session) if full else None,
+        features=FeaturesView(classic_chat=request.app.state.classic_chat) if full else None,
         second_factors=(
             await identity.second_factors(session) if session.auth_level == "pending_mfa" else None
         ),

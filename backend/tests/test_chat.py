@@ -7,6 +7,7 @@ import asyncio
 import json
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import aclosing
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -31,11 +32,11 @@ from synapse.chat.answering import (
     assemble,
     parse,
     schema,
-    small_talk,
     source_text,
     written,
 )
 from synapse.chat.numerals import numeric
+from synapse.chat.talk import CLASSIC_TURNS, moment, small_talk
 from synapse.chat.verification import check, cited, claims, sentences, strip_unsupported
 from synapse.knowledge.public import Found, Hit
 from synapse.models.public import ChatDelta, ChatMessage, ChatReply, ModelUnavailableError
@@ -400,7 +401,66 @@ async def test_without_reranker_scores_the_model_decides() -> None:
     chat = StandInChat({"answer": "Belgelerde bulunamadı.", "sufficient": False})
     events = await events_of(answerer([hit("metin", score=None)], chat, reranked=False), "Soru?")
     assert final(events).status == "insufficient"
-    assert len(chat.calls) == 1
+    # The answer, then what the message is (a question to the documents: refused).
+    assert len(chat.calls) == 2
+
+
+async def test_a_refused_message_that_asks_the_documents_nothing_is_answered() -> None:
+    chat = StandInChat(
+        {"answer": "Belgelerde bulunamadı.", "sufficient": False},
+        "Bugün 2 Ekim 2026, Cuma.",
+        route="general",
+    )
+    events = await events_of(answerer([hit("Kurul 7 üyedir.")], chat), "Bugün günlerden ne?")
+    answer = final(events)
+    assert (answer.status, answer.kind, answer.text) == (
+        "answered",
+        "general",
+        "Bugün 2 Ekim 2026, Cuma.",
+    )
+    # The page starts the answer over when the reply comes.
+    assert sum(isinstance(event, Generating) for event in events) == 2
+
+
+def test_the_time_is_written_as_the_user_reads_it() -> None:
+    istanbul = timezone(timedelta(hours=3))
+    assert moment(datetime(2026, 10, 2, 13, 5, tzinfo=istanbul)) == (
+        "Şu an 2 Ekim 2026 Cuma, saat 13:05."
+    )
+    assert moment(None).startswith("Şu an ")
+
+
+async def test_a_reply_knows_the_users_day() -> None:
+    chat = StandInChat("Merhaba!")
+    now = datetime(2026, 10, 2, 10, 0, tzinfo=UTC)
+    source = answerer([], chat)
+    events = [event async for event in source.answer(USER, "Günaydın", (), now)]
+    assert final(events).kind == "conversation"
+    assert "2 Ekim 2026 Cuma, saat 10:00" in chat.calls[0][0].content
+
+
+async def test_a_classic_conversation_searches_nothing_and_keeps_its_history() -> None:
+    chat = StandInChat("İşte bir taslak: ...")
+    search = StandInSearch([hit("Kurul 7 üyedir.")])
+    source = Answerer(search, chat, refuse_below=REFUSE_BELOW)  # type: ignore[arg-type]
+    history = [Turn(f"Soru {n}", f"Cevap {n} [1]") for n in range(CLASSIC_TURNS + 2)]
+    events = [event async for event in source.classic("Bir e-posta yaz", history)]
+    assert search.queries == []
+    assert not any(isinstance(event, Sources) for event in events)
+    answer = final(events)
+    assert (answer.status, answer.kind, answer.citations) == ("answered", "general", [])
+    (messages,) = chat.calls
+    assert messages[0].content.startswith("Sen yardımsever bir asistansın.")
+    # The last turns only, without citation markers, then the message.
+    assert len(messages) == 1 + 2 * CLASSIC_TURNS + 1
+    assert messages[1].content == "Soru 2" and messages[2].content == "Cevap 2"
+    assert chat.schemas == [None]
+
+
+async def test_a_classic_conversation_without_a_chat_model_fails() -> None:
+    source = Answerer(StandInSearch([]), None, refuse_below=REFUSE_BELOW)  # type: ignore[arg-type]
+    answer = final([event async for event in source.classic("Merhaba")])
+    assert (answer.status, answer.error) == ("failed", "chat_unconfigured")
 
 
 @pytest.mark.parametrize(

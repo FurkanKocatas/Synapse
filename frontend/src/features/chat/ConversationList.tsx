@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
 
-import { chatApi, CONVERSATIONS, type ConversationSummary } from "./chatApi";
+import { CHAT_PATH, chatApi, conversationsKey, modeOf, type ConversationSummary } from "./chatApi";
 import { ConversationActions } from "./ConversationActions";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -24,8 +24,13 @@ function age(updatedAt: string, now: Date): () => string {
 
 /** Past conversations in the navigation, newest first, grouped by day, with a filter. */
 export function ConversationList({ onNavigate }: { onNavigate?: (() => void) | undefined }) {
-  const conversations = useQuery({ queryKey: CONVERSATIONS, queryFn: chatApi.conversations });
   const { pathname } = useLocation();
+  // The open chat's conversations (the corporate chat's elsewhere, as in the library).
+  const mode = modeOf(pathname);
+  const conversations = useQuery({
+    queryKey: conversationsKey(mode),
+    queryFn: () => chatApi.conversations(mode),
+  });
   const { c: openId } = useSearch({ strict: false });
   const [filter, setFilter] = useState("");
   const locale = getLocale();
@@ -71,7 +76,7 @@ export function ConversationList({ onNavigate }: { onNavigate?: (() => void) | u
             </h2>
             <ul className="flex flex-col gap-0.5">
               {group.items.map((item) => {
-                const current = pathname === "/" && item.id === openId;
+                const current = pathname === CHAT_PATH[mode] && item.id === openId;
                 return (
                   <li
                     key={item.id}
@@ -90,7 +95,7 @@ export function ConversationList({ onNavigate }: { onNavigate?: (() => void) | u
                       aria-hidden="true"
                     />
                     <Link
-                      to="/"
+                      to={CHAT_PATH[mode]}
                       search={{ c: item.id }}
                       onClick={onNavigate}
                       aria-current={current ? "page" : undefined}

@@ -59,6 +59,8 @@ export function errorMessage(error: unknown): string {
       return m.error_not_found();
     case "forbidden":
       return m.error_forbidden();
+    case "classic_chat_disabled":
+      return m.error_classic_chat_disabled();
     default:
       return m.error_unexpected();
   }

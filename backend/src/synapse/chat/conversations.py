@@ -36,6 +36,12 @@ TITLE_CHARS = 80
 MAX_CONVERSATIONS = 200
 
 type Feedback = Literal["helpful", "wrong_source", "incomplete", "invented"]
+# The assistant over the documents, or a plain conversation with the chat model.
+type Mode = Literal["corporate", "classic"]
+
+
+class ClassicChatDisabledError(PermissionError):
+    """The classic chat is turned off (the setting ``chat_classic``)."""
 
 
 class ConversationNotFoundError(LookupError):
@@ -61,6 +67,7 @@ class ConversationSummary:
     id: UUID
     title: str
     updated_at: datetime
+    mode: Mode = "corporate"
 
 
 @dataclass(frozen=True)
@@ -96,6 +103,7 @@ class ConversationView:
     id: UUID
     title: str
     turns: list[StoredTurn]
+    mode: Mode = "corporate"
 
 
 _READABLE_CHUNKS = """
@@ -106,7 +114,7 @@ _READABLE_CHUNKS = """
     WHERE v.document_id IN (SELECT document_id FROM accessible_documents(%(user)s, 'read'))
 """
 
-_OWNED = "SELECT title FROM conversations WHERE id = %s AND user_id = %s"
+_OWNED = "SELECT title, mode FROM conversations WHERE id = %s AND user_id = %s"
 _OWNED_FOR_UPDATE = _OWNED + " FOR UPDATE"
 
 
@@ -117,23 +125,40 @@ class Conversations:
         *,
         tenant_id: UUID,
         answerer: Answerer,
+        classic: bool = True,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._db = database
         self._tenant_id = tenant_id
         self._answerer = answerer
+        self._classic = classic
         self._now = now
 
     async def ask(
-        self, asker: Asker, question: str, conversation_id: UUID | None = None
+        self,
+        asker: Asker,
+        question: str,
+        conversation_id: UUID | None = None,
+        *,
+        mode: Mode = "corporate",
+        now: datetime | None = None,
     ) -> AsyncGenerator[Started | Event]:
-        """Store the turn, answer it, finish it. Closing the iterator cancels the turn."""
-        conversation_id, ordinal, history = await self._begin(asker, question, conversation_id)
+        """Store the turn, answer it, finish it. Closing the iterator cancels the turn.
+
+        ``mode`` is a new conversation's; a conversation keeps the one it was started in.
+        ``now`` is the user's clock, for the model to know the day."""
+        conversation_id, ordinal, history, mode = await self._begin(
+            asker, question, conversation_id, mode
+        )
         yield Started(conversation_id, ordinal)
         sources: list[Hit] = []
         finished = False
         try:
-            answering = self._answerer.answer(asker.user_id, question, history)
+            answering = (
+                self._answerer.classic(question, history, now)
+                if mode == "classic"
+                else self._answerer.answer(asker.user_id, question, history, now)
+            )
             async with aclosing(answering) as events:
                 async for event in events:
                     if isinstance(event, Sources):
@@ -157,20 +182,24 @@ class Conversations:
                     await self._finish(asker, conversation_id, ordinal, question, sources, None)
 
     async def _begin(
-        self, asker: Asker, question: str, conversation_id: UUID | None
-    ) -> tuple[UUID, int, list[Turn]]:
+        self, asker: Asker, question: str, conversation_id: UUID | None, mode: Mode
+    ) -> tuple[UUID, int, list[Turn], Mode]:
+        if mode == "classic" and not self._classic and conversation_id is None:
+            raise ClassicChatDisabledError
         now = self._now()
         async with self._db.tenant_transaction(self._tenant_id) as connection:
             if conversation_id is None:
                 cursor = await connection.execute(
-                    "INSERT INTO conversations (tenant_id, user_id, title, created_at, updated_at) "
-                    "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-                    (self._tenant_id, asker.user_id, _title(question), now, now),
+                    "INSERT INTO conversations (tenant_id, user_id, title, mode, created_at, "
+                    "updated_at) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+                    (self._tenant_id, asker.user_id, _title(question), mode, now, now),
                 )
                 conversation_id = _value(await cursor.fetchone())
                 history: list[Turn] = []
             else:
-                await self._owned(connection, asker.user_id, conversation_id, lock=True)
+                _, mode = await self._owned(connection, asker.user_id, conversation_id, lock=True)
+                if mode == "classic" and not self._classic:
+                    raise ClassicChatDisabledError
                 history = await _history(connection, conversation_id)
                 await connection.execute(
                     "UPDATE conversations SET updated_at = %s WHERE id = %s", (now, conversation_id)
@@ -182,7 +211,7 @@ class Conversations:
                 (self._tenant_id, conversation_id, question, now, conversation_id),
             )
             ordinal: int = _value(await cursor.fetchone())
-        return conversation_id, ordinal, history
+        return conversation_id, ordinal, history, mode
 
     async def _finish(
         self,
@@ -265,18 +294,18 @@ class Conversations:
                 now,
             )
 
-    async def list(self, user_id: UUID) -> list[ConversationSummary]:
+    async def list(self, user_id: UUID, mode: Mode = "corporate") -> list[ConversationSummary]:
         async with self._db.tenant_transaction(self._tenant_id) as connection:
             cursor = await connection.execute(
-                "SELECT id, title, updated_at FROM conversations WHERE user_id = %s "
-                "ORDER BY updated_at DESC LIMIT %s",
-                (user_id, MAX_CONVERSATIONS),
+                "SELECT id, title, updated_at, mode FROM conversations "
+                "WHERE user_id = %s AND mode = %s ORDER BY updated_at DESC LIMIT %s",
+                (user_id, mode, MAX_CONVERSATIONS),
             )
             return [ConversationSummary(*row) for row in await cursor.fetchall()]
 
     async def get(self, user_id: UUID, conversation_id: UUID) -> ConversationView:
         async with self._db.tenant_transaction(self._tenant_id) as connection:
-            title = await self._owned(connection, user_id, conversation_id)
+            title, mode = await self._owned(connection, user_id, conversation_id)
             cursor = await connection.execute(
                 "SELECT ordinal, question, status, answer, sources, citations, feedback, "
                 "created_at, kind FROM conversation_turns WHERE conversation_id = %s "
@@ -326,7 +355,7 @@ class Conversations:
                     kind,
                 )
             )
-        return ConversationView(conversation_id, title, turns)
+        return ConversationView(conversation_id, title, turns, mode)
 
     async def rename(self, user_id: UUID, conversation_id: UUID, title: str) -> None:
         async with self._db.tenant_transaction(self._tenant_id) as connection:
@@ -375,8 +404,9 @@ class Conversations:
         conversation_id: UUID,
         *,
         lock: bool = False,
-    ) -> str:
-        """The conversation's title; ``ConversationNotFoundError`` unless the user owns it."""
+    ) -> tuple[str, Mode]:
+        """The conversation's title and mode; ``ConversationNotFoundError`` unless the user
+        owns it."""
         cursor = await connection.execute(
             _OWNED_FOR_UPDATE if lock else _OWNED, (conversation_id, user_id)
         )
@@ -384,7 +414,8 @@ class Conversations:
         if row is None:
             raise ConversationNotFoundError
         title: str = row[0]
-        return title
+        mode: Mode = row[1]
+        return title, mode
 
 
 async def _history(connection: AsyncConnection, conversation_id: UUID) -> list[Turn]:

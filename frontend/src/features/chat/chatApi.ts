@@ -23,6 +23,27 @@ export type Feedback = "helpful" | "wrong_source" | "incomplete" | "invented";
 // What an answer rests on: the documents (with sources), or nothing (a reply in conversation,
 // or one from general knowledge to a question that is not about the organisation).
 export type AnswerKind = "documents" | "conversation" | "general";
+// The assistant over the documents, or a plain conversation with the chat model.
+export type ChatMode = "corporate" | "classic";
+
+/** Where each mode lives: the corporate chat on the home page, the classic one under /chat. */
+export const CHAT_PATH: Record<ChatMode, "/" | "/chat"> = { corporate: "/", classic: "/chat" };
+
+export function modeOf(pathname: string): ChatMode {
+  return pathname === "/chat" || pathname.startsWith("/chat/") ? "classic" : "corporate";
+}
+
+/** The user's clock with its offset ("2026-10-02T13:10:00+03:00"), so the model knows the day. */
+export function localNow(at: Date = new Date()): string {
+  const pad = (n: number) => String(Math.floor(Math.abs(n))).padStart(2, "0");
+  const offset = -at.getTimezoneOffset();
+  const sign = offset >= 0 ? "+" : "-";
+  return (
+    `${String(at.getFullYear())}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}` +
+    `T${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}` +
+    `${sign}${pad(offset / 60)}:${pad(offset % 60)}`
+  );
+}
 
 export interface FinalAnswer {
   status: AnswerStatus;
@@ -50,12 +71,14 @@ export interface ConversationSummary {
   id: string;
   title: string;
   updated_at: string;
+  mode: ChatMode;
 }
 
 export interface Conversation {
   id: string;
   title: string;
   turns: StoredTurn[];
+  mode: ChatMode;
 }
 
 /** What the chat endpoint streams, in order (backend/src/synapse/api/chat_routes.py). */
@@ -71,14 +94,19 @@ export type ChatEvent =
   | { event: "answer"; data: FinalAnswer }
   | { event: "error"; data: { error: string } };
 
-// Query keys shared by the conversation list (in the navigation) and the chat page.
+// Query keys shared by the conversation list (in the navigation) and the chat page. The
+// first is both modes' lists (to refresh them), the second one mode's.
 export const CONVERSATIONS = ["chat", "conversations"];
+export function conversationsKey(mode: ChatMode) {
+  return [...CONVERSATIONS, mode];
+}
 export function conversationKey(id: string | undefined) {
   return ["chat", "conversation", id ?? "new"];
 }
 
 export const chatApi = {
-  conversations: () => apiRequest<ConversationSummary[]>("GET", "/api/conversations"),
+  conversations: (mode: ChatMode) =>
+    apiRequest<ConversationSummary[]>("GET", `/api/conversations?mode=${mode}`),
   conversation: (id: string) => apiRequest<Conversation>("GET", `/api/conversations/${id}`),
   rename: (id: string, title: string) =>
     apiRequest<undefined>("PATCH", `/api/conversations/${id}`, { title }),
@@ -91,11 +119,17 @@ export const chatApi = {
   async *ask(
     question: string,
     conversationId: string | null,
+    mode: ChatMode,
     signal: AbortSignal,
   ): AsyncGenerator<ChatEvent, void, undefined> {
     const body = await apiStream(
       "/api/chat",
-      { question, ...(conversationId === null ? {} : { conversation_id: conversationId }) },
+      {
+        question,
+        mode,
+        now: localNow(),
+        ...(conversationId === null ? {} : { conversation_id: conversationId }),
+      },
       signal,
     );
     for await (const event of serverEvents(body)) yield event as ChatEvent;

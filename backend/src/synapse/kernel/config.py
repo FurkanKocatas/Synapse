@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     # such a message is refused like a question the documents do not answer. Greetings and
     # thanks are answered either way.
     chat_general_answers: bool = True
+    # The classic chat: a plain conversation with the chat model, beside the assistant over the
+    # documents. Off: only the assistant over the documents is offered.
+    chat_classic: bool = True
     # The address users open, such as https://synapse.example.org. Passkeys are bound to its
     # host name, so they stop working if it changes; unset means passkeys are unavailable.
     public_url: str | None = Field(

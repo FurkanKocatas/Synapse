@@ -2,6 +2,13 @@
 
 Status: implemented, 2026-10-01 (phase 4, step 8). Decisions: [ADR 0010](../adr/0010-rag-pipeline.md) (query rules 1 and 5 to 10), [ADR 0008](../adr/0008-audit-log.md) (what is audited), [ADR 0018](../adr/0018-model-defaults.md) (Qwen3.5-4B). Measurements: [refusal.md](../benchmarks/refusal.md), [answers.md](../benchmarks/answers.md#in-the-product). Code: [chat/](../../backend/src/synapse/chat/), [api/chat_routes.py](../../backend/src/synapse/api/chat_routes.py), migration [0017](../../backend/src/synapse/migrations/versions/0017_conversations.py), [features/chat/](../../frontend/src/features/chat/).
 
+## Two chats
+
+- **The corporate chat** (`/`, `mode: corporate`) is the assistant over the organisation's documents: what this document describes, with conversation around it.
+- **The classic chat** (`/chat`, `mode: classic`) is a plain conversation with the chat model: nothing is searched, no source is shown, and the system prompt only says when it is ("Sen yardımsever bir asistansın. Kullanıcının yazdığı dilde cevap ver." and the date). The model sees the last ten turns, each answer cut to 4,000 characters, and may write up to 1,500 tokens; the page renders its Markdown (raw HTML left out). The setting `chat_classic` (`SYNAPSE_CHAT_CLASSIC`, default on) offers it; off, it is not in the navigation and the API refuses it (`classic_chat_disabled`), new conversations and old alike.
+
+A conversation is started in one of the two (`conversations.mode`, migration 0019) and keeps it; each has its own list in the navigation.
+
 ## What a question goes through
 
 ```mermaid
@@ -37,9 +44,10 @@ People also greet the assistant, thank it, ask what it can do, or ask something 
 
 - **A greeting, thanks or a farewell** (`small_talk` in [answering.py](../../backend/src/synapse/chat/answering.py)): the whole message is one, two or three such phrases, Turkish or English, with an address at most ("selam, nasılsın", "teşekkürler hocam"). Nothing is searched; the chat model replies in conversation, with the conversation so far (the last three turns, citations taken out) and a prompt that forbids stating anything about the organisation. "Merhaba, 2026 bütçesi ne kadar?" is a question and goes through the search.
 - **A message the search finds nothing good enough for** and the chat model calls `conversation` (who the assistant is, what it can do, talk that asks for no information) is answered the same way.
+- **A message whose sources the model found insufficient** (`insufficient` in step 5) gets the same look: "what day is it" can find a source good enough to try, and the model then says the documents do not answer it. A question to the documents stays refused.
 - **One it calls `general`** (a definition, a calculation, a programming question, help with writing, summarising or translating) is answered from general knowledge, and the page says the answer does not rest on the documents. The setting `chat_general_answers` (`SYNAPSE_CHAT_GENERAL_ANSWERS`, default on) turns this off: such a message is then refused like any other.
 
-These answers stream as plain text, cite nothing and are not verified (there is nothing to verify against); the turn keeps no sources, and the page shows none, while the audit log still lists what the search retrieved. The golden set's unanswerable questions are all about the organisation, so the harness's refusal measure shows whether the model sends any of them the general way.
+The page sends the user's clock with each question (`now`, with its offset); these prompts say the day and the hour, which the model cannot know. These answers stream as written (Markdown on the page), cite nothing and are not verified (there is nothing to verify against); the turn keeps no sources, and the page shows none, while the audit log still lists what the search retrieved. The golden set's unanswerable questions are all about the organisation, so the harness's refusal measure shows whether the model sends any of them the general way.
 
 ## The queue and cancelling
 
@@ -83,6 +91,7 @@ The home page (`/`, `?c=<id>` for a conversation). Past conversations are in the
 |---|---|---|
 | `SYNAPSE_CHAT_URL`, `SYNAPSE_CHAT_KEY_FILE` | none | the chat server; without it the sources are shown and the answer fails as `chat_unconfigured` |
 | `SYNAPSE_CHAT_REFUSE_BELOW` | 1.0 | refusal before generation: with the model's own refusals, 31 of the golden set's 34 unanswerable questions refused, no correct answer lost ([refusal.md](../benchmarks/refusal.md)) |
+| `SYNAPSE_CHAT_CLASSIC` | true | the classic chat beside the corporate one; false: only the corporate chat |
 | `SYNAPSE_CHAT_GENERAL_ANSWERS` | true | a message the search finds nothing for and the model judges general knowledge (not about the organisation) is answered from general knowledge, marked; false: refused |
 | `SYNAPSE_MODEL_TIMEOUT_SECONDS` | 180 | the longest gap a model call may leave |
 
