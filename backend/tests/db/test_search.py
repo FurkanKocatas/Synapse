@@ -308,3 +308,21 @@ def test_lexical_terms_are_five_letter_prefixes_and_whole_identifiers() -> None:
     assert lexical_text("E-81912396-105.04") == "e 81912396 105 04 e-81912396-105.04"
     # Short or digit-only numbers are words already, not identifiers twice.
     assert lexical_text("Madde 147") == "madde 147"
+
+
+async def test_the_library_is_what_the_user_may_read(
+    world: World,
+    editor: Editor,
+    database: Database,
+) -> None:
+    await asyncio.to_thread(ingest, world, editor, COUNCIL, BUDGET)
+    library = await search(world, database).library(editor.user_id)
+    assert (library.total, library.ready, library.failed, library.working) == (2, 2, 0, 0)
+    assert sum(folder.documents for folder in library.folders) == 2
+    assert {d.title for d in library.newest} == {"belge-0", "belge-1"}
+    council = next(d for d in library.newest if d.title == "belge-0")
+    # The first words without the file name in front of them.
+    assert council.opening.startswith("Belediye meclisinin 2026/35")
+    assert council.pages == 1
+    stranger = await search(world, database).library(uuid.uuid4())
+    assert (stranger.total, stranger.folders, stranger.newest) == (0, [], [])

@@ -38,11 +38,38 @@ from synapse.chat.answering import (
 from synapse.chat.numerals import numeric
 from synapse.chat.talk import CLASSIC_TURNS, moment, small_talk
 from synapse.chat.verification import check, cited, claims, sentences, strip_unsupported
-from synapse.knowledge.public import Found, Hit
+from synapse.knowledge.public import Folder, Found, Hit, Listed, Overview
 from synapse.models.public import ChatDelta, ChatMessage, ChatReply, ModelUnavailableError
 
 USER = uuid4()
 REFUSE_BELOW = -1.0
+# What the stand-in search says the user's documents are.
+LIBRARY = Overview(
+    [Folder("Mali İşler", 1), Folder("Mali İşler / Bütçe 2026", 1)],
+    [
+        Listed(
+            "2026 Bütçe Kararnamesi",
+            "Mali İşler / Bütçe 2026",
+            "application/pdf",
+            "ready",
+            datetime(2026, 10, 2, 9, 30, tzinfo=UTC),
+            48,
+            "T.C. Belediye Meclisi 2026 mali yılı bütçesi",
+        ),
+        Listed(
+            "Kadro Cetveli",
+            "Mali İşler",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "ocr",
+            datetime(2026, 9, 28, 14, 0, tzinfo=UTC),
+            3,
+            "Norm kadro cetveli",
+        ),
+    ],
+    total=2,
+    ready=1,
+    failed=0,
+)
 
 
 def hit(text: str, *, score: float | None = 2.0, document: UUID | None = None, n: int = 0) -> Hit:
@@ -78,6 +105,9 @@ class StandInSearch:
 
     async def rerank(self, query: str, found: Found, *, limit: int) -> Found:
         return Found(self.hits[:limit], reranked=self.reranked, warnings=[], milliseconds={})
+
+    async def library(self, user_id: UUID) -> Overview:
+        return LIBRARY
 
 
 class StandInChat:

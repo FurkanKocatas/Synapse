@@ -20,9 +20,10 @@ export interface Source {
 export type AnswerStatus = "answered" | "not_found" | "insufficient" | "failed";
 export type TurnStatus = AnswerStatus | "pending" | "cancelled";
 export type Feedback = "helpful" | "wrong_source" | "incomplete" | "invented";
-// What an answer rests on: the documents (with sources), or nothing (a reply in conversation,
-// or one from general knowledge to a question that is not about the organisation).
-export type AnswerKind = "documents" | "conversation" | "general";
+// What an answer rests on: the documents (with sources), what the documents are (``library``, a
+// question about the collection itself), or nothing (a reply in conversation, or one from
+// general knowledge to a question that is not about the organisation).
+export type AnswerKind = "documents" | "conversation" | "general" | "library";
 // The assistant over the documents, or a plain conversation with the chat model.
 export type ChatMode = "corporate" | "classic";
 

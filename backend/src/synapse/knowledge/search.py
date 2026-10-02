@@ -33,6 +33,7 @@ from psycopg import AsyncConnection
 
 from synapse.kernel.database import Database
 from synapse.knowledge.chunking import contextual_text
+from synapse.knowledge.library import Overview, overview
 from synapse.knowledge.turkish import lower
 from synapse.models.public import Embedder, ModelError, Reranker
 
@@ -202,6 +203,11 @@ class Search:
     async def search(self, user_id: UUID, query: str, *, limit: int = 10) -> Found:
         found = await self.candidates(user_id, query, limit=max(limit, RERANK_TOP))
         return await self.rerank(query, found, limit=limit)
+
+    async def library(self, user_id: UUID) -> Overview:
+        """What the user's documents are, for questions about the collection itself."""
+        async with self._db.tenant_transaction(self._tenant_id) as connection:
+            return await overview(connection, user_id)
 
     async def _query_vector(
         self, query: str, warnings: list[str], timings: dict[str, float]

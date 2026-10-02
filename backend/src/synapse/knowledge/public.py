@@ -16,6 +16,7 @@ from synapse.knowledge.documents import (
     VersionInfo,
 )
 from synapse.knowledge.filetypes import MediaType, UnsupportedFileError, detect
+from synapse.knowledge.library import Folder, Listed, Overview
 from synapse.knowledge.ocr import PageReader, PageReading, TesseractEngine, TwoEngineReader
 from synapse.knowledge.parsing import LightParser, Page, Parsed, ParseError, Parser
 from synapse.knowledge.processing import Processor, Reindexed, reindex
@@ -30,13 +31,16 @@ __all__ = [
     "DocumentService",
     "DocumentSummary",
     "DuplicateError",
+    "Folder",
     "Found",
     "Hit",
     "Incoming",
     "LightParser",
+    "Listed",
     "LocalBlobStore",
     "MediaType",
     "NotFoundError",
+    "Overview",
     "Page",
     "PageChunk",
     "PageReader",

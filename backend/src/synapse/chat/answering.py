@@ -64,14 +64,15 @@ from synapse.chat.talk import (
     CLASSIC_SYSTEM,
     CLASSIC_TOKENS,
     CLASSIC_TURNS,
-    CONVERSATION_SYSTEM,
-    GENERAL_SYSTEM,
-    REPLY_TOKENS,
     ROUTE_SCHEMA,
     ROUTE_SYSTEM,
     ROUTE_TOKENS,
+    Talk,
+    Voice,
+    about_library,
     moment,
     small_talk,
+    voice_for,
 )
 from synapse.chat.verification import CITATION, Checked, check, cited, fold, strip_unsupported
 from synapse.knowledge.public import Found, Hit, Search, estimate_tokens, lower
@@ -165,7 +166,7 @@ def written(sentences: Sequence[tuple[str, Sequence[int]]]) -> str:
 
 type Status = Literal["answered", "not_found", "insufficient", "failed"]
 # What an answer rests on: the documents (cited), or nothing (conversation, general knowledge).
-type Kind = Literal["documents", "conversation", "general"]
+type Kind = Literal["documents", "conversation", "general", "library"]
 
 
 @dataclass(frozen=True)
@@ -419,22 +420,12 @@ class _Steps:
     history: Sequence[Turn]
     when: str
     slot: _Slot
+    user_id: UUID | None = None
     started: float = field(default_factory=time.perf_counter)
     seconds: dict[str, float] = field(default_factory=dict)
 
     def since(self) -> float:
         return _since(self.started)
-
-
-@dataclass(frozen=True)
-class _Voice:
-    """How an answer without documents is asked for: its system prompt, how much of the
-    conversation the model sees, and how long the answer may be."""
-
-    system: str
-    turns: int = HISTORY_TURNS
-    chars: int = HISTORY_CHARS
-    max_tokens: int = REPLY_TOKENS
 
 
 class Answerer:
@@ -461,10 +452,12 @@ class Answerer:
         now: datetime | None = None,
     ) -> AsyncGenerator[Event]:
         """The turn's events, the ``Answer`` last. Closing the iterator cancels the turn."""
-        steps = _Steps(history, moment(now), _Slot(self._gate))
+        steps = _Steps(history, moment(now), _Slot(self._gate), user_id)
         try:
             if small_talk(question):
                 turn = self._converse(question, steps)
+            elif about_library(question):
+                turn = self._converse(question, steps, "library")
             else:
                 turn = self._search_and_answer(user_id, question, steps)
             async with aclosing(turn) as events:
@@ -478,7 +471,7 @@ class Answerer:
     ) -> AsyncGenerator[Event]:
         """A turn of a classic conversation: the model answers as it would, nothing searched."""
         steps = _Steps(history, moment(now), _Slot(self._gate))
-        voice = _Voice(
+        voice = Voice(
             CLASSIC_SYSTEM.format(when=steps.when),
             turns=CLASSIC_TURNS,
             chars=CLASSIC_CHARS,
@@ -505,8 +498,11 @@ class Answerer:
         finally:
             steps.slot.release()
 
-    async def _converse(self, question: str, steps: _Steps) -> AsyncGenerator[Event]:
-        """A greeting, thanks or farewell: answered as conversation, nothing searched."""
+    async def _converse(
+        self, question: str, steps: _Steps, kind: Talk = "conversation"
+    ) -> AsyncGenerator[Event]:
+        """A greeting, thanks or farewell answered as conversation, or a question about the
+        collection itself from what its documents are (``library``): nothing searched."""
         if self._chat is None:
             yield Answer(
                 "failed", "", [], question, None, error="chat_unconfigured", seconds=steps.seconds
@@ -515,8 +511,8 @@ class Answerer:
         async with aclosing(steps.slot.take()) as waiting:
             async for queued in waiting:
                 yield queued
-        voice = _Voice(CONVERSATION_SYSTEM.format(when=steps.when))
-        async with aclosing(self._reply("conversation", question, None, steps, voice)) as events:
+        voice = await self._voice(kind, steps)
+        async with aclosing(self._reply(kind, question, None, steps, voice)) as events:
             async for event in events:
                 yield event
 
@@ -587,8 +583,7 @@ class Answerer:
         if kind == "documents":
             yield refused or Answer("not_found", "", [], message, best, seconds=steps.seconds)
             return
-        system = CONVERSATION_SYSTEM if kind == "conversation" else GENERAL_SYSTEM
-        voice = _Voice(system.format(when=steps.when))
+        voice = await self._voice(kind, steps)
         async with aclosing(self._reply(kind, message, best, steps, voice)) as events:
             async for event in events:
                 yield event
@@ -628,13 +623,20 @@ class Answerer:
             return "documents"
         return kind if kind in {"conversation", "general"} else "documents"
 
+    async def _voice(self, kind: Talk, steps: _Steps) -> Voice:
+        """The prompt of an answer without documents, with the user's collection in it."""
+        library = None
+        if kind != "general" and steps.user_id is not None:
+            library = await self._search.library(steps.user_id)
+        return voice_for(kind, library, steps.when)
+
     async def _reply(
         self,
-        kind: Literal["conversation", "general"],
+        kind: Talk,
         message: str,
         best: float | None,
         steps: _Steps,
-        voice: _Voice,
+        voice: Voice,
     ) -> AsyncGenerator[Event]:
         """An answer that rests on no document, streamed as it is written. ``Generating``
         first: the page starts the answer over (after a refusal it replaces, for one)."""
