@@ -93,6 +93,18 @@ Measured 2026-10-02 with [eval/answers/prompts.py](../../eval/answers/prompts.py
 
 Lenient answers four more questions right and breaks none: a council decision's date and number, a centre's name, two decisions' majorities, a minute in an indicator. In the product all four were refused by the model above the threshold (`insufficient`), so it should gain them there too: 4 of 191. Its one more unanswerable answered is the cost of the sentence: asked for the 2025 health statistics yearbook, of which the corpus has only 2024's, it gives 2024's figure (and says the year); the strict prompt refused it. Of the other two, the product already answers one and refuses the other before generation, so its unanswerable refusals should go from 33 to 32 of 34, within the harness's gate (a drop of more than one). Tables answers more but right less often and lets four more unanswerable questions through; not taken. The harness measures the product with it (verification, the threshold, the second look of [design/answers.md](../design/answers.md#messages-that-are-not-questions-to-the-documents)).
 
+**In the harness** (2026-10-02, the run on `6030c75` against the one on `3ad8b66` before it; all 225 questions through the product, the same retrieval):
+
+| | strict | **lenient** |
+|---|---|---|
+| correct (script) | 129 of 191 (0.675) | **132 (0.691)** |
+| answerable refused | 19 (0.099) | **14 (0.073)** |
+| unanswerable refused | 33 of 34 (0.971) | 32 (0.941) |
+| citations cover the evidence | 0.644 | 0.660 |
+| time to the first token, median | 18.4 s | 18.4 s |
+
+The four questions above are gained and u-29 lost, as the comparison said. The sentence is in every answer's prompt, so other answers move too, and these were read by hand: one is mended (g6-14 now gives the limit of both procedures, "üç ay" among them) and three the strict prompt answered right are broken: a table's rate of increase given for its fee (g2-02), a law's number changed ("7579" for "7589", g5-20; verification passes it, the number stands elsewhere in the sources), and a fine said to be missing from sources that state it (g8-06). Two questions refused before now get half their answer (g4-20, g7-17) and one half answer is now refused (g6-17), wrong either way. Three changes are the script's alone (g1-03 and g1-11 were right before, g6-16 is right now, each worded differently from the golden answer). By hand the sentence gains two correct answers and refuses five answerable questions fewer, for one unanswerable question answered; both refusal rates stay inside the harness's gates, the unanswerable one above ADR 0010's 0.90.
+
 ## Limits
 
 - 75 questions: one answerable question is 1.5 points; the gap between the models is five to ten times that, the gap between contexts is not.
@@ -105,5 +117,5 @@ Lenient answers four more questions right and breaks none: a council decision's 
 1. A scorer that also accepts a golden answer's wording varied (a judge that compares the answer's facts, not its words), so the script agrees with the hand scoring; numbers are done.
 2. The same bake-off on the paraphrased questions with the shipping first stage.
 3. ~~Answer verification measured~~ Done in the product's run (above): 8 answers written again, 2 sentences removed, and none of the 19 wrong answers caught. Next: check each number against the source its own sentence cites, with its unit, and read number words with suffixes.
-4. ~~The answerable questions the model refuses with their evidence among its sources~~ The prompt's part done ("The sentence on refusing", above): four more answered right. Next: a detail that is the question's subject (a year or an edition the corpus lacks) refused while the rest of the sentence stays, and the context's part (table rows, identifiers).
+4. ~~The answerable questions the model refuses with their evidence among its sources~~ The prompt's part done ("The sentence on refusing", above): four more answered right. Next: a detail that is the question's subject (a year or an edition the corpus lacks) refused while the rest of the sentence stays; the three answers it broke in the harness (a table's rate for its fee, a law's number changed, a fine called missing); and the context's part (table rows, identifiers).
 5. ~~Sources on screen within 3 seconds in the chat~~ Done after these runs: the first stage's order goes at once, the reranked order after ([design/answers.md](../design/answers.md)); the harness measures it.
