@@ -9,8 +9,8 @@ from outside runs on this machine. Each run:
 1. Starts only between 08:00 and 21:30 (the machine is quiet at night; a run with a fresh
    ingestion takes about two hours) and stops whatever runs at 00:05.
 2. Fetches ``origin/main`` into its own clone (``~/synapse-ci/repo``, never the development
-   checkout) and takes the newest commit not measured yet; commits that change only
-   documentation are marked and skipped.
+   checkout) and takes the newest commit not measured yet; commits that change only what
+   the measurement does not read (documentation, the web interface) are marked and skipped.
 3. Brings the ``synapse-golden`` stack to that commit: images built, services up with the
    models on the integrated GPU, migrations applied, ``synapse knowledge reindex``. The corpus
    is ingested again from scratch (an hour) only when the code or the model that ingestion
@@ -64,7 +64,10 @@ INGESTION = [
     "eval/corpus/manifest.csv",
     "synapsectl/src/synapsectl/models.py",
 ]
-DOCS_ONLY = ("docs/", "README.md")
+# What the measurement does not read: a commit that changes only these is marked and
+# skipped. The web interface is not part of it (run.py asks the API), and neither is how
+# this watcher schedules runs.
+NOT_MEASURED = ("docs/", "frontend/", "README.md", "eval/harness/watch.py")
 
 
 def log(message: str) -> None:
@@ -311,10 +314,12 @@ def main() -> int:
     repo = github_repo()
     if last:
         changed = run("git", "diff", "--name-only", last, sha).split()
-        if changed and all(name.startswith(DOCS_ONLY) or name.endswith(".md") for name in changed):
-            status(repo, sha, "success", f"documentation only since {last[:7]}: not measured")
+        if changed and all(
+            name.startswith(NOT_MEASURED) or name.endswith(".md") for name in changed
+        ):
+            status(repo, sha, "success", f"nothing measured changed since {last[:7]}")
             last_file.write_text(sha)
-            log(f"{sha[:7]} documentation only")
+            log(f"{sha[:7]} nothing measured changed (documentation or interface only)")
             return 0
     attempts = json.loads(attempts_file.read_text()) if attempts_file.exists() else {}
     if attempts.get(sha, 0) >= MAX_ATTEMPTS:
