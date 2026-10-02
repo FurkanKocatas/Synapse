@@ -60,7 +60,10 @@ def normalise(text: str) -> str:
 
 
 def words(text: str) -> list[str]:
-    return [w for w in (t.strip(_EDGE) for t in normalise(text).split()) if w]
+    """The words of ``text``: a token with no letter or digit (a bullet, a dash, a table's
+    pipe) is not one, in the truth or in an output."""
+    found = (t.strip(_EDGE) for t in normalise(text).split())
+    return [w for w in found if any(ch.isalnum() for ch in w)]
 
 
 def is_identifier(word: str) -> bool:

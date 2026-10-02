@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from measure import page
+from plaintext import plain
 
 TRUTH = "Meclis 2026/35 sayılı kararı\noybirliğiyle kabul etti.\nBütçe ışığında görüşüldü."
 
@@ -51,3 +52,32 @@ def test_a_repeated_phrase_is_a_loop_and_a_skipped_line_is_seen() -> None:
     assert page(TRUTH, looped).loop
     skipped = page(TRUTH, "Meclis 2026/35 sayılı kararı\nBütçe ışığında görüşüldü.")
     assert (skipped.lines, skipped.lines_found) == (3, 2)
+
+
+def test_a_parsers_markup_is_not_text() -> None:
+    markdown = (
+        "# Meclis Kararı\n\n- **Karar No:** 2026/35\n- dosya_adi_2026 eki\n\n"
+        "| Kalem | Tutar |\n|---|---|\n| Bütçe | 1.000 TL |\n\n"
+        '<table><tr><td>Gider</td><td>2.500 TL</td></tr></table>\n<img src="x.jpg" />'
+    )
+    assert plain(markdown).split() == [
+        "Meclis",
+        "Kararı",
+        "Karar",
+        "No:",
+        "2026/35",
+        "dosya_adi_2026",
+        "eki",
+        "Kalem",
+        "Tutar",
+        "Bütçe",
+        "1.000",
+        "TL",
+        "Gider",
+        "2.500",
+        "TL",
+    ]
+
+
+def test_punctuation_alone_is_not_a_word() -> None:
+    assert page("Karar • kabul " + chr(0x2013) + " edildi", "Karar kabul edildi").bag_errors == 0
