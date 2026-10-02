@@ -36,6 +36,18 @@ Words are lower-cased the Turkish way; identifiers ("2026/16", "E-81912396-105.0
 
 ADR 0010 (query rule 2) looks up the identifiers of a question exactly. Measured as a run of its own: the question's typed entities (dates, decision, law and article numbers, amounts, parcels; [entities.py](../../backend/src/synapse/knowledge/entities.py)) looked up in the chunks' entities, chunks holding more of them first. It makes ranking worse (identifier questions Hit@1 0.71 to 0.60, Hit@10 1.00 to 0.89), and so did every variant tried (only identifiers held by at most 5, 20 or 100 chunks; fused by rank instead of put first; boosting whole documents instead of chunks, which was neutral). Only 25 of the 62 identifier questions contain an identifier (the rest ask for one: "hangi maddede düzenlenir?"), and the chunk that holds a question's identifier (a decision's header, an amendment note: "5393 sayılı" is cited in hundreds of chunks) is rarely the one that answers. BM25 already finds the right chunk from the identifier's tokens: all 43 questions that contain an identifier have their answer in its top 10, only 0.63 at rank 1, so they need a better order among the candidates, not more candidates. The lookup stays for a question that is only an identifier ("2026/16 sayılı karar"), which the golden set does not have yet.
 
+**As a tie-breaker after reranking** (2026-10-02, [eval/retrieval/identifiers.py](../../eval/retrieval/identifiers.py)): the product's reranked first 15 (the `synapse-golden` stack, both question sets) saved once, then reordered so that the chunks holding more of the question's identifiers (its tokens with a digit and its typed entities, in the chunk's title, headings or text) come first: among all 15, or only among those the reranker scored within 3, 2 or 1 of its best; with years or without; anywhere in the text or as whole tokens. Identifier Hit@1, as written and paraphrased:
+
+| order | as written | paraphrased | all types, as written |
+|---|---|---|---|
+| the reranker's | **0.806** | **0.629** | **0.754** |
+| identifiers first | 0.710 | 0.532 | 0.670 |
+| identifiers first, years left out | 0.710 | 0.532 | 0.681 |
+| the same within 3 of the best | 0.790 | 0.581 | 0.743 |
+| within 1 | 0.806 | 0.597 | 0.749 |
+
+No variant lifts it, and the reason is in the misses: in every one of the 12 identifier questions (as written) whose evidence is not first, the first chunk is the right document's, another page of it, and the question's identifiers (the decision's own number, the law's) stand on every page of that document, or the question has none the extraction reads ("70 sayılı" is too short). The right document comes first for all 62; what is left is the page within it, which identifiers cannot tell. Not adopted. One miss is retrieval's alone: for g5-20 (an article of the Turkish Code of Obligations) the evidence page is not in the first 15 at all, and the answer took a wrong law number from another article.
+
 ## Embedding candidates and their cost
 
 Every candidate is multilingual, allowed by ADR 0016 without review (MIT or Apache-2.0) and needs no remote code. Each embeds with the prefixes its model card prescribes, 512 tokens at most. Speed on a fixed sample of 256 chunks (341 tokens on average), 6 threads, nothing else running:

@@ -59,7 +59,7 @@ Found by this run and fixed: an OCR'd cover page made the document's context ("I
 
 ## Not done yet
 
-- The exact identifier lookup of ADR 0010 (query rule 2): as a first stage it made ranking worse on the golden set in every variant ([embeddings.md](../benchmarks/embeddings.md#exact-identifier-lookup)); its next measurement is as a tie-breaker after reranking.
+- The exact identifier lookup of ADR 0010 (query rule 2): as a first stage it made ranking worse on the golden set in every variant ([embeddings.md](../benchmarks/embeddings.md#exact-identifier-lookup)); as a tie-breaker after reranking it lifts nothing either: the identifier questions it misses find the right document first, on another page that holds the same identifiers ([embeddings.md](../benchmarks/embeddings.md#exact-identifier-lookup)). What is left for identifier Hit@1 is the page within the document.
 - OCR's `extra_identifiers` as search terms.
 - At scale: BM25 statistics come from the whole index, so on a multi-tenant (SaaS) database every tenant's documents shape the others' term weights; and with the permission filter PostgreSQL scores every chunk of the searchable set, which is fast at 10,000 chunks and must be measured at 100,000.
 - Collapsing duplicate chunks (`content_hash`, `simhash`) in the results.
