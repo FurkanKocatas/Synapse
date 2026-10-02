@@ -1,7 +1,7 @@
-import { MagnifyingGlassIcon } from "@phosphor-icons/react";
+import { ChatTeardropTextIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useSearch } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 
 import { cn } from "@/lib/utils";
 import { m } from "@/paraglide/messages.js";
@@ -43,9 +43,9 @@ export function ConversationList({ onNavigate }: { onNavigate?: (() => void) | u
   }
 
   return (
-    <div className="mt-1 flex min-h-0 flex-1 flex-col">
-      <label className="flex h-8 shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-sm text-muted-foreground transition-colors focus-within:bg-card focus-within:shadow-[inset_0_0_0_1px_var(--input)]">
-        <MagnifyingGlassIcon className="size-4 shrink-0" aria-hidden="true" />
+    <div className="mt-2 flex min-h-0 flex-1 flex-col">
+      <label className="flex h-10 shrink-0 items-center gap-3 rounded-xl px-3 text-[14.5px] text-muted-foreground transition-colors hover:bg-accent focus-within:bg-card focus-within:shadow-[inset_0_0_0_1px_var(--input)]">
+        <MagnifyingGlassIcon className="size-[18px] shrink-0" aria-hidden="true" />
         <span className="sr-only">{m.chat_search()}</span>
         <input
           type="search"
@@ -66,26 +66,35 @@ export function ConversationList({ onNavigate }: { onNavigate?: (() => void) | u
         )}
         {groups.map((group) => (
           <section key={group.label}>
-            <h2 className="px-2.5 pt-3 pb-1 text-xs font-medium text-muted-foreground">
+            <h2 className="px-3 pt-4 pb-1.5 text-xs font-semibold tracking-wide text-muted-foreground">
               {group.label}
             </h2>
-            <ul className="flex flex-col gap-px">
+            <ul className="flex flex-col gap-0.5">
               {group.items.map((item) => {
                 const current = pathname === "/" && item.id === openId;
                 return (
                   <li
                     key={item.id}
+                    style={{ "--i": shown.indexOf(item) } as CSSProperties}
                     className={cn(
-                      "group/item relative flex h-8 items-center rounded-lg text-sm text-subtle-foreground transition-colors hover:bg-accent hover:text-foreground",
+                      "group/item relative flex h-9 animate-rise items-center rounded-xl text-[14.5px] text-subtle-foreground transition-colors hover:bg-accent hover:text-foreground",
                       current && "bg-accent font-medium text-foreground",
                     )}
                   >
+                    <ChatTeardropTextIcon
+                      weight={current ? "fill" : "regular"}
+                      className={cn(
+                        "ml-3 size-4 shrink-0 text-muted-foreground transition-colors group-hover/item:text-secondary-foreground",
+                        current && "text-secondary-foreground",
+                      )}
+                      aria-hidden="true"
+                    />
                     <Link
                       to="/"
                       search={{ c: item.id }}
                       onClick={onNavigate}
                       aria-current={current ? "page" : undefined}
-                      className="min-w-0 flex-1 truncate rounded-lg py-1.5 pr-1 pl-2.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="min-w-0 flex-1 truncate rounded-lg py-2 pr-1 pl-2.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {item.title}
                     </Link>

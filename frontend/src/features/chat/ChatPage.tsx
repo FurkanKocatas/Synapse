@@ -1,17 +1,9 @@
-import {
-  ArchiveIcon,
-  ArrowRightIcon,
-  CoinsIcon,
-  GavelIcon,
-  type Icon,
-} from "@phosphor-icons/react";
 import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate, useSearch } from "@tanstack/react-router";
 import { AnimatePresence } from "motion/react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { Page } from "@/components/AppShell";
-import { BlurText } from "@/components/reactbits/BlurText";
 import { sessionQuery } from "@/features/auth/session";
 import { m } from "@/paraglide/messages.js";
 
@@ -21,23 +13,12 @@ import { ConversationActions } from "./ConversationActions";
 import { DocumentViewer } from "./DocumentViewer";
 import { fromLive, fromStored, TurnView } from "./TurnView";
 import { isRunning, useLiveTurn } from "./useLiveTurn";
+import { Welcome } from "./Welcome";
 
-const EXAMPLES: [() => string, Icon][] = [
-  [m.chat_example_budget, CoinsIcon],
-  [m.chat_example_council, GavelIcon],
-  [m.chat_example_retention, ArchiveIcon],
-];
+export { greeting } from "./Welcome";
 
 // Pixels from the end within which the reader counts as following the answer.
 const PINNED_WITHIN = 80;
-
-/** "Good morning, Ayşe" and the like (the first name only), by the hour on the user's clock. */
-export function greeting(displayName: string, hour: number): string {
-  const name = displayName.trim().split(/\s+/)[0] ?? "";
-  if (hour < 5 || hour >= 18) return m.home_greeting_evening({ name });
-  if (hour < 11) return m.home_greeting_morning({ name });
-  return m.home_greeting_day({ name });
-}
 
 /** The home page: one box to ask in, and the conversation so far. Past conversations are in
  * the navigation; a cited page opens beside the answers. */
@@ -176,63 +157,5 @@ export function ChatPage() {
         </>
       )}
     </Page>
-  );
-}
-
-function Welcome({
-  name,
-  running,
-  focusKey,
-  onAsk,
-  onStop,
-}: {
-  name: string;
-  running: boolean;
-  focusKey: unknown;
-  onAsk: (question: string) => void;
-  onStop: () => void;
-}) {
-  // The hour is read once, when the page opens; the greeting does not change under the user.
-  const [hour] = useState(() => new Date().getHours());
-  return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 sm:px-8">
-      <div className="mx-auto my-auto w-full max-w-[44rem] py-10 pb-[12vh]">
-        <h2 className="text-[26px] leading-tight font-medium tracking-tight">
-          <BlurText text={greeting(name, hour)} />
-        </h2>
-        <p className="mt-1.5 text-[15px] text-subtle-foreground">{m.home_next()}</p>
-        <div className="mt-6">
-          <Composer running={running} focusKey={focusKey} onAsk={onAsk} onStop={onStop} />
-        </div>
-        <section className="mt-6">
-          <h3 className="px-0.5 pb-1 text-xs font-medium text-muted-foreground">
-            {m.chat_examples()}
-          </h3>
-          <ul>
-            {EXAMPLES.map(([example, IconFor]) => (
-              <li key={example()} className="border-b last:border-b-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onAsk(example());
-                  }}
-                  className="group flex w-full items-center gap-3 px-0.5 py-2.5 text-left text-sm text-subtle-foreground transition-colors hover:text-foreground"
-                >
-                  <IconFor
-                    className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-secondary-foreground"
-                    aria-hidden="true"
-                  />
-                  <span className="flex-1">{example()}</span>
-                  <ArrowRightIcon
-                    className="size-4 shrink-0 -translate-x-1 opacity-0 transition-[opacity,translate] group-hover:translate-x-0 group-hover:opacity-100"
-                    aria-hidden="true"
-                  />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      </div>
-    </div>
   );
 }

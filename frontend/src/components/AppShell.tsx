@@ -31,7 +31,7 @@ export function AppLayout() {
           }}
         />
         <div className="flex min-h-0 flex-1">
-          <aside className="hidden w-64 shrink-0 flex-col border-r bg-sidebar md:flex">
+          <aside className="hidden w-72 shrink-0 flex-col border-r bg-sidebar md:flex">
             <LayoutGroup id="side">
               <Sidebar />
             </LayoutGroup>
@@ -75,13 +75,13 @@ function Drawer({ onClose }: { onClose: () => void }) {
         onClick={onClose}
       />
       <motion.aside
-        className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-sidebar shadow-floating"
+        className="absolute inset-y-0 left-0 flex w-80 max-w-[85vw] flex-col bg-sidebar shadow-floating"
         initial={{ x: "-100%" }}
         animate={{ x: 0 }}
         exit={{ x: "-100%" }}
         transition={{ type: "tween", ease: [0.32, 0.72, 0, 1], duration: 0.3 }}
       >
-        <div className="flex h-13 shrink-0 items-center justify-between border-b px-4">
+        <div className="flex h-15 shrink-0 items-center justify-between border-b px-4">
           <Wordmark />
           <button
             type="button"
@@ -125,7 +125,7 @@ export function Page({ title, crumb, actions, subnav, panel, wide = false, child
         createPortal(
           <>
             {crumb}
-            <h1 className="min-w-0 truncate text-sm font-medium">{title}</h1>
+            <h1 className="min-w-0 truncate text-[15px] font-semibold">{title}</h1>
             {actions !== undefined && (
               <div className="flex shrink-0 items-center gap-1.5">{actions}</div>
             )}
@@ -138,7 +138,7 @@ export function Page({ title, crumb, actions, subnav, panel, wide = false, child
           <main className="flex min-h-0 flex-1 flex-col">{children}</main>
         ) : (
           <main className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-6 sm:px-8">
+            <div className="mx-auto flex w-full max-w-5xl animate-rise flex-col gap-5 px-4 py-6 sm:px-8">
               {children}
             </div>
           </main>

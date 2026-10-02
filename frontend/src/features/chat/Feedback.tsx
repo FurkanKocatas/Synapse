@@ -60,11 +60,7 @@ export function AnswerActions({
   }
 
   return (
-    <div
-      role="group"
-      aria-label={m.chat_feedback_label()}
-      className="mt-3 -ml-1.5 flex items-center gap-0.5"
-    >
+    <div role="group" aria-label={m.chat_feedback_label()} className="flex items-center gap-0.5">
       <IconButton label={m.chat_copy()} onClick={() => void copy()}>
         <CopyIcon aria-hidden="true" />
       </IconButton>

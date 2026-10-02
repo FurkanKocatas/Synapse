@@ -13,6 +13,7 @@ import {
 import { useState } from "react";
 
 import { FormError } from "@/components/AuthLayout";
+import { LogoMark } from "@/components/Logo";
 import { ShinyText } from "@/components/reactbits/ShinyText";
 import { cn } from "@/lib/utils";
 import { m } from "@/paraglide/messages.js";
@@ -110,11 +111,11 @@ export function TurnView({
   const writing = answered || turn.status === null;
 
   return (
-    <article className="border-b py-8 last:border-b-0">
+    <article className="py-7">
       <h2
         className={cn(
-          "text-xl leading-snug font-medium tracking-tight text-pretty",
-          turn.live && "animate-arrive",
+          "text-[22px] leading-snug font-semibold tracking-tight text-pretty",
+          turn.live && "animate-rise",
         )}
       >
         {turn.question}
@@ -156,22 +157,38 @@ export function TurnView({
           onOpen={onOpen}
         />
       )}
-      <div aria-live="polite">
-        {turn.text !== "" && writing && (
-          <AnswerText
-            text={turn.text}
-            sources={turn.sources ?? []}
-            live={turn.live}
-            onOpen={onOpen}
-            onLook={setLinked}
-          />
-        )}
-        {turn.stripped > 0 && <Note icon={InfoIcon} text={m.chat_stripped()} />}
-        <StatusNote status={turn.status} />
-        <FormError message={turn.error} />
-      </div>
-      {answered && feedbackFor !== undefined && (
-        <AnswerActions text={turn.text} initial={turn.feedback} {...feedbackFor} />
+      {(turn.text !== "" || turn.status !== null || turn.error !== null) && (
+        // The answer, on a card of its own under the question and its sources.
+        <div
+          className={cn(
+            "mt-4 rounded-2xl border bg-card px-5 pt-4 pb-3 shadow-raised",
+            turn.live && "animate-rise",
+          )}
+        >
+          <p className="mb-2 flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground">
+            <LogoMark className="size-5" />
+            {m.chat_answer()}
+          </p>
+          <div aria-live="polite" className="[&>*:first-child]:mt-0">
+            {turn.text !== "" && writing && (
+              <AnswerText
+                text={turn.text}
+                sources={turn.sources ?? []}
+                live={turn.live}
+                onOpen={onOpen}
+                onLook={setLinked}
+              />
+            )}
+            {turn.stripped > 0 && <Note icon={InfoIcon} text={m.chat_stripped()} />}
+            <StatusNote status={turn.status} />
+            <FormError message={turn.error} />
+          </div>
+          {answered && feedbackFor !== undefined && (
+            <div className="-mx-2 mt-3 border-t pt-2">
+              <AnswerActions text={turn.text} initial={turn.feedback} {...feedbackFor} />
+            </div>
+          )}
+        </div>
       )}
     </article>
   );

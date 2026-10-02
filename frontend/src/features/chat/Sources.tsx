@@ -73,7 +73,7 @@ export function SourceRow({
                 onOpen(source);
               }}
               className={cn(
-                "flex h-full w-full flex-col gap-1.5 rounded-xl border bg-card px-3 py-2.5 text-left transition-[border-color,box-shadow] outline-none hover:border-input hover:shadow-floating focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60",
+                "lift flex h-full w-full flex-col gap-1.5 rounded-xl border bg-card px-3 py-2.5 text-left shadow-raised outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60",
                 linked === source.number && "border-primary shadow-floating",
               )}
             >
@@ -119,7 +119,7 @@ export function AnswerText({
   onLook: (number: number | null) => void;
 }) {
   return (
-    <p className="mt-4 text-[15px] leading-7 text-pretty whitespace-pre-wrap">
+    <p className="mt-4 text-base leading-[1.75] text-pretty whitespace-pre-wrap">
       {answerParts(text).map((part, index) =>
         "text" in part ? (
           // Parts only grow at the end, so their position is their identity.

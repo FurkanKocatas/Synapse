@@ -287,5 +287,7 @@
   "admin_quick_collection": "Koleksiyon oluştur",
   "admin_audit": "Denetim kaydı",
   "admin_audit_ok": "Kayıt zinciri sağlam: {count} olay doğrulandı.",
-  "admin_audit_broken": "Kayıt zincirinde sorun var: {problem}"
+  "admin_audit_broken": "Kayıt zincirinde sorun var: {problem}",
+  "chat_recent": "Son sohbetler",
+  "chat_answer": "Cevap"
 }

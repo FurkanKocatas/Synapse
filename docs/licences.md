@@ -28,11 +28,11 @@ The gate also learned two things on 2026-09-28, when RapidOCR brought new depend
 
 ### Code adapted from React Bits, reviewed 2026-10-02
 
-Two text animations in the frontend are adapted from [React Bits](https://reactbits.dev) (github.com/DavidHDev/react-bits): `ShinyText` and `BlurText`, in `frontend/src/components/reactbits/`. React Bits is not a package dependency; its components are copied into the project, so the licence gate does not see them and this entry records them.
+Four small pieces of the frontend are adapted from [React Bits](https://reactbits.dev) (github.com/DavidHDev/react-bits): `ShinyText`, `BlurText`, `CountUp` and `SpotlightCard`, in `frontend/src/components/reactbits/`. React Bits is not a package dependency; its components are copied into the project, so the licence gate does not see them and this entry records them.
 
 The licence is **MIT with the Commons Clause**, a "source available" licence under ADR 0016. The Commons Clause withholds the right to sell the software itself, that is to offer for a fee a product or service whose value derives entirely or substantially from it; the project states the intent as: the components may be used in commercial applications, but not sold, sublicensed or redistributed as components. Decision: **allowed**, because
 
-1. the two animations are a small part of the interface (a status line and a greeting); Synapse's value does not derive from them, and it is not sold as a component library;
+1. they are a small part of the interface (a status line, a greeting, counting numbers, a light under the pointer); Synapse's value does not derive from them, and it is not sold as a component library;
 2. they are shipped only inside the built application, never as separate components or source a customer could reuse;
 3. each file says where it comes from and under which licence, and the licence text goes into the third-party notices.
 

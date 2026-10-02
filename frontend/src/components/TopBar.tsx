@@ -22,7 +22,7 @@ export function TopBar({
   const { data: session } = useSuspenseQuery(sessionQuery);
 
   return (
-    <header className="grid h-13 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b bg-sidebar px-2 md:px-4">
+    <header className="grid h-15 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b bg-sidebar px-2 md:px-5">
       <div className="flex min-w-0 items-center gap-2">
         <button
           type="button"
@@ -39,12 +39,12 @@ export function TopBar({
         to="/"
         search={{}}
         aria-label={m.app_name()}
-        className="flex items-center gap-2.5 rounded-lg px-2 py-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="group/logo flex items-center gap-3 rounded-xl px-2 py-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <LogoMark className="size-8" />
+        <LogoMark className="size-9 transition-transform duration-500 group-hover/logo:rotate-[-8deg] group-hover/logo:scale-105" />
         <span className="hidden leading-tight sm:block">
-          <span className="block text-[15px] font-semibold tracking-tight">{m.app_name()}</span>
-          <span className="block text-[11px] text-muted-foreground">{m.brand_caption()}</span>
+          <span className="block text-[17px] font-semibold tracking-tight">{m.app_name()}</span>
+          <span className="block text-xs text-muted-foreground">{m.brand_caption()}</span>
         </span>
       </Link>
 

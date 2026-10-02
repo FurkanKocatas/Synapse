@@ -1,9 +1,19 @@
-import { DownloadSimpleIcon, MagnifyingGlassIcon, TrashIcon } from "@phosphor-icons/react";
+import {
+  CheckCircleIcon,
+  CircleNotchIcon,
+  DownloadSimpleIcon,
+  FilesIcon,
+  MagnifyingGlassIcon,
+  TrashIcon,
+  WarningCircleIcon,
+  type Icon,
+} from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 
 import { FormError } from "@/components/AuthLayout";
+import { CountUp } from "@/components/reactbits/CountUp";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/IconButton";
 import { FileIcon } from "@/lib/fileKind";
@@ -24,11 +34,11 @@ const REFRESH_MS = 3000;
 
 type Shown = "all" | "ready" | "working" | "failed";
 
-const FILTERS: [Shown, () => string][] = [
-  ["all", m.library_filter_all],
-  ["ready", m.library_filter_ready],
-  ["working", m.library_filter_working],
-  ["failed", m.library_filter_failed],
+const FILTERS: [Shown, () => string, string, Icon][] = [
+  ["all", m.library_filter_all, "text-muted-foreground", FilesIcon],
+  ["ready", m.library_filter_ready, "text-success", CheckCircleIcon],
+  ["working", m.library_filter_working, "text-warning", CircleNotchIcon],
+  ["failed", m.library_filter_failed, "text-destructive", WarningCircleIcon],
 ];
 
 function groupOf(status: LibraryDocument["status"]): Exclude<Shown, "all"> {
@@ -83,6 +93,14 @@ export function DocumentTable({ collection }: { collection: LibraryCollection })
       (wanted === "" || document.title.toLocaleLowerCase(locale).includes(wanted)),
   );
 
+  const counts: Record<Shown, number> = {
+    all: documents.data.length,
+    ready: 0,
+    working: 0,
+    failed: 0,
+  };
+  for (const document of documents.data) counts[groupOf(document.status)] += 1;
+
   function remove(document: LibraryDocument) {
     setConfirming(null);
     void run(() => libraryApi.remove(document.id), [key]);
@@ -90,53 +108,60 @@ export function DocumentTable({ collection }: { collection: LibraryCollection })
 
   return (
     <div className="@container flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="flex h-9 min-w-44 flex-1 items-center gap-2 rounded-lg border border-input bg-card px-3 text-muted-foreground transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20 @lg:max-w-72">
-          <MagnifyingGlassIcon className="size-4 shrink-0" aria-hidden="true" />
-          <input
-            type="search"
-            aria-label={m.library_search()}
-            placeholder={m.library_search()}
-            value={filter}
-            onChange={(event) => {
-              setFilter(event.target.value);
+      {/* How many documents are in each state; each card also filters the list to its state. */}
+      <div
+        role="group"
+        aria-label={m.library_filter_label()}
+        className="grid grid-cols-2 gap-2.5 @xl:grid-cols-4"
+      >
+        {FILTERS.map(([value, label, tone, IconFor], index) => (
+          <button
+            key={value}
+            type="button"
+            aria-label={label()}
+            aria-pressed={shown === value}
+            onClick={() => {
+              setShown(value);
             }}
-            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-          />
-        </label>
-        <div
-          role="group"
-          aria-label={m.library_filter_label()}
-          className="flex rounded-lg bg-muted p-0.5"
-        >
-          {FILTERS.map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={shown === value}
-              onClick={() => {
-                setShown(value);
-              }}
-              className="relative h-8 rounded-md px-3 text-xs text-subtle-foreground transition-colors aria-pressed:text-foreground"
-            >
-              {shown === value && (
-                <motion.span
-                  layoutId="library-filter"
-                  aria-hidden="true"
-                  className="absolute inset-0 rounded-md bg-card shadow-raised"
-                  transition={{ type: "spring", bounce: 0, duration: 0.3 }}
-                />
-              )}
-              <span className="relative">{label()}</span>
-            </button>
-          ))}
-        </div>
-        <span className="ml-auto text-xs text-muted-foreground">
+            style={{ "--i": index } as CSSProperties}
+            className="lift relative flex animate-rise flex-col items-start gap-1 rounded-xl border bg-card px-3.5 py-3 text-left shadow-raised outline-none focus-visible:ring-2 focus-visible:ring-ring aria-pressed:border-primary"
+          >
+            {shown === value && (
+              <motion.span
+                layoutId="library-filter"
+                aria-hidden="true"
+                className="absolute inset-0 rounded-xl ring-2 ring-primary/25"
+                transition={{ type: "spring", bounce: 0, duration: 0.3 }}
+              />
+            )}
+            <span className="flex items-center gap-1.5 text-xs text-subtle-foreground">
+              <IconFor weight="fill" className={cn("size-3.5", tone)} aria-hidden="true" />
+              {label()}
+            </span>
+            <span className="text-2xl leading-tight font-semibold tracking-tight">
+              <CountUp to={counts[value]} />
+            </span>
+          </button>
+        ))}
+      </div>
+      <label className="flex h-10 items-center gap-2.5 rounded-xl border border-input bg-card px-3.5 text-muted-foreground transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20">
+        <MagnifyingGlassIcon className="size-[18px] shrink-0" aria-hidden="true" />
+        <input
+          type="search"
+          aria-label={m.library_search()}
+          placeholder={m.library_search()}
+          value={filter}
+          onChange={(event) => {
+            setFilter(event.target.value);
+          }}
+          className="min-w-0 flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-muted-foreground"
+        />
+        <span className="shrink-0 text-xs">
           {m.library_count({ count: String(documents.data.length) })}
         </span>
-      </div>
+      </label>
       <FormError message={error} />
-      <div className="overflow-hidden rounded-xl border bg-card">
+      <div className="overflow-hidden rounded-2xl border bg-card shadow-raised">
         <div
           className={cn(
             COLUMNS,
@@ -153,18 +178,19 @@ export function DocumentTable({ collection }: { collection: LibraryCollection })
           <p className="px-4 py-6 text-sm text-muted-foreground">{m.library_no_match()}</p>
         )}
         <ul className="divide-y">
-          {rows.map((document) => (
+          {rows.map((document, index) => (
             <li
               key={document.id}
+              style={{ "--i": index } as CSSProperties}
               className={cn(
                 COLUMNS,
-                "min-h-12 items-center gap-x-3 px-4 py-2 transition-colors hover:bg-background",
+                "min-h-13 animate-rise items-center gap-x-3 px-4 py-2 transition-colors hover:bg-background",
               )}
             >
               <div className="flex min-w-0 items-center gap-3">
                 <FileIcon mediaType={document.media_type} name={document.title} />
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium" title={document.title}>
+                  <p className="truncate text-[14.5px] font-medium" title={document.title}>
                     {document.title}
                   </p>
                   {document.status === "failed" && (

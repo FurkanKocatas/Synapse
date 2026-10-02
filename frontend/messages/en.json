@@ -287,5 +287,7 @@
   "admin_quick_collection": "Create a collection",
   "admin_audit": "Audit log",
   "admin_audit_ok": "The chain is intact: events checked: {count}.",
-  "admin_audit_broken": "The chain is broken: {problem}"
+  "admin_audit_broken": "The chain is broken: {problem}",
+  "chat_recent": "Recent conversations",
+  "chat_answer": "Answer"
 }

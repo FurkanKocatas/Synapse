@@ -12,7 +12,10 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+
+import { CountUp } from "@/components/reactbits/CountUp";
+import { SpotlightCard } from "@/components/reactbits/SpotlightCard";
 
 import { sessionQuery } from "@/features/auth/session";
 import { cn } from "@/lib/utils";
@@ -64,7 +67,7 @@ export function AdminOverview() {
   return (
     <AdminPage>
       <header>
-        <h2 className="text-xl font-medium tracking-tight">{m.admin_overview()}</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">{m.admin_overview()}</h2>
         <p className="mt-0.5 text-sm text-muted-foreground">{m.admin_overview_lead()}</p>
       </header>
 
@@ -74,7 +77,8 @@ export function AdminOverview() {
             to="/admin/users"
             icon={UserListIcon}
             label={m.nav_admin_users()}
-            value={users.data === undefined ? null : count(accounts.length)}
+            place={0}
+            value={users.data === undefined ? null : accounts.length}
             detail={m.admin_stat_users_detail({
               active: count(active),
               disabled: count(accounts.length - active),
@@ -86,11 +90,13 @@ export function AdminOverview() {
             to="/admin/users"
             icon={ShieldCheckIcon}
             label={m.admin_field_mfa()}
+            place={1}
             value={
               users.data === undefined || accounts.length === 0
                 ? null
-                : percent.format(withMfa / accounts.length)
+                : Math.round((withMfa / accounts.length) * 100)
             }
+            format={(n) => percent.format(n / 100)}
             detail={m.admin_stat_mfa_detail({
               with: count(withMfa),
               total: count(accounts.length),
@@ -104,7 +110,8 @@ export function AdminOverview() {
             to="/admin/groups"
             icon={UsersThreeIcon}
             label={m.nav_admin_groups()}
-            value={groups.data === undefined ? null : count(groups.data.length)}
+            place={2}
+            value={groups.data === undefined ? null : groups.data.length}
             detail={m.admin_stat_groups_detail({
               members: count((groups.data ?? []).reduce((sum, g) => sum + g.member_count, 0)),
             })}
@@ -115,7 +122,8 @@ export function AdminOverview() {
             to="/admin/collections"
             icon={TreeStructureIcon}
             label={m.nav_admin_collections()}
-            value={collections.data === undefined ? null : count(collections.data.length)}
+            place={3}
+            value={collections.data === undefined ? null : collections.data.length}
             detail={m.admin_stat_collections_detail({
               top: count((collections.data ?? []).filter((c) => c.parent_id === null).length),
             })}
@@ -173,36 +181,49 @@ function Tile({
   to,
   icon: IconFor,
   label,
+  place,
   value,
+  format,
   detail,
   children,
 }: {
   to: AreaPath;
   icon: Icon;
   label: string;
+  // Its place in the row, for the entrance one after another.
+  place: number;
   // Null while loading.
-  value: string | null;
+  value: number | null;
+  format?: (value: number) => string;
   detail: string;
   children?: ReactNode;
 }) {
   return (
-    <Link
-      to={to}
-      className="group flex flex-col gap-1 rounded-xl border bg-card p-4 transition-[border-color,box-shadow] outline-none hover:border-input hover:shadow-floating focus-visible:ring-2 focus-visible:ring-ring"
+    <SpotlightCard
+      className="lift animate-rise rounded-2xl border bg-card shadow-raised"
+      style={{ "--i": place } as CSSProperties}
     >
-      <span className="flex items-center gap-2 text-sm text-subtle-foreground">
-        <IconFor
-          className="size-4 text-muted-foreground transition-colors group-hover:text-secondary-foreground"
-          aria-hidden="true"
-        />
-        {label}
-      </span>
-      <span className="text-[28px] leading-tight font-semibold tracking-tight">
-        {value ?? <span className="inline-block h-7 w-12 animate-pulse rounded-md bg-muted" />}
-      </span>
-      <span className="text-xs text-muted-foreground">{detail}</span>
-      {children}
-    </Link>
+      <Link
+        to={to}
+        className="group flex h-full flex-col gap-1.5 rounded-2xl p-4 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span className="flex items-center gap-2.5 text-sm font-medium text-subtle-foreground">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-secondary text-secondary-foreground transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-6">
+            <IconFor weight="duotone" className="size-[18px]" aria-hidden="true" />
+          </span>
+          {label}
+        </span>
+        <span className="mt-1 text-[30px] leading-tight font-semibold tracking-tight">
+          {value === null ? (
+            <span className="inline-block h-8 w-14 animate-pulse rounded-md bg-muted" />
+          ) : (
+            <CountUp to={value} {...(format === undefined ? {} : { format })} />
+          )}
+        </span>
+        <span className="text-xs text-muted-foreground">{detail}</span>
+        {children}
+      </Link>
+    </SpotlightCard>
   );
 }
 
@@ -211,7 +232,7 @@ function Meter({ share }: { share: number }) {
   return (
     <span aria-hidden="true" className="mt-2 block h-1.5 overflow-hidden rounded-full bg-secondary">
       <span
-        className="block h-full rounded-full bg-primary transition-[width] duration-700 ease-out-soft"
+        className="block h-full animate-grow rounded-full bg-primary transition-[width] duration-700 ease-out-soft"
         style={{ width: `${String(Math.round(share * 100))}%` }}
       />
     </span>
@@ -220,8 +241,8 @@ function Meter({ share }: { share: number }) {
 
 function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-3 rounded-xl border bg-card p-4">
-      <h3 className="text-sm font-medium">{title}</h3>
+    <section className="flex animate-rise flex-col gap-3 rounded-2xl border bg-card p-5 shadow-raised [--i:4]">
+      <h3 className="text-[15px] font-semibold">{title}</h3>
       {children}
     </section>
   );
@@ -243,7 +264,7 @@ function Roles({ accounts, count }: { accounts: Account[]; count: (n: number) =>
               <span className="truncate text-sm text-subtle-foreground">{roleLabel[role]()}</span>
               <span className="block h-2 overflow-hidden rounded-full bg-muted">
                 <span
-                  className="block h-full rounded-full bg-primary/80 transition-[width] duration-700 ease-out-soft"
+                  className="block h-full animate-grow rounded-full bg-primary/80 transition-[width] duration-700 ease-out-soft"
                   style={{ width: `${String((n / most) * 100)}%` }}
                 />
               </span>
@@ -340,7 +361,7 @@ function QuickLink({ to, icon: IconFor, label }: { to: AreaPath; icon: Icon; lab
   return (
     <Link
       to={to}
-      className="inline-flex h-9 items-center gap-2 rounded-lg border border-input bg-card px-3 text-sm font-medium shadow-raised transition-colors hover:bg-accent"
+      className="lift inline-flex h-10 items-center gap-2 rounded-xl border border-input bg-card px-3.5 text-sm font-medium shadow-raised"
     >
       <IconFor className="size-4 text-secondary-foreground" aria-hidden="true" />
       {label}

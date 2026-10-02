@@ -46,7 +46,7 @@ export function LibraryPage() {
       <div className="flex min-h-0 flex-1">
         <nav
           aria-label={m.library_collections()}
-          className="hidden w-60 shrink-0 overflow-y-auto border-r p-2.5 md:block"
+          className="hidden w-64 shrink-0 overflow-y-auto border-r p-3 md:block"
         >
           <h2 className="px-2.5 pt-1 pb-1.5 text-xs font-medium text-muted-foreground">
             {m.library_collections()}
@@ -60,7 +60,7 @@ export function LibraryPage() {
                     type="button"
                     aria-current={current ? "true" : undefined}
                     className={cn(
-                      "flex h-8 w-full items-center gap-2 rounded-lg pr-2 text-left text-sm text-subtle-foreground transition-colors hover:bg-accent hover:text-foreground",
+                      "flex h-10 w-full items-center gap-2.5 rounded-xl pr-2.5 text-left text-[14.5px] text-subtle-foreground transition-colors hover:bg-accent hover:text-foreground",
                       INDENT[Math.min(depth, INDENT.length - 1)],
                       current &&
                         "bg-secondary font-medium text-secondary-foreground hover:bg-secondary",
@@ -71,7 +71,7 @@ export function LibraryPage() {
                   >
                     <FolderSimpleIcon
                       weight={current ? "fill" : "regular"}
-                      className="size-4 shrink-0"
+                      className="size-[18px] shrink-0"
                       aria-hidden="true"
                     />
                     <span className="min-w-0 flex-1 truncate">{collection.name}</span>
@@ -133,7 +133,7 @@ function CollectionView({ collection }: { collection: LibraryCollection }) {
   return (
     <>
       <header>
-        <h2 className="text-xl font-medium tracking-tight">{collection.name}</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">{collection.name}</h2>
         {collection.can_write && (
           <p className="mt-0.5 text-sm text-muted-foreground">{m.library_can_write()}</p>
         )}

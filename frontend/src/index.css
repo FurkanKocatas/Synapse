@@ -12,6 +12,11 @@
   --font-heading: var(--font-sans);
   --font-sans: "IBM Plex Sans Variable", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  /* A step heavier than the face's defaults: the variable font takes any weight. */
+  --font-weight-normal: 430;
+  --font-weight-medium: 560;
+  --font-weight-semibold: 640;
+  --font-weight-bold: 700;
   --color-sidebar: var(--sidebar);
   --color-subtle-foreground: var(--subtle-foreground);
   --color-primary-hover: var(--primary-hover);
@@ -138,7 +143,7 @@
     @apply bg-background text-foreground antialiased;
   }
   html {
-    @apply font-sans;
+    @apply font-sans font-normal;
   }
   ::selection {
     @apply bg-secondary text-secondary-foreground;
@@ -172,6 +177,45 @@
 @keyframes float {
   50% {
     transform: translateY(-6px);
+  }
+}
+
+/* Something entering the page: up a little from where it ends. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* A bar filling to its value from the left. */
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* Entrances one after another: each element sets --i to its place in the row. */
+@utility animate-rise {
+  animation: rise 0.45s var(--ease-out-soft) backwards;
+  animation-delay: calc(min(var(--i, 0), 12) * 45ms);
+}
+
+@utility animate-grow {
+  transform-origin: left;
+  animation: grow-x 0.9s var(--ease-out-soft) 0.15s backwards;
+}
+
+/* A card that comes up to the pointer. */
+@utility lift {
+  transition:
+    transform 0.2s var(--ease-out-soft),
+    box-shadow 0.2s var(--ease-out-soft),
+    border-color 0.2s var(--ease-out-soft);
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--elevation-2);
+    border-color: var(--input);
   }
 }
 
