@@ -18,13 +18,25 @@ BlueOak-1.0.0 and MIT-0 are permissive licences equivalent in effect to MIT for 
 | `caniuse-lite` | CC-BY-4.0 | Frontend build only (CSS tooling) | Allowed: data used at build time, not shipped as a component |
 | `lightningcss` | MPL-2.0 | Frontend build only | Allowed: used unmodified |
 | `pathspec` | MPL-2.0 | Python development tooling | Allowed: used unmodified |
-| `@fontsource-variable/geist` | OFL-1.1 | Frontend (the UI typeface, bundled into the static build) | Allowed: the SIL Open Font License permits bundling and embedding fonts in software, including commercial software; it only forbids selling the font on its own. The licence text ships with the third-party notices |
+| `@fontsource-variable/ibm-plex-sans`, `@fontsource/ibm-plex-mono` | OFL-1.1 | Frontend (the UI typefaces, bundled into the static build) | Allowed: the SIL Open Font License permits bundling and embedding fonts in software, including commercial software; it only forbids selling the font on its own. The licence text ships with the third-party notices |
 | `psycopg`, `psycopg-binary`, `psycopg-pool` | LGPL-3.0-only | Backend runtime (database driver; also required by the job queue) | Allowed with conditions, see below |
 | `pillow` | MIT-CMU (HPND) | Backend runtime (image support for the Office readers) | Allowed: permissive, OSI-approved; the gate did not know the identifier |
 | `pypdfium2` | Apache-2.0 or BSD-3-Clause, with bundled third-party libraries | Backend worker (PDF text extraction) | Allowed with a credit line, see below |
 | `antlr4-python3-runtime` | BSD-3-Clause (the ANTLR project's licence); the package metadata says only "BSD" and the wheel carries no licence file | Backend worker (needed by `omegaconf`, RapidOCR's configuration library) | Allowed: permissive |
 
 The gate also learned two things on 2026-09-28, when RapidOCR brought new dependencies: an expression joined by `AND` is allowed only when every part is (`numpy`: BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0; `tqdm`: MPL-2.0 AND MIT), and "3-Clause BSD License" (`protobuf`) is BSD-3-Clause. RapidOCR itself is Apache-2.0, `onnxruntime` MIT, `opencv-python-headless` Apache-2.0.
+
+### Code adapted from React Bits, reviewed 2026-10-02
+
+Two text animations in the frontend are adapted from [React Bits](https://reactbits.dev) (github.com/DavidHDev/react-bits): `ShinyText` and `BlurText`, in `frontend/src/components/reactbits/`. React Bits is not a package dependency; its components are copied into the project, so the licence gate does not see them and this entry records them.
+
+The licence is **MIT with the Commons Clause**, a "source available" licence under ADR 0016. The Commons Clause withholds the right to sell the software itself, that is to offer for a fee a product or service whose value derives entirely or substantially from it; the project states the intent as: the components may be used in commercial applications, but not sold, sublicensed or redistributed as components. Decision: **allowed**, because
+
+1. the two animations are a small part of the interface (a status line and a greeting); Synapse's value does not derive from them, and it is not sold as a component library;
+2. they are shipped only inside the built application, never as separate components or source a customer could reuse;
+3. each file says where it comes from and under which licence, and the licence text goes into the third-party notices.
+
+They use `motion` (MIT). React Bits components that need GSAP (licensed under GSAP's own terms, not MIT) are not used.
 
 ### OCR programs and models in the application image, reviewed 2026-09-28
 

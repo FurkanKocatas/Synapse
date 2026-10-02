@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "@/App";
 import { rememberCsrfToken } from "@/lib/api";
+import { greeting } from "@/features/chat/ChatPage";
 import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
 import { fakeApi } from "@/test/fakeApi";
@@ -44,7 +45,9 @@ describe("sign-in flow", () => {
     await userEvent.click(screen.getByRole("button", { name: m.auth_login_submit() }));
 
     expect(
-      await screen.findByText(m.home_welcome({ name: user.display_name })),
+      await screen.findByRole("heading", {
+        name: greeting(user.display_name, new Date().getHours()),
+      }),
     ).toBeInTheDocument();
     const login = calls.find((call) => call.path === "/api/auth/login");
     expect(login?.body).toEqual({ email: user.email, password: "a long passphrase here" });

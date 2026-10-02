@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 
 import { cleanup } from "@testing-library/react";
+import { MotionGlobalConfig } from "motion/react";
 import { afterEach } from "vitest";
 
 // Testing Library unmounts rendered trees automatically only when test globals are enabled.
@@ -11,3 +12,7 @@ afterEach(cleanup);
 // jsdom does not implement scrolling; the router calls it on navigation.
 window.scrollTo = () => undefined;
 Element.prototype.scrollIntoView = () => undefined;
+Element.prototype.scrollTo = () => undefined;
+
+// Animations finish at once, so a closed panel is gone when the next line looks for it.
+MotionGlobalConfig.skipAnimations = true;

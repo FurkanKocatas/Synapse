@@ -9,6 +9,7 @@ import {
   redirect,
 } from "@tanstack/react-router";
 
+import { AppLayout } from "@/components/AppShell";
 import { AccountPage } from "@/features/account/AccountPage";
 import { adminAreas } from "@/features/admin/adminApi";
 import { CollectionsPage } from "@/features/admin/CollectionsPage";
@@ -39,10 +40,9 @@ function guard(place: Place) {
   };
 }
 
-/** Like the "/" guard, and the role must also have this administration area. */
+/** The signed-in pages' guard is on their layout; the role must also have this area. */
 function adminGuard(area: keyof ReturnType<typeof adminAreas>) {
   return async ({ context }: { context: RouterContext }) => {
-    await guard("/")({ context });
     const session = await context.queryClient.query(sessionQuery);
     if (!adminAreas(session?.user?.role)[area]) {
       // eslint-disable-next-line @typescript-eslint/only-throw-error -- the router's redirect protocol
@@ -51,16 +51,47 @@ function adminGuard(area: keyof ReturnType<typeof adminAreas>) {
   };
 }
 
-const routes = [
+// The signed-in pages share one layout, so the navigation (and the conversation list in it)
+// stays put while the page beside it changes.
+const appRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: "app",
+  beforeLoad: guard("/"),
+  component: AppLayout,
+});
+
+const signedIn = [
   createRoute({
-    getParentRoute: () => rootRoute,
+    getParentRoute: () => appRoute,
     path: "/",
-    beforeLoad: guard("/"),
     // ?c=<id> opens a conversation; a search change keeps the page, and an answer streaming.
     validateSearch: (search: Record<string, unknown>): { c?: string } =>
       typeof search.c === "string" ? { c: search.c } : {},
     component: ChatPage,
   }),
+  createRoute({ getParentRoute: () => appRoute, path: "/library", component: LibraryPage }),
+  createRoute({ getParentRoute: () => appRoute, path: "/account", component: AccountPage }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: "/admin/users",
+    beforeLoad: adminGuard("users"),
+    component: UsersPage,
+  }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: "/admin/groups",
+    beforeLoad: adminGuard("groups"),
+    component: GroupsPage,
+  }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: "/admin/collections",
+    beforeLoad: adminGuard("collections"),
+    component: CollectionsPage,
+  }),
+];
+
+const signIn = [
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/login",
@@ -79,41 +110,11 @@ const routes = [
     beforeLoad: guard("/enroll"),
     component: EnrollPage,
   }),
-  createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/library",
-    beforeLoad: guard("/"),
-    component: LibraryPage,
-  }),
-  createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/account",
-    beforeLoad: guard("/"),
-    component: AccountPage,
-  }),
-  createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/admin/users",
-    beforeLoad: adminGuard("users"),
-    component: UsersPage,
-  }),
-  createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/admin/groups",
-    beforeLoad: adminGuard("groups"),
-    component: GroupsPage,
-  }),
-  createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/admin/collections",
-    beforeLoad: adminGuard("collections"),
-    component: CollectionsPage,
-  }),
 ];
 
 export function createAppRouter(queryClient: QueryClient) {
   return createRouter({
-    routeTree: rootRoute.addChildren(routes),
+    routeTree: rootRoute.addChildren([appRoute.addChildren(signedIn), ...signIn]),
     context: { queryClient },
     defaultPreload: false,
   });
@@ -122,5 +123,9 @@ export function createAppRouter(queryClient: QueryClient) {
 declare module "@tanstack/react-router" {
   interface Register {
     router: ReturnType<typeof createAppRouter>;
+  }
+  interface HistoryState {
+    // Set by "New conversation", so the chat page starts over even when it is already open.
+    fresh?: number;
   }
 }

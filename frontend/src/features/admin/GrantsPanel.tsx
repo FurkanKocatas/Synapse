@@ -66,7 +66,7 @@ export function GrantsPanel({ collection }: { collection: Collection }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <h2 className="font-medium">{m.admin_grants_title({ name: collection.name })}</h2>
+      <h2 className="text-base font-medium">{m.admin_grants_title({ name: collection.name })}</h2>
       <FormError message={error} />
       {grants.data?.length === 0 ? (
         <p className="text-sm text-muted-foreground">{m.admin_grants_empty()}</p>

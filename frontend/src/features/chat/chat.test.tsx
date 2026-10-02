@@ -4,11 +4,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "@/App";
 import { rememberCsrfToken } from "@/lib/api";
+import { greeting } from "@/features/chat/ChatPage";
 import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
 import { fakeApi, type Call } from "@/test/fakeApi";
 
-import { answerParts, passageRanges, type Source, type StoredTurn } from "./chatApi";
+import { fileKind } from "@/lib/fileKind";
+
+import { answerParts, passageRanges, plainAnswer, type Source, type StoredTurn } from "./chatApi";
 import { markPassage } from "./PdfPage";
 import { serverEvents } from "./sse";
 import { advance, isRunning, started } from "./useLiveTurn";
@@ -128,17 +131,19 @@ describe("chat", () => {
     });
     render(<App />);
 
-    expect(await screen.findByText(m.home_welcome({ name: "Editor" }))).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: greeting("Editor", new Date().getHours()) }),
+    ).toBeInTheDocument();
     await userEvent.type(
       screen.getByLabelText(m.chat_question_label()),
       "Meclis kaç üyeli?{Enter}",
     );
 
-    // Inline after the sentence, and again under the answer.
+    // After the sentence it rests on.
     const [citation, ...more] = await screen.findAllByRole("button", {
       name: m.chat_citation_label({ number: "1" }),
     });
-    expect(more).toHaveLength(1);
+    expect(more).toHaveLength(0);
     const ask = calls.find((call) => call.path === "/api/chat");
     expect(ask?.body).toEqual({ question: "Meclis kaç üyeli?" });
     expect(ask?.headers["X-Synapse-CSRF"]).toBe("c");
@@ -146,7 +151,10 @@ describe("chat", () => {
       expect(window.location.search).toContain("c=k1");
     });
     expect(screen.getByText(/Meclis 7 üyeden oluşur\./)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Meclis kaç üyeli?" })).toBeInTheDocument();
+    // The question heads its answer (the title bar has the conversation's title too).
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Meclis kaç üyeli?" }),
+    ).toBeInTheDocument();
 
     if (citation === undefined) throw new Error("no citation");
     await userEvent.click(citation);
@@ -214,6 +222,51 @@ describe("chat", () => {
     expect(calls.filter((call) => call.path === "/api/conversations")).toHaveLength(1);
   });
 
+  it("lists past conversations in the navigation, by day, and opens one", async () => {
+    api((call) => {
+      if (call.path === "/api/conversations") {
+        const today = new Date().toISOString();
+        return { status: 200, body: [{ id: "k1", title: "Meclis kaç üyeli?", updated_at: today }] };
+      }
+      if (call.path === "/api/conversations/k1") {
+        return { status: 200, body: { id: "k1", title: "Meclis kaç üyeli?", turns: [answered] } };
+      }
+      return undefined;
+    });
+    render(<App />);
+    const list = await screen.findByRole("navigation", { name: m.chat_conversations() });
+    expect(
+      await within(list).findByRole("heading", { name: m.chat_group_today() }),
+    ).toBeInTheDocument();
+    await userEvent.click(within(list).getByRole("link", { name: "Meclis kaç üyeli?" }));
+    await waitFor(() => {
+      expect(window.location.search).toContain("c=k1");
+    });
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "Meclis kaç üyeli?" }),
+    ).toBeInTheDocument();
+  });
+
+  it("takes what is wrong with an answer from its menu", async () => {
+    window.history.replaceState(null, "", "/?c=k1");
+    const calls = api((call) => {
+      if (call.path === "/api/conversations/k1") {
+        return { status: 200, body: { id: "k1", title: "Meclis kaç üyeli?", turns: [answered] } };
+      }
+      if (call.method === "PUT") return { status: 204 };
+      return undefined;
+    });
+    render(<App />);
+    await userEvent.click(await screen.findByRole("button", { name: m.chat_feedback_problem() }));
+    await userEvent.click(
+      await screen.findByRole("menuitemcheckbox", { name: m.chat_feedback_invented() }),
+    );
+    await waitFor(() => {
+      expect(calls.find((call) => call.method === "PUT")?.body).toEqual({ kind: "invented" });
+    });
+    expect(await screen.findByText(m.chat_feedback_saved())).toBeInTheDocument();
+  });
+
   it("renames and deletes a conversation", async () => {
     window.history.replaceState(null, "", "/?c=k1");
     const calls = api((call) => {
@@ -224,8 +277,9 @@ describe("chat", () => {
       return undefined;
     });
     render(<App />);
-    await userEvent.click(await screen.findByRole("button", { name: m.chat_rename() }));
-    const title = screen.getByLabelText(m.chat_title_label());
+    await userEvent.click(await screen.findByRole("button", { name: m.chat_actions() }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: m.chat_rename() }));
+    const title = await screen.findByLabelText(m.chat_title_label());
     await userEvent.clear(title);
     await userEvent.type(title, "Meclis");
     await userEvent.click(screen.getByRole("button", { name: m.chat_save() }));
@@ -233,8 +287,9 @@ describe("chat", () => {
       expect(calls.find((call) => call.method === "PATCH")?.body).toEqual({ title: "Meclis" });
     });
 
-    await userEvent.click(screen.getByRole("button", { name: m.chat_delete() }));
-    expect(screen.getByText(m.chat_delete_confirm())).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: m.chat_actions() }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: m.chat_delete() }));
+    expect(await screen.findByText(m.chat_delete_confirm())).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: m.common_remove() }));
     await waitFor(() => {
       expect(calls.some((call) => call.method === "DELETE" && call.path.endsWith("/k1"))).toBe(
@@ -276,6 +331,20 @@ describe("chat pieces", () => {
       { citations: [2, 3] },
     ]);
     expect(answerParts("[sic] metin")).toEqual([{ text: "[sic] metin" }]);
+  });
+
+  it("copies an answer without its citation markers", () => {
+    expect(plainAnswer("Kurul 7 üyedir. [1] Başkan seçer. [2, 3]")).toBe(
+      "Kurul 7 üyedir. Başkan seçer.",
+    );
+    expect(plainAnswer("Süre 10 yıldır [1].")).toBe("Süre 10 yıldır.");
+  });
+
+  it("tells a file's kind by its media type, or else by its name", () => {
+    expect(fileKind("application/pdf", "karar")).toBe("pdf");
+    expect(fileKind(null, "Rapor.DOCX")).toBe("doc");
+    expect(fileKind("application/octet-stream", "kadro.xlsx")).toBe("sheet");
+    expect(fileKind(null, "Meclis Kararı")).toBe("other");
   });
 
   it("finds a passage on its page whatever the spacing", () => {

@@ -1,8 +1,9 @@
+import { BooksIcon, CaretRightIcon, FolderSimpleIcon, LockSimpleIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { Folder, FolderOpen, Lock } from "lucide-react";
 import { useState } from "react";
 
-import { AppShell } from "@/components/AppShell";
+import { Page } from "@/components/AppShell";
+import { NativeSelect } from "@/components/NativeSelect";
 import { inTreeOrder } from "@/features/admin/CollectionsPage";
 import { cn } from "@/lib/utils";
 import { m } from "@/paraglide/messages.js";
@@ -11,6 +12,10 @@ import { DocumentTable } from "./DocumentTable";
 import { libraryApi, type LibraryCollection } from "./libraryApi";
 import { UploadBox } from "./UploadBox";
 
+// Tailwind needs literal class names; deeper levels share the last one.
+const INDENT = ["pl-2.5", "pl-6", "pl-9", "pl-12", "pl-15"];
+
+/** The collections the user can read, as a tree beside the documents of the chosen one. */
 export function LibraryPage() {
   const collections = useQuery({
     queryKey: ["library", "collections"],
@@ -18,85 +23,126 @@ export function LibraryPage() {
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const tree = inTreeOrder(collections.data ?? []);
-  const selected = collections.data?.find((collection) => collection.id === selectedId) ?? null;
-
-  const pane = (
-    <nav aria-label={m.library_collections()} className="flex flex-col gap-1 p-3">
-      <h2 className="px-2 pt-1 pb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-        {m.library_collections()}
-      </h2>
-      {collections.data === undefined ? (
-        <p className="px-2 text-sm text-muted-foreground">{m.common_loading()}</p>
-      ) : collections.data.length === 0 ? (
-        <p className="px-2 text-sm text-muted-foreground">{m.library_no_collections()}</p>
-      ) : (
-        <ul className="flex flex-col gap-0.5">
-          {tree.map(({ collection, depth }) => (
-            <li key={collection.id}>
-              <button
-                type="button"
-                aria-current={collection.id === selectedId ? "true" : undefined}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-accent/60",
-                  collection.id === selectedId && "bg-accent font-medium text-accent-foreground",
-                )}
-                onClick={() => {
-                  setSelectedId(collection.id);
-                }}
-              >
-                <span
-                  className={cn(
-                    "flex min-w-0 items-center gap-2",
-                    indent[Math.min(depth, indent.length - 1)],
-                  )}
-                >
-                  {collection.id === selectedId ? (
-                    <FolderOpen className="size-4 shrink-0" aria-hidden="true" />
-                  ) : (
-                    <Folder className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  )}
-                  <span className="truncate">{collection.name}</span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </nav>
-  );
+  // The first collection is open until the user picks another.
+  const selected =
+    collections.data?.find((collection) => collection.id === selectedId) ??
+    tree[0]?.collection ??
+    null;
 
   return (
-    <AppShell
+    <Page
       title={selected?.name ?? m.nav_library()}
-      icon={FolderOpen}
-      pane={pane}
-      paneLabel={m.library_collections()}
-    >
-      {selected === null ? (
-        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed bg-card px-6 py-16 text-center">
-          <span className="flex size-12 items-center justify-center rounded-2xl bg-accent text-accent-foreground">
-            <FolderOpen className="size-6" aria-hidden="true" />
+      wide
+      crumb={
+        selected !== null && (
+          <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <BooksIcon className="size-4" aria-hidden="true" />
+            <span className="hidden sm:inline">{m.nav_library()}</span>
+            <CaretRightIcon className="size-3" aria-hidden="true" />
           </span>
-          <p className="max-w-sm text-sm text-muted-foreground">{m.library_pick_collection()}</p>
+        )
+      }
+    >
+      <div className="flex min-h-0 flex-1 border-t">
+        <nav
+          aria-label={m.library_collections()}
+          className="hidden w-60 shrink-0 overflow-y-auto border-r p-2.5 md:block"
+        >
+          <h2 className="px-2.5 pt-1 pb-1.5 text-xs font-medium text-muted-foreground">
+            {m.library_collections()}
+          </h2>
+          <ul className="flex flex-col gap-px">
+            {tree.map(({ collection, depth }) => {
+              const current = collection.id === selected?.id;
+              return (
+                <li key={collection.id}>
+                  <button
+                    type="button"
+                    aria-current={current ? "true" : undefined}
+                    className={cn(
+                      "flex h-8 w-full items-center gap-2 rounded-lg pr-2 text-left text-sm text-subtle-foreground transition-colors hover:bg-accent hover:text-foreground",
+                      INDENT[Math.min(depth, INDENT.length - 1)],
+                      current &&
+                        "bg-secondary font-medium text-secondary-foreground hover:bg-secondary",
+                    )}
+                    onClick={() => {
+                      setSelectedId(collection.id);
+                    }}
+                  >
+                    <FolderSimpleIcon
+                      weight={current ? "fill" : "regular"}
+                      className="size-4 shrink-0"
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0 flex-1 truncate">{collection.name}</span>
+                    {!collection.can_write && (
+                      <LockSimpleIcon className="size-3.5 shrink-0 opacity-60" aria-hidden="true" />
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+        <div className="min-w-0 flex-1 overflow-y-auto">
+          <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-6 sm:px-8">
+            {tree.length > 0 && (
+              <label className="flex flex-col gap-1.5 text-sm md:hidden">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {m.library_collection_label()}
+                </span>
+                <NativeSelect
+                  value={selected?.id ?? ""}
+                  onChange={(event) => {
+                    setSelectedId(event.target.value);
+                  }}
+                >
+                  {tree.map(({ collection, depth }) => (
+                    <option key={collection.id} value={collection.id}>
+                      {" ".repeat(depth)}
+                      {collection.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </label>
+            )}
+            {collections.data === undefined ? (
+              <p className="text-sm text-muted-foreground">{m.common_loading()}</p>
+            ) : selected === null ? (
+              <Empty />
+            ) : (
+              <CollectionView key={selected.id} collection={selected} />
+            )}
+          </div>
         </div>
-      ) : (
-        <CollectionView collection={selected} />
-      )}
-    </AppShell>
+      </div>
+    </Page>
   );
 }
 
-// Tailwind needs literal class names; deeper levels share the last one.
-const indent = ["", "pl-3", "pl-6", "pl-9", "pl-12"];
+function Empty() {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-16 text-center">
+      <BooksIcon weight="duotone" className="size-9 text-muted-foreground" aria-hidden="true" />
+      <p className="max-w-sm text-sm text-muted-foreground">{m.library_no_collections()}</p>
+    </div>
+  );
+}
 
 function CollectionView({ collection }: { collection: LibraryCollection }) {
   return (
     <>
+      <header>
+        <h2 className="text-xl font-medium tracking-tight">{collection.name}</h2>
+        {collection.can_write && (
+          <p className="mt-0.5 text-sm text-muted-foreground">{m.library_can_write()}</p>
+        )}
+      </header>
       {collection.can_write ? (
         <UploadBox collectionId={collection.id} />
       ) : (
-        <p className="flex items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground">
-          <Lock className="size-4" aria-hidden="true" />
+        <p className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2.5 text-sm text-subtle-foreground">
+          <LockSimpleIcon className="size-4 shrink-0" aria-hidden="true" />
           {m.library_read_only()}
         </p>
       )}

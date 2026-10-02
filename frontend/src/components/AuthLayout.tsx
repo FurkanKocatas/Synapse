@@ -1,9 +1,11 @@
-import { FileSearch, Lock, Server } from "lucide-react";
+import { HardDrivesIcon, LockKeyIcon, QuotesIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 
 import { LanguageSwitch } from "@/components/LanguageSwitch";
-import { LogoMark } from "@/components/Logo";
+import { LineField } from "@/components/LineField";
+import { Wordmark } from "@/components/Logo";
 import { ThemeSwitch } from "@/components/ThemeSwitch";
+import { FileIcon } from "@/lib/fileKind";
 import { m } from "@/paraglide/messages.js";
 
 interface AuthLayoutProps {
@@ -13,116 +15,93 @@ interface AuthLayoutProps {
 }
 
 const POINTS = [
-  { icon: FileSearch, text: m.auth_brand_point_cited },
-  { icon: Lock, text: m.auth_brand_point_access },
-  { icon: Server, text: m.auth_brand_point_local },
+  { icon: QuotesIcon, text: m.auth_brand_point_cited },
+  { icon: LockKeyIcon, text: m.auth_brand_point_access },
+  { icon: HardDrivesIcon, text: m.auth_brand_point_local },
 ];
 
-/** Every sign-in step: what the product is on one side, the step's form on the other. */
+/** Every sign-in step: the step's form on one side, on wide screens a glimpse of what the
+ * product does on the other. */
 export function AuthLayout({ title, description, children }: AuthLayoutProps) {
   return (
-    <div className="grid min-h-screen bg-background lg:grid-cols-[1fr_1fr]">
-      <aside className="relative hidden flex-col overflow-hidden bg-rail p-10 text-rail-foreground lg:flex">
-        <Network />
-        <div className="relative flex items-center gap-3">
-          <LogoMark className="size-9" />
-          <span className="text-lg font-semibold">{m.app_name()}</span>
-        </div>
-        <div className="relative mt-auto max-w-md">
-          <p className="text-3xl leading-tight font-semibold tracking-tight">
-            {m.auth_brand_title()}
-          </p>
-          <p className="mt-3 text-rail-muted">{m.app_tagline()}</p>
-          <ul className="mt-8 flex flex-col gap-3 text-sm">
-            {POINTS.map(({ icon: Icon, text }) => (
-              <li key={text()} className="flex items-start gap-3">
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-white/10">
-                  <Icon className="size-4" aria-hidden="true" />
-                </span>
-                <span className="pt-1">{text()}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </aside>
-      <div className="flex min-h-screen flex-col">
-        <header className="flex items-center justify-between gap-2 p-4">
-          <span className="flex items-center gap-2 font-semibold lg:invisible">
-            <LogoMark className="size-7" />
-            {m.app_name()}
-          </span>
+    <div className="grid min-h-dvh bg-background lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+      <div className="flex min-h-dvh flex-col p-4 sm:p-6">
+        <header className="flex items-center justify-between gap-2">
+          <Wordmark />
           <div className="flex items-center gap-2">
-            <LanguageSwitch compact />
+            <LanguageSwitch />
             <ThemeSwitch />
           </div>
         </header>
-        <main className="flex flex-1 items-center justify-center p-4 pb-16">
-          <div className="w-full max-w-sm">
-            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        <main className="flex flex-1 items-center justify-center py-10">
+          <div className="w-full max-w-sm animate-arrive">
+            <h1 className="text-2xl font-medium tracking-tight">{title}</h1>
             {description === undefined ? null : (
-              <p className="mt-1.5 text-sm text-muted-foreground">{description}</p>
+              <p className="mt-1.5 text-sm text-subtle-foreground">{description}</p>
             )}
-            <div className="mt-6">{children}</div>
+            <div className="mt-7">{children}</div>
           </div>
         </main>
+        <p className="text-xs text-muted-foreground">{m.app_tagline()}</p>
       </div>
+      <aside className="relative hidden overflow-hidden border-l bg-sidebar lg:flex lg:flex-col">
+        <LineField className="absolute inset-0 size-full" />
+        <div className="relative flex flex-1 items-center justify-center p-10">
+          <Glimpse />
+        </div>
+        <ul className="relative flex flex-wrap gap-x-6 gap-y-2 px-10 pb-8 text-[13px] text-subtle-foreground">
+          {POINTS.map(({ icon: IconFor, text }) => (
+            <li key={text()} className="flex items-center gap-2">
+              <IconFor className="size-4 shrink-0 text-secondary-foreground" aria-hidden="true" />
+              {text()}
+            </li>
+          ))}
+        </ul>
+      </aside>
     </div>
   );
 }
 
-/** Nodes and links, faint, behind the brand panel. */
-function Network() {
-  const nodes = [
-    [60, 80],
-    [210, 40],
-    [330, 150],
-    [140, 220],
-    [420, 60],
-    [470, 260],
-    [260, 330],
-    [90, 400],
-    [390, 420],
-  ];
-  const links = [
-    [0, 1],
-    [1, 2],
-    [0, 3],
-    [3, 2],
-    [1, 4],
-    [2, 5],
-    [3, 6],
-    [6, 5],
-    [6, 7],
-    [6, 8],
-    [5, 8],
+/** A still of an answer with its sources, the way the chat shows one. */
+function Glimpse() {
+  const sources = [
+    { number: 1, title: m.auth_glimpse_source_1(), page: 9, file: "x.pdf" },
+    { number: 2, title: m.auth_glimpse_source_2(), page: 3, file: "x.docx" },
   ];
   return (
-    <svg
+    <div
       aria-hidden="true"
-      viewBox="0 0 520 480"
-      className="pointer-events-none absolute -top-10 -right-24 w-[620px] opacity-25"
+      className="w-full max-w-md animate-[float_9s_ease-in-out_infinite] rounded-2xl border bg-card p-5 shadow-floating"
     >
-      {links.map(([a = 0, b = 0]) => (
-        <line
-          key={`${String(a)}-${String(b)}`}
-          x1={nodes[a]?.[0]}
-          y1={nodes[a]?.[1]}
-          x2={nodes[b]?.[0]}
-          y2={nodes[b]?.[1]}
-          className="stroke-rail-muted"
-          strokeWidth="1.2"
-        />
-      ))}
-      {nodes.map(([x, y], index) => (
-        <circle
-          key={index}
-          cx={x}
-          cy={y}
-          r={index % 3 === 0 ? 7 : 4.5}
-          className={index % 3 === 0 ? "fill-highlight" : "fill-rail-foreground"}
-        />
-      ))}
-    </svg>
+      <p className="text-base font-medium tracking-tight">{m.auth_glimpse_question()}</p>
+      <div className="mt-3 flex gap-2">
+        {sources.map((source) => (
+          <div key={source.number} className="flex w-44 flex-col gap-1 rounded-xl border px-3 py-2">
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <FileIcon name={source.file} />
+              {m.chat_page({ page: String(source.page) })}
+              <span className="ml-auto rounded-[5px] bg-muted px-1 font-mono text-[11px]">
+                {source.number}
+              </span>
+            </span>
+            <span className="line-clamp-2 text-xs font-medium">{source.title}</span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-[13.5px] leading-6">
+        {m.auth_glimpse_answer_1()} <Chip number={1} /> {m.auth_glimpse_answer_2()}{" "}
+        <Chip number={1} />
+        <Chip number={2} />
+      </p>
+    </div>
+  );
+}
+
+function Chip({ number }: { number: number }) {
+  return (
+    <span className="ml-[3px] inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[5px] bg-muted px-1 align-[2px] font-mono text-[11px] text-subtle-foreground">
+      {number}
+    </span>
   );
 }
 

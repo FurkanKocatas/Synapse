@@ -1,9 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, type SubmitEvent } from "react";
 
-import { UserRound } from "lucide-react";
-
-import { AppShell } from "@/components/AppShell";
+import { Page } from "@/components/AppShell";
 import { FormError } from "@/components/AuthLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,13 +20,13 @@ const SESSIONS = ["account", "sessions"];
 
 export function AccountPage() {
   return (
-    <AppShell title={m.nav_account()} icon={UserRound}>
+    <Page title={m.nav_account()}>
       <div className="grid gap-4 md:grid-cols-2">
         <PasswordForm />
         <Sessions />
         <PasskeysSection />
       </div>
-    </AppShell>
+    </Page>
   );
 }
 
@@ -56,10 +54,10 @@ function PasswordForm() {
 
   return (
     <form
-      className="flex flex-col gap-3 rounded-lg border p-4"
+      className="flex flex-col gap-3 rounded-xl border bg-card p-5"
       onSubmit={(event) => void submit(event)}
     >
-      <h2 className="font-medium">{m.account_password_title()}</h2>
+      <h2 className="text-base font-medium">{m.account_password_title()}</h2>
       <div className="flex flex-col gap-1">
         <Label htmlFor="current">{m.account_current_password()}</Label>
         <Input
@@ -110,8 +108,8 @@ function Sessions() {
   const format = new Intl.DateTimeFormat(getLocale(), { dateStyle: "medium", timeStyle: "short" });
 
   return (
-    <section className="flex flex-col gap-3 rounded-lg border p-4">
-      <h2 className="font-medium">{m.account_sessions_title()}</h2>
+    <section className="flex flex-col gap-3 rounded-xl border bg-card p-5">
+      <h2 className="text-base font-medium">{m.account_sessions_title()}</h2>
       <FormError message={error} />
       <ul className="flex flex-col gap-2">
         {(sessions.data ?? []).map((session) => (

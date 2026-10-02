@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "@/App";
 import { rememberCsrfToken } from "@/lib/api";
+import { greeting } from "@/features/chat/ChatPage";
 import { m } from "@/paraglide/messages.js";
 import { fakeApi } from "@/test/fakeApi";
 
@@ -71,17 +72,19 @@ describe("users page", () => {
       if (call.path === "/api/auth/session") {
         return { status: 200, body: { auth_level: "full", csrf_token: "c", user: admin } };
       }
-      if (call.method === "GET") {
+      if (call.path === "/api/admin/users" && call.method === "GET") {
         return {
           status: 200,
           body: [{ ...admin, status: "active", has_mfa: true }],
         };
       }
+      if (call.method === "GET") return { status: 200, body: [] };
       return { status: 409, body: { error: "email_taken" } };
     });
     render(<App />);
 
-    expect(await screen.findByText("admin@example.org")).toBeInTheDocument();
+    // In the table (the navigation's account menu shows the same address).
+    expect(await screen.findByRole("cell", { name: "admin@example.org" })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(m.admin_field_display_name()), "Ayşe");
     await userEvent.type(screen.getByLabelText(m.admin_field_email()), "admin@example.org");
     await userEvent.type(screen.getByLabelText(m.admin_field_password()), "a long passphrase here");
@@ -96,7 +99,7 @@ describe("users page", () => {
       if (call.path === "/api/auth/session") {
         return { status: 200, body: { auth_level: "full", csrf_token: "c", user: admin } };
       }
-      if (call.method === "GET") {
+      if (call.path === "/api/admin/users" && call.method === "GET") {
         return {
           status: 200,
           body: [
@@ -105,6 +108,7 @@ describe("users page", () => {
           ],
         };
       }
+      if (call.method === "GET") return { status: 200, body: [] };
       return { status: 204 };
     });
     render(<App />);
@@ -139,7 +143,9 @@ describe("users page", () => {
           },
     );
     render(<App />);
-    expect(await screen.findByText(m.home_welcome({ name: "Admin" }))).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: greeting("Admin", new Date().getHours()) }),
+    ).toBeInTheDocument();
     expect(window.location.pathname).toBe("/");
   });
 });

@@ -36,7 +36,7 @@
 }
 
 .textLayer .cited {
-  background: rgb(250 204 21 / 0.45);
+  background: color-mix(in oklch, var(--highlight) 60%, transparent);
   border-radius: 2px;
 }
 

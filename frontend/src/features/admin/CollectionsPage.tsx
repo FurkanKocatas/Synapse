@@ -1,9 +1,7 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { useState, type SubmitEvent } from "react";
 
-import { FolderTree } from "lucide-react";
-
-import { AppShell } from "@/components/AppShell";
+import { Page } from "@/components/AppShell";
 import { FormError } from "@/components/AuthLayout";
 import { NativeSelect } from "@/components/NativeSelect";
 import { Button } from "@/components/ui/button";
@@ -20,16 +18,16 @@ import { useAction } from "@/lib/useAction";
 const COLLECTIONS = ["admin", "collections"];
 
 /** Collections in tree order, each with its depth, so the list reads like folders. */
-export function inTreeOrder(
-  collections: Collection[],
-): { collection: Collection; depth: number }[] {
-  const children = new Map<string | null, Collection[]>();
+export function inTreeOrder<T extends { id: string; parent_id: string | null }>(
+  collections: T[],
+): { collection: T; depth: number }[] {
+  const children = new Map<string | null, T[]>();
   for (const collection of collections) {
     const siblings = children.get(collection.parent_id) ?? [];
     siblings.push(collection);
     children.set(collection.parent_id, siblings);
   }
-  const ordered: { collection: Collection; depth: number }[] = [];
+  const ordered: { collection: T; depth: number }[] = [];
   const visit = (parent: string | null, depth: number) => {
     for (const collection of children.get(parent) ?? []) {
       ordered.push({ collection, depth });
@@ -60,10 +58,10 @@ export function CollectionsPage() {
   }
 
   return (
-    <AppShell title={m.nav_admin_collections()} icon={FolderTree}>
+    <Page title={m.nav_admin_collections()}>
       <FormError message={error} />
       <div className="grid gap-4 md:grid-cols-2">
-        <section className="flex flex-col gap-3 rounded-lg border p-4">
+        <section className="flex flex-col gap-3 rounded-xl border bg-card p-5">
           <form className="grid gap-2" onSubmit={(event) => void create(event)}>
             <div className="flex flex-col gap-1">
               <Label htmlFor="collection-name">{m.admin_collection_name()}</Label>
@@ -93,7 +91,7 @@ export function CollectionsPage() {
                 <button
                   type="button"
                   aria-pressed={selected?.id === collection.id}
-                  className="w-full rounded px-2 py-1 text-left text-sm hover:bg-muted aria-pressed:bg-muted"
+                  className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-subtle-foreground transition-colors hover:bg-accent hover:text-foreground aria-pressed:bg-secondary aria-pressed:font-medium aria-pressed:text-secondary-foreground"
                   style={{ paddingLeft: `${String(0.5 + depth * 1.25)}rem` }}
                   onClick={() => {
                     setSelected(collection);
@@ -106,7 +104,7 @@ export function CollectionsPage() {
           </ul>
         </section>
         {areas.grants ? (
-          <section className="rounded-lg border p-4">
+          <section className="rounded-xl border bg-card p-5">
             {selected === null ? (
               <p className="text-sm text-muted-foreground">{m.admin_collection_select()}</p>
             ) : (
@@ -115,6 +113,6 @@ export function CollectionsPage() {
           </section>
         ) : null}
       </div>
-    </AppShell>
+    </Page>
   );
 }

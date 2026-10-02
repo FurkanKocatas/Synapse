@@ -46,8 +46,8 @@ export function PasskeysSection() {
 
   if (recoveryCodes !== null) {
     return (
-      <section className="flex flex-col gap-3 rounded-lg border p-4 md:col-span-2">
-        <h2 className="font-medium">{m.auth_recovery_title()}</h2>
+      <section className="flex flex-col gap-3 rounded-xl border bg-card p-5 md:col-span-2">
+        <h2 className="text-base font-medium">{m.auth_recovery_title()}</h2>
         <RecoveryCodes
           codes={recoveryCodes}
           onContinue={() => {
@@ -59,7 +59,10 @@ export function PasskeysSection() {
   }
 
   return (
-    <section className="flex flex-col gap-3 rounded-lg border p-4" aria-labelledby="passkeys-title">
+    <section
+      className="flex flex-col gap-3 rounded-xl border bg-card p-5"
+      aria-labelledby="passkeys-title"
+    >
       <h2 id="passkeys-title" className="font-medium">
         {m.account_passkeys_title()}
       </h2>

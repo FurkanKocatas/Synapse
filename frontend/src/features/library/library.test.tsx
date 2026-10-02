@@ -124,6 +124,27 @@ describe("library", () => {
 });
 
 describe("failed documents", () => {
+  it("are listed alone when the filter asks for them", async () => {
+    window.history.replaceState(null, "", "/library");
+    api((call) =>
+      call.path === "/api/collections/c1/documents"
+        ? {
+            status: 200,
+            body: [
+              document,
+              { ...document, id: "d2", title: "Bozuk tarama", status: "failed", failure: "empty" },
+            ],
+          }
+        : undefined,
+    );
+    render(<App />);
+    expect(await screen.findByText("Karar 2026-35")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: m.library_filter_failed() }));
+    expect(screen.getByText("Bozuk tarama")).toBeInTheDocument();
+    expect(screen.queryByText("Karar 2026-35")).not.toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(m.library_search()), "karar");
+    expect(screen.getByText(m.library_no_match())).toBeInTheDocument();
+  });
   it("say why they failed", async () => {
     window.history.replaceState(null, "", "/library");
     api((call) =>

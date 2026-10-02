@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "@/App";
 import { rememberCsrfToken } from "@/lib/api";
+import { greeting } from "@/features/chat/ChatPage";
 import { m } from "@/paraglide/messages.js";
 import { getLocale } from "@/paraglide/runtime.js";
 import { fakeApi } from "@/test/fakeApi";
@@ -70,7 +71,9 @@ describe("passkeys", () => {
     await userEvent.click(screen.getByRole("button", { name: m.auth_mfa_use_passkey() }));
 
     expect(
-      await screen.findByText(m.home_welcome({ name: user.display_name })),
+      await screen.findByRole("heading", {
+        name: greeting(user.display_name, new Date().getHours()),
+      }),
     ).toBeInTheDocument();
     expect(browser.startAuthentication).toHaveBeenCalledWith({
       optionsJSON: { challenge: "abc", rpId: "synapse.test" },

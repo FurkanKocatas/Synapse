@@ -53,7 +53,9 @@ REVIEWED = {
     "synapsectl": "This project's installer (proprietary).",
     "@lix-js/sdk-*": "Platform binaries of @lix-js/sdk (MIT); the binary package omits the field.",
     "caniuse-lite": "CC-BY-4.0 browser support data, used only at build time by the CSS tooling.",
-    "@fontsource-variable/geist": "OFL-1.1 font, bundled with the UI (see docs/licences.md).",
+    "@fontsource-variable/ibm-plex-sans": "OFL-1.1 font, bundled with the UI "
+    "(see docs/licences.md).",
+    "@fontsource/ibm-plex-mono": "OFL-1.1 font, bundled with the UI (see docs/licences.md).",
     "psycopg": "LGPL-3.0, used unmodified as a separate package (see docs/licences.md).",
     "psycopg-binary": "LGPL-3.0, binary distribution of psycopg (see docs/licences.md).",
     "psycopg-pool": "LGPL-3.0, used unmodified as a separate package (see docs/licences.md).",

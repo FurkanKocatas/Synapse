@@ -1,9 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, type SubmitEvent } from "react";
 
-import { UsersRound } from "lucide-react";
-
-import { AppShell } from "@/components/AppShell";
+import { Page } from "@/components/AppShell";
 import { FormError } from "@/components/AuthLayout";
 import { NativeSelect } from "@/components/NativeSelect";
 import { Button } from "@/components/ui/button";
@@ -29,10 +27,10 @@ export function GroupsPage() {
   }
 
   return (
-    <AppShell title={m.nav_admin_groups()} icon={UsersRound}>
+    <Page title={m.nav_admin_groups()}>
       <FormError message={error} />
       <div className="grid gap-4 md:grid-cols-2">
-        <section className="flex flex-col gap-3 rounded-lg border p-4">
+        <section className="flex flex-col gap-3 rounded-xl border bg-card p-5">
           <form className="flex items-end gap-2" onSubmit={(event) => void create(event)}>
             <div className="flex flex-1 flex-col gap-1">
               <Label htmlFor="group-name">{m.admin_group_name()}</Label>
@@ -48,7 +46,7 @@ export function GroupsPage() {
                 <button
                   type="button"
                   aria-pressed={selected?.id === group.id}
-                  className="flex w-full justify-between rounded px-2 py-1 text-left text-sm hover:bg-muted aria-pressed:bg-muted"
+                  className="flex w-full justify-between rounded-lg px-2.5 py-1.5 text-left text-sm text-subtle-foreground transition-colors hover:bg-accent hover:text-foreground aria-pressed:bg-secondary aria-pressed:font-medium aria-pressed:text-secondary-foreground"
                   onClick={() => {
                     setSelected(group);
                   }}
@@ -60,7 +58,7 @@ export function GroupsPage() {
             ))}
           </ul>
         </section>
-        <section className="rounded-lg border p-4">
+        <section className="rounded-xl border bg-card p-5">
           {selected === null ? (
             <p className="text-sm text-muted-foreground">{m.admin_group_select()}</p>
           ) : (
@@ -68,7 +66,7 @@ export function GroupsPage() {
           )}
         </section>
       </div>
-    </AppShell>
+    </Page>
   );
 }
 
@@ -89,7 +87,7 @@ function GroupMembers({ group }: { group: Group }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <h2 className="font-medium">
+      <h2 className="text-base font-medium">
         {group.name}: {m.admin_group_members({ count: String(members.data?.length ?? 0) })}
       </h2>
       <FormError message={error} />

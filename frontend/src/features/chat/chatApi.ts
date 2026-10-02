@@ -66,6 +66,12 @@ export type ChatEvent =
   | { event: "answer"; data: FinalAnswer }
   | { event: "error"; data: { error: string } };
 
+// Query keys shared by the conversation list (in the navigation) and the chat page.
+export const CONVERSATIONS = ["chat", "conversations"];
+export function conversationKey(id: string | undefined) {
+  return ["chat", "conversation", id ?? "new"];
+}
+
 export const chatApi = {
   conversations: () => apiRequest<ConversationSummary[]>("GET", "/api/conversations"),
   conversation: (id: string) => apiRequest<Conversation>("GET", `/api/conversations/${id}`),
@@ -108,6 +114,16 @@ export function answerParts(text: string): AnswerPart[] {
   }
   if (last < text.length) parts.push({ text: text.slice(last) });
   return parts;
+}
+
+/** The answer as plain text, without its ``[n]`` markers (for copying). */
+export function plainAnswer(text: string): string {
+  return answerParts(text)
+    .map((part) => ("text" in part ? part.text : ""))
+    .join("")
+    .replace(/ +([.,;:!?])/g, "$1")
+    .replace(/ {2,}/g, " ")
+    .trim();
 }
 
 /** Where ``passage`` (a chunk) stands in ``page``: [start, end) ranges, whitespace aside.

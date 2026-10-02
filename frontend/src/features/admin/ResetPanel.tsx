@@ -39,7 +39,10 @@ export function ResetPanel({ account, refresh }: { account: Account; refresh: st
   }
 
   return (
-    <section className="flex flex-col gap-3 rounded-lg border p-4" aria-labelledby="reset-title">
+    <section
+      className="flex flex-col gap-3 rounded-xl border bg-card p-5"
+      aria-labelledby="reset-title"
+    >
       <h2 id="reset-title" className="font-medium">
         {m.admin_reset_title({ name: account.display_name })}
       </h2>

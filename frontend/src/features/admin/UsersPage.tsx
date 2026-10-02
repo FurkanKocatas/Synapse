@@ -1,9 +1,7 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { useState, type SubmitEvent } from "react";
 
-import { Users } from "lucide-react";
-
-import { AppShell } from "@/components/AppShell";
+import { Page } from "@/components/AppShell";
 import { FormError } from "@/components/AuthLayout";
 import { NativeSelect } from "@/components/NativeSelect";
 import { Button } from "@/components/ui/button";
@@ -50,14 +48,14 @@ export function UsersPage() {
   }
 
   return (
-    <AppShell title={m.nav_admin_users()} icon={Users}>
+    <Page title={m.nav_admin_users()}>
       <FormError message={error} />
 
       <form
-        className="grid gap-3 rounded-lg border p-4 sm:grid-cols-2"
+        className="grid gap-3 rounded-xl border bg-card p-5 sm:grid-cols-2"
         onSubmit={(event) => void create(event)}
       >
-        <h2 className="font-medium sm:col-span-2">{m.admin_users_new()}</h2>
+        <h2 className="text-base font-medium sm:col-span-2">{m.admin_users_new()}</h2>
         <div className="flex flex-col gap-1">
           <Label htmlFor="new-name">{m.admin_field_display_name()}</Label>
           <Input id="new-name" name="display_name" required maxLength={200} />
@@ -101,24 +99,24 @@ export function UsersPage() {
       {users.data === undefined ? (
         <p className="text-sm text-muted-foreground">{m.common_loading()}</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border">
+        <div className="overflow-x-auto rounded-xl border bg-card">
           <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left">
+            <thead className="border-b bg-sidebar text-left text-xs text-muted-foreground">
               <tr>
-                <th className="p-2">{m.admin_field_display_name()}</th>
-                <th className="p-2">{m.admin_field_email()}</th>
-                <th className="p-2">{m.admin_field_role()}</th>
-                <th className="p-2">{m.admin_field_status()}</th>
-                <th className="p-2">{m.admin_field_mfa()}</th>
-                <th className="p-2">{m.admin_field_actions()}</th>
+                <th className="px-3 py-2 font-medium">{m.admin_field_display_name()}</th>
+                <th className="px-3 py-2 font-medium">{m.admin_field_email()}</th>
+                <th className="px-3 py-2 font-medium">{m.admin_field_role()}</th>
+                <th className="px-3 py-2 font-medium">{m.admin_field_status()}</th>
+                <th className="px-3 py-2 font-medium">{m.admin_field_mfa()}</th>
+                <th className="px-3 py-2 font-medium">{m.admin_field_actions()}</th>
               </tr>
             </thead>
             <tbody>
               {users.data.map((account) => (
                 <tr key={account.id} className="border-t">
-                  <td className="p-2">{account.display_name}</td>
-                  <td className="p-2">{account.email}</td>
-                  <td className="p-2">
+                  <td className="px-3 py-2">{account.display_name}</td>
+                  <td className="px-3 py-2">{account.email}</td>
+                  <td className="px-3 py-2">
                     <NativeSelect
                       aria-label={`${m.admin_field_role()}: ${account.display_name}`}
                       value={account.role}
@@ -134,7 +132,7 @@ export function UsersPage() {
                       ))}
                     </NativeSelect>
                   </td>
-                  <td className="p-2">
+                  <td className="px-3 py-2">
                     <NativeSelect
                       aria-label={`${m.admin_field_status()}: ${account.display_name}`}
                       value={account.status}
@@ -147,8 +145,8 @@ export function UsersPage() {
                       <option value="disabled">{m.status_disabled()}</option>
                     </NativeSelect>
                   </td>
-                  <td className="p-2">{account.has_mfa ? m.mfa_on() : m.mfa_off()}</td>
-                  <td className="p-2">
+                  <td className="px-3 py-2">{account.has_mfa ? m.mfa_on() : m.mfa_off()}</td>
+                  <td className="px-3 py-2">
                     {account.id !== session?.user?.id && (
                       <Button
                         variant="outline"
@@ -170,6 +168,6 @@ export function UsersPage() {
       )}
 
       {selected && <ResetPanel key={selected.id} account={selected} refresh={[USERS]} />}
-    </AppShell>
+    </Page>
   );
 }
