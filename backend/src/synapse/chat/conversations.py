@@ -87,6 +87,8 @@ class StoredTurn:
     citations: list[int]
     feedback: str | None
     created_at: datetime
+    # What the answer rests on: the documents, or nothing (conversation, general knowledge).
+    kind: str = "documents"
 
 
 @dataclass(frozen=True)
@@ -192,7 +194,11 @@ class Conversations:
         answer: Answer | None,
     ) -> None:
         status = answer.status if answer else "cancelled"
+        kind = answer.kind if answer else "documents"
         text = answer.text if answer and answer.status == "answered" else None
+        # An answer that rests on no document keeps no sources: what the search found was not
+        # used, and showing it under a greeting would mislead. The audit log still lists it.
+        shown = sources if kind == "documents" else []
         citations = answer.citations if answer else []
         details: dict[str, Any] = {}
         if answer is not None:
@@ -214,16 +220,17 @@ class Conversations:
                 "page_start": h.page_start,
                 "page_end": h.page_end,
             }
-            for h in sources
+            for h in shown
         ]
         now = self._now()
         async with self._db.tenant_transaction(self._tenant_id) as connection:
             await connection.execute(
-                "UPDATE conversation_turns SET status = %s, query = %s, answer = %s, "
-                "sources = %s, citations = %s, details = %s, finished_at = %s "
+                "UPDATE conversation_turns SET status = %s, kind = %s, query = %s, "
+                "answer = %s, sources = %s, citations = %s, details = %s, finished_at = %s "
                 "WHERE conversation_id = %s AND ordinal = %s",
                 (
                     status,
+                    kind,
                     answer.question if answer else None,
                     text,
                     json.dumps(references),
@@ -249,6 +256,7 @@ class Conversations:
                         "turn": ordinal,
                         "question": question,
                         "status": status,
+                        "kind": kind,
                         "retrieved": list(dict.fromkeys(str(h.document_id) for h in sources)),
                         "cited": list(dict.fromkeys(cited)),
                         "answer_sha256": hashlib.sha256(text.encode()).hexdigest() if text else "",
@@ -271,7 +279,8 @@ class Conversations:
             title = await self._owned(connection, user_id, conversation_id)
             cursor = await connection.execute(
                 "SELECT ordinal, question, status, answer, sources, citations, feedback, "
-                "created_at FROM conversation_turns WHERE conversation_id = %s ORDER BY ordinal",
+                "created_at, kind FROM conversation_turns WHERE conversation_id = %s "
+                "ORDER BY ordinal",
                 (conversation_id,),
             )
             rows = await cursor.fetchall()
@@ -286,7 +295,8 @@ class Conversations:
             )
             readable = {(row[0], row[1]): (row[2], row[3]) for row in await cursor.fetchall()}
         turns = []
-        for ordinal, question, status, answer, sources, citations, feedback, created in rows:
+        for row in rows:
+            ordinal, question, status, answer, sources, citations, feedback, created, kind = row
             stored = []
             for s in sources:
                 text, headings = readable.get((UUID(s["version_id"]), s["ordinal"]), (None, []))
@@ -305,7 +315,15 @@ class Conversations:
                 )
             turns.append(
                 StoredTurn(
-                    ordinal, question, status, answer, stored, list(citations), feedback, created
+                    ordinal,
+                    question,
+                    status,
+                    answer,
+                    stored,
+                    list(citations),
+                    feedback,
+                    created,
+                    kind,
                 )
             )
         return ConversationView(conversation_id, title, turns)

@@ -289,5 +289,6 @@
   "admin_audit_ok": "Kayıt zinciri sağlam: {count} olay doğrulandı.",
   "admin_audit_broken": "Kayıt zincirinde sorun var: {problem}",
   "chat_recent": "Son sohbetler",
-  "chat_answer": "Cevap"
+  "chat_answer": "Cevap",
+  "chat_general_note": "Bu cevap belgelerinize dayanmıyor; genel bilgiyle yazıldı."
 }

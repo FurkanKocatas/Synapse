@@ -199,7 +199,12 @@ def _attach_services(app: FastAPI, settings: Settings, database: Database, model
     app.state.conversations = Conversations(
         database,
         tenant_id=tenant_id,
-        answerer=Answerer(search, models.chat, refuse_below=settings.chat_refuse_below),
+        answerer=Answerer(
+            search,
+            models.chat,
+            refuse_below=settings.chat_refuse_below,
+            general=settings.chat_general_answers,
+        ),
     )
     app.state.accounts = AccountService(database, tenant_id=tenant_id)
     app.state.profile = ProfileService(database, tenant_id=tenant_id)

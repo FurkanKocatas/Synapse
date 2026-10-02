@@ -20,6 +20,9 @@ export interface Source {
 export type AnswerStatus = "answered" | "not_found" | "insufficient" | "failed";
 export type TurnStatus = AnswerStatus | "pending" | "cancelled";
 export type Feedback = "helpful" | "wrong_source" | "incomplete" | "invented";
+// What an answer rests on: the documents (with sources), or nothing (a reply in conversation,
+// or one from general knowledge to a question that is not about the organisation).
+export type AnswerKind = "documents" | "conversation" | "general";
 
 export interface FinalAnswer {
   status: AnswerStatus;
@@ -28,6 +31,7 @@ export interface FinalAnswer {
   error: string | null;
   // How many sentences were removed because they stated a number no source holds.
   stripped: number;
+  kind: AnswerKind;
 }
 
 export interface StoredTurn {
@@ -39,6 +43,7 @@ export interface StoredTurn {
   citations: number[];
   feedback: Feedback | null;
   created_at: string;
+  kind: AnswerKind;
 }
 
 export interface ConversationSummary {

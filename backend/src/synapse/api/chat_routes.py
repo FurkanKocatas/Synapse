@@ -72,6 +72,8 @@ class TurnView(BaseModel):
     citations: list[int]
     feedback: str | None
     created_at: datetime
+    # "documents", "conversation" or "general": what the answer rests on.
+    kind: str
 
 
 class ConversationSummaryView(BaseModel):
@@ -181,6 +183,7 @@ def _sse(event: Started | Event) -> str:
                 "citations": event.citations,
                 "error": event.error,
                 "stripped": len(event.stripped),
+                "kind": event.kind,
             }
     return _message(name, data)
 
@@ -229,6 +232,7 @@ async def conversation(
                 citations=t.citations,
                 feedback=t.feedback,
                 created_at=t.created_at,
+                kind=t.kind,
             )
             for t in found.turns
         ],

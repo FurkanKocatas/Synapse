@@ -42,6 +42,8 @@ COUNCIL = "Belediye meclisi 7 üyeden oluşur ve 2026/35 sayılı kararı oybirl
 class ScriptedChat:
     answer: str = "Meclis 7 üyeden oluşur."
     rewrite: str = ""
+    # The reply in conversation (asked without a schema).
+    reply: str = "Merhaba! Belgelerinizle ilgili ne sormak istersiniz?"
     calls: list[list[ChatMessage]] = field(default_factory=list)
 
     async def complete(
@@ -63,7 +65,7 @@ class ScriptedChat:
     ) -> AsyncGenerator[ChatDelta | ChatReply]:
         self.calls.append(list(messages))
         reply = {"answer": [{"text": self.answer, "sources": [1]}], "sufficient": True}
-        content = json.dumps(reply, ensure_ascii=False)
+        content = self.reply if schema is None else json.dumps(reply, ensure_ascii=False)
         for start in range(0, len(content), 10):
             yield ChatDelta(content[start : start + 10])
         yield ChatReply(content)
@@ -180,6 +182,38 @@ async def test_a_question_is_answered_stored_and_audited(
     assert details["retrieved"] == details["cited"] == [document["id"]]
     assert len(details["answer_sha256"]) == 64
     assert "7 üyeden" not in json.dumps(details)  # the answer itself is not in the log
+
+
+async def test_a_greeting_is_stored_as_conversation_without_sources(
+    world: World, editor: Editor, database: Database
+) -> None:
+    await asyncio.to_thread(ingest, world, editor, COUNCIL)
+    service = conversations(world, database, ScriptedChat())
+    first = await ask(service, editor.user_id, "Meclis kaç üyeli?")
+    assert isinstance(first[0], Started)
+    conversation = first[0].conversation_id
+    events = await ask(service, editor.user_id, "Teşekkürler!", conversation)
+    assert not any(isinstance(event, Sources) for event in events)
+    answer = events[-1]
+    assert isinstance(answer, Answer)
+    assert (answer.status, answer.kind) == ("answered", "conversation")
+
+    row = world.db.execute(
+        "SELECT kind, status, answer, sources, citations FROM synapse.conversation_turns "
+        "WHERE conversation_id = %s AND ordinal = 2",
+        (conversation,),
+    ).fetchone()
+    assert row == (
+        "conversation",
+        "answered",
+        "Merhaba! Belgelerinizle ilgili ne sormak istersiniz?",
+        [],
+        [],
+    )
+    view = await service.get(editor.user_id, conversation)
+    assert [t.kind for t in view.turns] == ["documents", "conversation"]
+    *_, (action, outcome, details) = audited(world, conversation)
+    assert (action, outcome, details["kind"]) == ("chat.question", "success", "conversation")
 
 
 async def test_a_follow_up_continues_with_its_history(
@@ -338,6 +372,7 @@ def test_the_endpoints_stream_answers_and_manage_conversations(
         "citations": [1],
         "error": None,
         "stripped": 0,
+        "kind": "documents",
     }
 
     conversation = turn["conversation_id"]

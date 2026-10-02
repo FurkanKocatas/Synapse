@@ -29,6 +29,15 @@ ADR 0010's query rules, in order (docs/design/answers.md):
 
 Each turn takes one of the chat server's slots; a turn that finds them busy waits its turn and
 says where it stands in the queue (``Queued``).
+
+Not every message asks the documents something. A greeting, thanks or a farewell (``small_talk``)
+is answered as conversation without a search. A message whose search finds nothing good enough
+(below ``refuse_below``) is not refused at once: the chat model first says what it is
+(``ROUTE_SYSTEM``). Asking about the organisation, its documents, decisions or figures, it is
+refused as before, so nothing is answered from the model's memory that the documents should
+answer; conversation is answered as conversation; and a question of general knowledge or a
+request for help with writing is answered from general knowledge, marked as not resting on the
+documents, when the setting ``chat_general_answers`` allows it.
 """
 
 import asyncio
@@ -92,6 +101,59 @@ REWRITE_SCHEMA = {
     "required": ["question"],
 }
 NOT_FOUND = "bulunamad"
+# Answers that rest on no document: a reply in conversation, or one from general knowledge.
+CONVERSATION_SYSTEM = (
+    "Sen Synapse'sin: bir kurumun belgelerinden, kaynağını göstererek soru cevaplayan bir "
+    "asistan. Şu an belgelerden değil, sohbet olarak cevap veriyorsun. Kısa, sıcak ve doğal "
+    "yaz; mesajın dilinde cevap ver. Kurumun belgeleri, kararları, bütçesi, kişileri ya da "
+    "sayıları hakkında hiçbir bilgi uydurma; böyle bir şey sorulursa bunu belgelerde "
+    "arayabileceğini söyle. Markdown kullanma."
+)
+GENERAL_SYSTEM = (
+    "Sen Synapse'sin: bir kurumun belgelerinden, kaynağını göstererek soru cevaplayan bir "
+    "asistan. Bu mesaj kurumun belgeleriyle ilgili değil; genel bilginle ya da istenen yazma, "
+    "özetleme, çeviri yardımıyla, mesajın dilinde, doğru ve derli toplu cevap ver. Emin "
+    "olmadığın şeyi kesin gibi yazma. Kurum hakkında hiçbir bilgi uydurma. Markdown kullanma; "
+    "liste gerekiyorsa satır başında tire kullan."
+)
+ROUTE_SYSTEM = (
+    "Bir kurumun belge asistanına gelen son mesajın türünü seç. 'conversation': selamlaşma, "
+    "teşekkür, vedalaşma, asistanın kendisine dair bir soru (kim olduğu, ne yapabildiği) ya da "
+    "bilgi istemeyen sohbet. 'general': kurumla ilgisi olmayan, genel bilgiyle cevaplanan bir "
+    "soru (bir kavramın tanımı, bir hesaplama, bir programlama sorusu) ya da metin yazma, "
+    "özetleme, çeviri isteği. 'documents': kurumun kendisi, birimleri, belgeleri, kararları, "
+    "bütçesi, personeli, mevzuatı, tarihleri, sayıları ya da işleyişi hakkında her soru. Emin "
+    "değilsen 'documents' seç."
+)
+ROUTE_SCHEMA = {
+    "type": "object",
+    "properties": {"kind": {"type": "string", "enum": ["conversation", "general", "documents"]}},
+    "required": ["kind"],
+}
+ROUTE_TOKENS = 16
+REPLY_TOKENS = 700
+# A greeting, thanks or farewell, alone or two or three together ("selam, nasılsın"), with an
+# address at most ("hocam"). The whole message must be that: "merhaba, bütçe ne kadar?" is a
+# question and is searched.
+_PHRASES = (
+    r"selam(?:lar)?|slm|merhaba(?:lar)?|mrb|hey|hi|hello|g[uü]nayd[iı]n|"
+    r"iyi (?:g[uü]nler|ak[sş]amlar|geceler|sabahlar|[cç]al[iı][sş]malar)|"
+    r"nas[iı]ls[iı]n(?:[iı]z)?|naber|ne haber|kolay gelsin|"
+    r"(?:[cç]ok )?te[sş]ekk[uü]r(?:ler| ederim| ederiz)?|sa[gğ] ?ol(?:un)?|eyvallah|"
+    r"tamam(?:d[iı]r)?|peki|anlad[iı]m|harika|s[uü]per|"
+    r"ho[sş][cç]a kal(?:[iı]n)?|g[oö]r[uü][sş][uü]r[uü]z|"
+    r"thanks?(?: you)?|bye|good (?:morning|afternoon|evening)"
+)
+_ADDRESS = r"(?: (?:hocam|efendim|dostum|synapse))?"
+# Longer than this, a message is more than a greeting even if every word is one.
+SMALL_TALK_WORDS = 8
+SMALL_TALK = re.compile(rf"(?:(?:{_PHRASES}){_ADDRESS})(?: (?:{_PHRASES}){_ADDRESS}){{0,2}}")
+
+
+def small_talk(message: str) -> bool:
+    """Whether the message is only a greeting, thanks or a farewell."""
+    words = re.sub(r"[^\w\s]", " ", lower(message)).split()
+    return 0 < len(words) <= SMALL_TALK_WORDS and SMALL_TALK.fullmatch(" ".join(words)) is not None
 
 
 def schema(sources: int) -> dict[str, object]:
@@ -127,6 +189,8 @@ def written(sentences: Sequence[tuple[str, Sequence[int]]]) -> str:
 
 
 type Status = Literal["answered", "not_found", "insufficient", "failed"]
+# What an answer rests on: the documents (cited), or nothing (conversation, general knowledge).
+type Kind = Literal["documents", "conversation", "general"]
 
 
 @dataclass(frozen=True)
@@ -188,6 +252,7 @@ class Answer:
     stripped: tuple[str, ...] = ()
     error: str | None = None
     seconds: dict[str, float] = field(default_factory=dict)
+    kind: Kind = "documents"
 
 
 type Event = Rewritten | Sources | Queued | Generating | Delta | Retrying | Answer
@@ -219,6 +284,30 @@ class Gate:
             self._queue.popleft().set()
         else:
             self._free += 1
+
+
+class _Slot:
+    """A turn's place on the chat server, taken when the turn first needs the model and given
+    back when the turn ends."""
+
+    def __init__(self, gate: Gate) -> None:
+        self._gate = gate
+        self._ticket: asyncio.Event | None = None
+
+    async def take(self) -> AsyncGenerator[Queued]:
+        """Where the turn stands in the queue, while it waits; nothing once it has the slot."""
+        if self._ticket is not None:
+            return
+        self._ticket = self._gate.enter()
+        while not self._ticket.is_set():
+            yield Queued(self._gate.position(self._ticket))
+            with suppress(TimeoutError):
+                await asyncio.wait_for(self._ticket.wait(), QUEUE_REFRESH_SECONDS)
+
+    def release(self) -> None:
+        if self._ticket is not None:
+            self._gate.leave(self._ticket)
+            self._ticket = None
 
 
 class AnswerStream:
@@ -354,11 +443,13 @@ class Answerer:
         chat: ChatModel | None,
         *,
         refuse_below: float,
+        general: bool = True,
         gate: Gate | None = None,
     ) -> None:
         self._search = search
         self._chat = chat
         self._refuse_below = refuse_below
+        self._general = general
         self._gate = gate or Gate()
 
     async def answer(
@@ -367,54 +458,114 @@ class Answerer:
         """The turn's events, the ``Answer`` last. Closing the iterator cancels the turn."""
         started = time.perf_counter()
         seconds: dict[str, float] = {}
-        ticket: asyncio.Event | None = None
+        slot = _Slot(self._gate)
         try:
-            standalone = question
-            if history and self._chat is not None:
-                ticket = self._gate.enter()
-                async with aclosing(self._wait(ticket)) as positions:
-                    async for position in positions:
-                        yield Queued(position)
-                standalone = await self._rewrite(question, history)
-                seconds["rewrite"] = _since(started)
-                if standalone != question:
-                    yield Rewritten(standalone)
-            found = await self._search.candidates(user_id, standalone, limit=RERANKED)
-            seconds["candidates"] = _since(started)
-            if first := assemble(found.hits):
-                yield Sources(first, found.warnings, ranked=False)
-            found = await self._search.rerank(standalone, found, limit=RERANKED)
-            seconds["search"] = _since(started)
-            best = _best(found)
-            context = assemble(found.hits)
-            yield Sources(context, found.warnings)
-            if not context or (best is not None and best < self._refuse_below):
-                yield Answer("not_found", "", [], standalone, best, seconds=seconds)
-                return
-            if self._chat is None:
-                yield Answer(
-                    "failed", "", [], standalone, best, error="chat_unconfigured", seconds=seconds
-                )
-                return
-            if ticket is None:
-                ticket = self._gate.enter()
-                async with aclosing(self._wait(ticket)) as positions:
-                    async for position in positions:
-                        yield Queued(position)
-            yield Generating()
-            generated = self._generate(standalone, context, best, started, seconds)
-            async with aclosing(generated) as events:
+            if small_talk(question):
+                turn = self._converse(question, history, slot, started, seconds)
+            else:
+                turn = self._search_and_answer(user_id, question, history, slot, started, seconds)
+            async with aclosing(turn) as events:
                 async for event in events:
                     yield event
         finally:
-            if ticket is not None:
-                self._gate.leave(ticket)
+            slot.release()
 
-    async def _wait(self, ticket: asyncio.Event) -> AsyncGenerator[int]:
-        while not ticket.is_set():
-            yield self._gate.position(ticket)
-            with suppress(TimeoutError):
-                await asyncio.wait_for(ticket.wait(), QUEUE_REFRESH_SECONDS)
+    async def _converse(
+        self,
+        question: str,
+        history: Sequence[Turn],
+        slot: _Slot,
+        started: float,
+        seconds: dict[str, float],
+    ) -> AsyncGenerator[Event]:
+        """A greeting, thanks or farewell: answered as conversation, nothing searched."""
+        if self._chat is None:
+            yield Answer(
+                "failed", "", [], question, None, error="chat_unconfigured", seconds=seconds
+            )
+            return
+        async with aclosing(slot.take()) as waiting:
+            async for queued in waiting:
+                yield queued
+        async with aclosing(
+            self._reply("conversation", question, history, None, started, seconds)
+        ) as events:
+            async for event in events:
+                yield event
+
+    async def _search_and_answer(
+        self,
+        user_id: UUID,
+        question: str,
+        history: Sequence[Turn],
+        slot: _Slot,
+        started: float,
+        seconds: dict[str, float],
+    ) -> AsyncGenerator[Event]:
+        standalone = question
+        if history and self._chat is not None:
+            async with aclosing(slot.take()) as waiting:
+                async for queued in waiting:
+                    yield queued
+            standalone = await self._rewrite(question, history)
+            seconds["rewrite"] = _since(started)
+            if standalone != question:
+                yield Rewritten(standalone)
+        found = await self._search.candidates(user_id, standalone, limit=RERANKED)
+        seconds["candidates"] = _since(started)
+        if first := assemble(found.hits):
+            yield Sources(first, found.warnings, ranked=False)
+        found = await self._search.rerank(standalone, found, limit=RERANKED)
+        seconds["search"] = _since(started)
+        best = _best(found)
+        context = assemble(found.hits)
+        yield Sources(context, found.warnings)
+        if not context or (best is not None and best < self._refuse_below):
+            unfounded = self._unfounded(standalone, history, best, slot, started, seconds)
+            async with aclosing(unfounded) as events:
+                async for event in events:
+                    yield event
+            return
+        if self._chat is None:
+            yield Answer(
+                "failed", "", [], standalone, best, error="chat_unconfigured", seconds=seconds
+            )
+            return
+        async with aclosing(slot.take()) as waiting:
+            async for queued in waiting:
+                yield queued
+        yield Generating()
+        generated = self._generate(standalone, context, best, started, seconds)
+        async with aclosing(generated) as events:
+            async for event in events:
+                yield event
+
+    async def _unfounded(
+        self,
+        message: str,
+        history: Sequence[Turn],
+        best: float | None,
+        slot: _Slot,
+        started: float,
+        seconds: dict[str, float],
+    ) -> AsyncGenerator[Event]:
+        """A message the search found nothing good enough for: refused when it asks about the
+        organisation, answered without documents when it is conversation or general."""
+        kind: Kind = "documents"
+        if self._chat is not None:
+            async with aclosing(slot.take()) as waiting:
+                async for queued in waiting:
+                    yield queued
+            kind = await self._route(message)
+            seconds["route"] = _since(started)
+        if kind == "general" and not self._general:
+            kind = "documents"
+        if kind == "documents":
+            yield Answer("not_found", "", [], message, best, seconds=seconds)
+            return
+        async with aclosing(self._reply(kind, message, history, best, started, seconds)) as events:
+            async for event in events:
+                yield event
 
     async def _rewrite(self, question: str, history: Sequence[Turn]) -> str:
         assert self._chat is not None  # noqa: S101  (the caller checks)
@@ -435,6 +586,72 @@ class Answerer:
             log.warning("chat.rewrite_failed", error=str(error))
             return question
         return rewritten.strip() if isinstance(rewritten, str) and rewritten.strip() else question
+
+    async def _route(self, message: str) -> Kind:
+        """What a message whose search found nothing good enough is: conversation, a question of
+        general knowledge, or one about the organisation (refused). Unclear: the last."""
+        assert self._chat is not None  # noqa: S101  (the caller checks)
+        messages = [ChatMessage("system", ROUTE_SYSTEM), ChatMessage("user", message)]
+        try:
+            reply = await self._chat.complete(
+                messages, schema=ROUTE_SCHEMA, max_tokens=ROUTE_TOKENS
+            )
+            kind = json.loads(reply.content).get("kind")
+        except (ModelError, ValueError, AttributeError) as error:
+            log.warning("chat.route_failed", error=str(error))
+            return "documents"
+        return kind if kind in {"conversation", "general"} else "documents"
+
+    async def _reply(
+        self,
+        kind: Literal["conversation", "general"],
+        message: str,
+        history: Sequence[Turn],
+        best: float | None,
+        started: float,
+        seconds: dict[str, float],
+    ) -> AsyncGenerator[Event]:
+        """An answer that rests on no document, streamed as plain text."""
+        assert self._chat is not None  # noqa: S101  (the caller checks)
+        messages = [
+            ChatMessage("system", CONVERSATION_SYSTEM if kind == "conversation" else GENERAL_SYSTEM)
+        ]
+        for turn in history[-HISTORY_TURNS:]:
+            messages += [
+                ChatMessage("user", turn.question),
+                ChatMessage("assistant", CITATION.sub("", turn.answer)[:HISTORY_CHARS].strip()),
+            ]
+        messages.append(ChatMessage("user", message))
+        yield Generating()
+        text = ""
+        try:
+            stream = self._chat.stream(messages, max_tokens=REPLY_TOKENS)
+            async with aclosing(stream) as parts:
+                async for part in parts:
+                    if isinstance(part, ChatDelta):
+                        seconds.setdefault("first_token", _since(started))
+                        text += part.text
+                        yield Delta(part.text)
+        except ModelError as error:
+            log.warning("chat.reply_failed", error=str(error))
+            yield Answer(
+                "failed",
+                "",
+                [],
+                message,
+                best,
+                error="chat_unavailable",
+                seconds=seconds,
+                kind=kind,
+            )
+            return
+        seconds["answer"] = _since(started)
+        if not text.strip():
+            yield Answer(
+                "failed", "", [], message, best, error="empty_reply", seconds=seconds, kind=kind
+            )
+            return
+        yield Answer("answered", text.strip(), [], message, best, seconds=seconds, kind=kind)
 
     async def _generate(
         self,

@@ -58,6 +58,19 @@ The model refuses most unanswerable questions by itself (29 of 34): told that th
 
 **Decision: 1.0.** It meets the target on unanswerable questions (0.912 against at least 0.90) and costs no correct answer. It does not meet the target on false refusals (0.084 against at most 0.05), and no threshold can: 15 of the 16 are the model's own refusals, all with the evidence among the sources it was given (table cells and identifiers, mostly: a proposal number, a cost estimate, a list's row 318). That is the model being cautious, to be worked on in the prompt and the context, not in the threshold. Three unanswerable questions still get an answer, each with a figure from a neighbouring document (another municipality's staff count, another year's budget, another fee); their best scores are 1.59 to 4.58, among the answerable questions'.
 
+## What a refused message is
+
+Since 2026-10-02 a message below the threshold is not refused at once: the chat model first says what it is ([answers.md](../design/answers.md#messages-that-are-not-questions-to-the-documents)), and only a question about the organisation is refused; conversation and questions of general knowledge are answered without the documents. That must not let an unanswerable question through. [eval/answers/route.py](../../eval/answers/route.py) asks the model exactly as the product does, through the golden stack, about every unanswerable question (not only the 16 below the threshold), the answerable ones below it, and messages that are not questions to the documents:
+
+| messages | judged a question to the documents (refused) | conversation | general knowledge |
+|---|---|---|---|
+| unanswerable questions | **34 of 34** | 0 | 0 |
+| answerable questions below the threshold | 3 of 3 | 0 | 0 |
+| conversation ("Sen kimsin?", "Neler yapabiliyorsun?", ...) | 0 | 6 of 6 | 0 |
+| general knowledge or writing ("Fotosentez nedir?", a translation, an Excel formula, ...) | 1 | 0 | 7 of 8 |
+
+No unanswerable question is sent the general way, so refusal on them is unchanged; the one general message judged a question to the documents (how to write a leave request) is refused, the safe side. Greetings, thanks and farewells do not reach the route: they are answered as conversation without a search.
+
 ## Limits
 
 - 34 unanswerable questions: one is 3 points. The threshold sits between two of them (0.96 and 1.19) and below every answerable question but two (g7-06 at -0.14, which the model refuses anyway, and g8-24 at 0.88); on a customer's golden set it is calibrated again.

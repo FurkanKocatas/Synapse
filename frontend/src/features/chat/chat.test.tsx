@@ -3,67 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "@/App";
-import { rememberCsrfToken } from "@/lib/api";
 import { greeting } from "@/features/chat/ChatPage";
+import { rememberCsrfToken } from "@/lib/api";
 import { m } from "@/paraglide/messages.js";
-import { getLocale } from "@/paraglide/runtime.js";
-import { fakeApi, type Call } from "@/test/fakeApi";
-
-import { fileKind } from "@/lib/fileKind";
-
-import { answerParts, passageRanges, plainAnswer, type Source, type StoredTurn } from "./chatApi";
-import { markPassage } from "./PdfPage";
-import { serverEvents } from "./sse";
-import { advance, isRunning, started } from "./useLiveTurn";
-
-const user = {
-  id: "u1",
-  email: "editor@example.org",
-  display_name: "Editor",
-  role: "editor",
-  locale: getLocale(),
-};
-
-const source: Source = {
-  number: 1,
-  document_id: "d1",
-  title: "Meclis Kararı",
-  version: 1,
-  ordinal: 0,
-  page_start: 2,
-  page_end: 2,
-  heading_path: [],
-  text: "Belediye meclisi 7 üyeden oluşur.",
-};
-
-const page = {
-  document_id: "d1",
-  title: "Meclis Kararı",
-  version: 1,
-  number: 2,
-  pages: 3,
-  kind: "page",
-  label: null,
-  text: "Giriş.\nBelediye meclisi\n7 üyeden oluşur.\nSon.",
-  text_source: "ocr",
-  media_type: "application/pdf",
-  chunks: [{ ordinal: 0, text: source.text, page_start: 2, page_end: 2 }],
-};
-
-const answered: StoredTurn = {
-  ordinal: 1,
-  question: "Meclis kaç üyeli?",
-  status: "answered",
-  answer: "Meclis 7 üyeden oluşur. [1]",
-  sources: [source],
-  citations: [1],
-  feedback: null,
-  created_at: "2026-10-01T09:00:00Z",
-};
-
-function sse(events: [string, unknown][]): string {
-  return events.map(([name, data]) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`).join("");
-}
+import { answered, api, page, source, sse, user } from "@/test/chat";
+import { fakeApi } from "@/test/fakeApi";
 
 // PDF.js needs a canvas, which jsdom does not have; the page is drawn in the browser only.
 vi.mock("./PdfPage", async (original) => ({
@@ -76,17 +20,6 @@ afterEach(() => {
   rememberCsrfToken(null);
   window.history.replaceState(null, "", "/");
 });
-
-function api(
-  handler: (call: Call) => { status: number; body?: unknown; text?: string } | undefined,
-) {
-  return fakeApi((call) => {
-    if (call.path === "/api/auth/session") {
-      return { status: 200, body: { auth_level: "full", csrf_token: "c", user } };
-    }
-    return handler(call) ?? { status: 200, body: [] };
-  });
-}
 
 describe("chat", () => {
   it("shows the sources, then the answer with its citations, and opens the cited page", async () => {
@@ -267,6 +200,71 @@ describe("chat", () => {
     expect(await screen.findByText(m.chat_feedback_saved())).toBeInTheDocument();
   });
 
+  it("answers a greeting in conversation, with no sources", async () => {
+    api((call) => {
+      if (call.path === "/api/chat") {
+        return {
+          status: 200,
+          text: sse([
+            ["turn", { conversation_id: "k3", ordinal: 1 }],
+            ["generating", {}],
+            ["delta", { text: "Merhaba! " }],
+            ["delta", { text: "Ne sormak istersiniz?" }],
+            [
+              "answer",
+              {
+                status: "answered",
+                text: "Merhaba! Ne sormak istersiniz?",
+                citations: [],
+                error: null,
+                stripped: 0,
+                kind: "conversation",
+              },
+            ],
+          ]),
+        };
+      }
+      if (call.path === "/api/conversations/k3") {
+        const turn = {
+          ...answered,
+          question: "Selam",
+          answer: "Merhaba! Ne sormak istersiniz?",
+          sources: [],
+          citations: [],
+          kind: "conversation",
+        };
+        return { status: 200, body: { id: "k3", title: "Selam", turns: [turn] } };
+      }
+      return undefined;
+    });
+    render(<App />);
+    await userEvent.type(await screen.findByLabelText(m.chat_question_label()), "Selam{Enter}");
+    expect(await screen.findByText("Merhaba! Ne sormak istersiniz?")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: m.chat_sources() })).not.toBeInTheDocument();
+    expect(screen.queryByText(m.chat_general_note())).not.toBeInTheDocument();
+  });
+
+  it("marks an answer from general knowledge as not resting on the documents", async () => {
+    window.history.replaceState(null, "", "/?c=k4");
+    api((call) => {
+      if (call.path === "/api/conversations/k4") {
+        const turn = {
+          ...answered,
+          question: "Fotosentez nedir?",
+          answer: "Bitkilerin ışıkla besin üretmesidir.",
+          citations: [],
+          kind: "general",
+        };
+        return { status: 200, body: { id: "k4", title: "Fotosentez", turns: [turn] } };
+      }
+      return undefined;
+    });
+    render(<App />);
+    expect(await screen.findByText(m.chat_general_note())).toBeInTheDocument();
+    // What the search found is not shown under it.
+    expect(screen.queryByRole("region", { name: m.chat_sources() })).not.toBeInTheDocument();
+  });
+
   it("renames and deletes a conversation", async () => {
     window.history.replaceState(null, "", "/?c=k1");
     const calls = api((call) => {
@@ -299,107 +297,5 @@ describe("chat", () => {
     await waitFor(() => {
       expect(window.location.search).not.toContain("c=k1");
     });
-  });
-});
-
-describe("chat pieces", () => {
-  it("reads server-sent events however the bytes are cut", async () => {
-    const text = sse([
-      ["turn", { conversation_id: "k", ordinal: 1 }],
-      ["delta", { text: "çok satır\nve emoji 😀" }],
-    ]);
-    const bytes = new TextEncoder().encode(text);
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        for (let i = 0; i < bytes.length; i += 3) controller.enqueue(bytes.slice(i, i + 3));
-        controller.close();
-      },
-    });
-    const events = [];
-    for await (const event of serverEvents(body)) events.push(event);
-    expect(events).toEqual([
-      { event: "turn", data: { conversation_id: "k", ordinal: 1 } },
-      { event: "delta", data: { text: "çok satır\nve emoji 😀" } },
-    ]);
-  });
-
-  it("takes the citations out of an answer", () => {
-    expect(answerParts("Kurul 7 üyedir. [1] Başkan seçer. [2, 3]")).toEqual([
-      { text: "Kurul 7 üyedir. " },
-      { citations: [1] },
-      { text: " Başkan seçer. " },
-      { citations: [2, 3] },
-    ]);
-    expect(answerParts("[sic] metin")).toEqual([{ text: "[sic] metin" }]);
-  });
-
-  it("copies an answer without its citation markers", () => {
-    expect(plainAnswer("Kurul 7 üyedir. [1] Başkan seçer. [2, 3]")).toBe(
-      "Kurul 7 üyedir. Başkan seçer.",
-    );
-    expect(plainAnswer("Süre 10 yıldır [1].")).toBe("Süre 10 yıldır.");
-  });
-
-  it("tells a file's kind by its media type, or else by its name", () => {
-    expect(fileKind("application/pdf", "karar")).toBe("pdf");
-    expect(fileKind(null, "Rapor.DOCX")).toBe("doc");
-    expect(fileKind("application/octet-stream", "kadro.xlsx")).toBe("sheet");
-    expect(fileKind(null, "Meclis Kararı")).toBe("other");
-  });
-
-  it("finds a passage on its page whatever the spacing", () => {
-    const pageText =
-      "Başlık\n\nBelediye   meclisi\n7 üyeden oluşur. Kısa.\nBaşka bir paragraf burada.";
-    const ranges = passageRanges(pageText, "Belediye meclisi 7 üyeden oluşur.\nKısa.");
-    expect(ranges.map(([start, end]) => pageText.slice(start, end))).toEqual([
-      "Belediye   meclisi\n7 üyeden oluşur.",
-    ]);
-    expect(passageRanges(pageText, "Burada olmayan bir cümle var.")).toEqual([]);
-  });
-
-  it("marks the cited passage in a PDF page's text layer", () => {
-    const layer = document.createElement("div");
-    layer.innerHTML =
-      "<span>Giriş.</span><br><span>Belediye meclisi</span><span>7 üyeden oluşur.</span>" +
-      "<span>Son.</span>";
-    expect(markPassage(layer, "Belediye meclisi 7 üyeden oluşur.")).toBe(2);
-    expect([...layer.querySelectorAll(".cited")].map((span) => span.textContent)).toEqual([
-      "Belediye meclisi",
-      "7 üyeden oluşur.",
-    ]);
-  });
-
-  it("follows the events of a turn", () => {
-    let turn = started("Soru?", null);
-    expect(isRunning(turn)).toBe(true);
-    turn = advance(turn, { event: "turn", data: { conversation_id: "k", ordinal: 2 } });
-    turn = advance(turn, {
-      event: "sources",
-      data: { sources: [source], warnings: [], ranked: false },
-    });
-    expect(turn.ranked).toBe(false);
-    turn = advance(turn, {
-      event: "sources",
-      data: { sources: [source], warnings: [], ranked: true },
-    });
-    expect(turn.ranked).toBe(true);
-    turn = advance(turn, { event: "queued", data: { position: 2 } });
-    expect(turn.queuePosition).toBe(2);
-    turn = advance(turn, { event: "generating", data: {} });
-    turn = advance(turn, { event: "delta", data: { text: "Kurul 9" } });
-    turn = advance(turn, { event: "retrying", data: { unsupported: ["9"] } });
-    expect(turn.retrying).toBe(true);
-    expect(turn.text).toBe("");
-    turn = advance(turn, { event: "rewritten", data: { question: "Kurul kaç üye?" } });
-    turn = advance(turn, {
-      event: "answer",
-      data: { status: "answered", text: "Kurul 7. [1]", citations: [1], error: null, stripped: 0 },
-    });
-    expect([turn.conversationId, turn.ordinal]).toEqual(["k", 2]);
-    expect(turn.rewritten).toBe("Kurul kaç üye?");
-    expect(isRunning(turn)).toBe(false);
-    expect(isRunning(advance(started("x", null), { event: "error", data: { error: "x" } }))).toBe(
-      false,
-    );
   });
 });

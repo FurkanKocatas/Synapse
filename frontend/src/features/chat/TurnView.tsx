@@ -18,13 +18,17 @@ import { ShinyText } from "@/components/reactbits/ShinyText";
 import { cn } from "@/lib/utils";
 import { m } from "@/paraglide/messages.js";
 
-import type { Feedback, Source, StoredTurn, TurnStatus } from "./chatApi";
+import type { AnswerKind, Feedback, Source, StoredTurn, TurnStatus } from "./chatApi";
 import { AnswerActions } from "./Feedback";
 import { AnswerText, SourceRow } from "./Sources";
 import { isRunning, type LiveTurn } from "./useLiveTurn";
 
 // Where a turn being answered is: searching, ranking what was found, or writing.
-type Stage = { step: "search" } | { step: "rank" } | { step: "write"; text: string };
+type Stage =
+  | { step: "search" }
+  | { step: "rank" }
+  // ``alone``: nothing was searched (a greeting), so writing is the only step.
+  | { step: "write"; text: string; alone?: boolean };
 
 /** A turn as the page shows it, whether it is being answered or was stored. */
 export interface ShownTurn {
@@ -41,6 +45,7 @@ export interface ShownTurn {
   stage: Stage | null;
   error: string | null;
   live: boolean;
+  kind: AnswerKind;
 }
 
 export function fromStored(turn: StoredTurn): ShownTurn {
@@ -58,12 +63,17 @@ export function fromStored(turn: StoredTurn): ShownTurn {
     stage: null,
     error: null,
     live: false,
+    kind: turn.kind,
   };
 }
 
 function stageOf(turn: LiveTurn): Stage | null {
   if (!isRunning(turn)) return null;
-  if (turn.sources === null) return { step: "search" };
+  if (turn.sources === null) {
+    return turn.generating
+      ? { step: "write", text: m.chat_generating(), alone: true }
+      : { step: "search" };
+  }
   if (!turn.ranked) return { step: "rank" };
   if (turn.queuePosition !== null) {
     return { step: "write", text: m.chat_queued({ position: String(turn.queuePosition) }) };
@@ -86,6 +96,7 @@ export function fromLive(turn: LiveTurn): ShownTurn {
     stage: stageOf(turn),
     error: turn.error,
     live: true,
+    kind: turn.answer?.kind ?? "documents",
   };
 }
 
@@ -109,6 +120,8 @@ export function TurnView({
   const [linked, setLinked] = useState<number | null>(null);
   const answered = turn.status === "answered";
   const writing = answered || turn.status === null;
+  // A reply in conversation or from general knowledge used none of what the search found.
+  const grounded = turn.kind === "documents";
 
   return (
     <article className="py-7">
@@ -130,6 +143,7 @@ export function TurnView({
         <Steps stage={turn.stage} found={turn.sources?.length ?? 0} />
       ) : (
         answered &&
+        grounded &&
         turn.sources !== null && (
           <p className="mt-3.5 flex items-center gap-1.5 text-[13px] text-muted-foreground">
             <BooksIcon className="size-4" aria-hidden="true" />
@@ -146,7 +160,7 @@ export function TurnView({
           {(WARNINGS[warning] ?? m.error_unexpected)()}
         </p>
       ))}
-      {turn.sources !== null && turn.sources.length > 0 && (
+      {grounded && turn.sources !== null && turn.sources.length > 0 && (
         <SourceRow
           sources={turn.sources}
           title={writing ? m.chat_sources() : m.chat_related()}
@@ -169,6 +183,12 @@ export function TurnView({
             <LogoMark className="size-5" />
             {m.chat_answer()}
           </p>
+          {turn.kind === "general" && (
+            <p className="mb-3 flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-[13px] text-subtle-foreground">
+              <InfoIcon className="size-4 shrink-0" aria-hidden="true" />
+              {m.chat_general_note()}
+            </p>
+          )}
           <div aria-live="polite" className="[&>*:first-child]:mt-0">
             {turn.text !== "" && writing && (
               <AnswerText
@@ -199,6 +219,7 @@ const STEPS = ["search", "rank", "write"] as const;
 /** The three steps of an answer, the current one shimmering. */
 function Steps({ stage, found }: { stage: Stage; found: number }) {
   const at = STEPS.indexOf(stage.step);
+  const shown = stage.step === "write" && stage.alone === true ? (["write"] as const) : STEPS;
   const labels = {
     search: at > 0 ? m.chat_step_found({ count: String(found) }) : m.chat_searching(),
     rank: at > 1 ? m.chat_step_ranked() : m.chat_ranking(),
@@ -206,7 +227,8 @@ function Steps({ stage, found }: { stage: Stage; found: number }) {
   };
   return (
     <ol className="mt-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
-      {STEPS.map((step, index) => {
+      {shown.map((step) => {
+        const index = STEPS.indexOf(step);
         const state = index < at ? "done" : index === at ? "active" : "todo";
         return (
           <li

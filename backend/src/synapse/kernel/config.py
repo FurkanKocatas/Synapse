@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     # model's own refusals, 31 of the 34 unanswerable questions are refused and no correct
     # answer is lost.
     chat_refuse_below: float = Field(default=1.0, ge=-100, le=100)
+    # A message whose search finds nothing good enough and that the chat model judges to be a
+    # question of general knowledge (not about the organisation) or a request for help with
+    # writing is answered from general knowledge, marked as not resting on the documents. Off:
+    # such a message is refused like a question the documents do not answer. Greetings and
+    # thanks are answered either way.
+    chat_general_answers: bool = True
     # The address users open, such as https://synapse.example.org. Passkeys are bound to its
     # host name, so they stop working if it changes; unset means passkeys are unavailable.
     public_url: str | None = Field(

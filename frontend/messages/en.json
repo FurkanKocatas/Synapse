@@ -289,5 +289,6 @@
   "admin_audit_ok": "The chain is intact: events checked: {count}.",
   "admin_audit_broken": "The chain is broken: {problem}",
   "chat_recent": "Recent conversations",
-  "chat_answer": "Answer"
+  "chat_answer": "Answer",
+  "chat_general_note": "This answer does not rest on your documents; it is from general knowledge."
 }

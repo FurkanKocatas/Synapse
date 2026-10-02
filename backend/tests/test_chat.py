@@ -31,6 +31,7 @@ from synapse.chat.answering import (
     assemble,
     parse,
     schema,
+    small_talk,
     source_text,
     written,
 )
@@ -79,11 +80,16 @@ class StandInSearch:
 
 
 class StandInChat:
-    """Replies in turn from ``replies``: a dict becomes the JSON reply, split into deltas."""
+    """Replies in turn from ``replies``: a dict becomes the JSON reply, split into deltas; a
+    string is a plain-text reply. ``route`` is what a message the search found nothing for is
+    judged to be."""
 
-    def __init__(self, *replies: dict[str, Any] | Exception, rewrite: str = "") -> None:
+    def __init__(
+        self, *replies: dict[str, Any] | str | Exception, rewrite: str = "", route: str = ""
+    ) -> None:
         self.replies = list(replies)
         self.rewrite = rewrite
+        self.route = route
         self.calls: list[list[ChatMessage]] = []
         self.schemas: list[Mapping[str, Any] | None] = []
         self.closed = 0
@@ -97,6 +103,8 @@ class StandInChat:
         max_tokens: int = 1024,
     ) -> ChatReply:
         self.calls.append(list(messages))
+        if schema is not None and "kind" in schema["properties"]:
+            return ChatReply(json.dumps({"kind": self.route}))
         if isinstance(self.rewrite, Exception):
             raise self.rewrite
         return ChatReply(json.dumps({"question": self.rewrite}))
@@ -113,7 +121,7 @@ class StandInChat:
         reply = self.replies.pop(0)
         if isinstance(reply, Exception):
             raise reply
-        content = json.dumps(reply, ensure_ascii=False)
+        content = reply if isinstance(reply, str) else json.dumps(reply, ensure_ascii=False)
         try:
             for start in range(0, len(content), 7):
                 if self.release is not None:
@@ -302,14 +310,90 @@ async def test_an_answer_streams_after_its_sources_and_is_verified() -> None:
     assert messages[1].content.endswith("Soru: Kurul kaç üyeden oluşur?")
 
 
-async def test_a_low_score_is_refused_without_calling_the_model() -> None:
-    chat = StandInChat()
+async def test_a_low_score_about_the_organisation_is_refused_without_an_answer() -> None:
+    chat = StandInChat(route="documents")
     hits = [hit("İlgisiz bir metin.", score=REFUSE_BELOW - 0.1)]
     events = await events_of(answerer(hits, chat), "Konser ne zaman?")
     assert isinstance(events[0], Sources)  # shown as possibly related
     assert final(events).status == "not_found"
-    assert chat.calls == []
+    # The model only said what the question is; it wrote no answer.
+    assert chat.schemas == []
     assert final(await events_of(answerer([], chat), "Konser ne zaman?")).status == "not_found"
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Selam",
+        "merhaba!",
+        "Günaydın hocam",
+        "selam, nasılsın?",
+        "Teşekkürler 🙏",
+        "Sağol",
+        "thanks",
+    ],
+)
+def test_small_talk_is_only_greetings_thanks_and_farewells(message: str) -> None:
+    assert small_talk(message)
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Merhaba, 2026 bütçesi ne kadar?",
+        "Teşekkürler, peki meclis kaç üyeli?",
+        "Selam verme yönetmeliği",
+        "Tamam mı bu karar?",
+        "",
+    ],
+)
+def test_a_question_with_a_greeting_is_not_small_talk(message: str) -> None:
+    assert not small_talk(message)
+
+
+async def test_a_greeting_is_answered_as_conversation_without_a_search() -> None:
+    chat = StandInChat("Merhaba! Belgelerinizle ilgili ne sormak istersiniz?")
+    source = answerer([hit("Kurul 7 üyedir.")], chat)
+    history = [Turn("Kurul kaç üyeli?", "Kurul 7 üyedir. [1]")]
+    events = await events_of(source, "Selam", history)
+    assert not any(isinstance(event, Sources) for event in events)
+    assert source._search.queries == []  # type: ignore[attr-defined]
+    answer = final(events)
+    assert (answer.status, answer.kind, answer.citations) == ("answered", "conversation", [])
+    assert answer.text == "Merhaba! Belgelerinizle ilgili ne sormak istersiniz?"
+    assert "".join(e.text for e in events if isinstance(e, Delta)) == answer.text
+    (messages,) = chat.calls
+    # The conversation so far, without its citation markers, then the greeting.
+    assert [m.role for m in messages] == ["system", "user", "assistant", "user"]
+    assert messages[2].content == "Kurul 7 üyedir."
+    assert chat.schemas == [None]
+
+
+async def test_a_question_of_general_knowledge_is_answered_and_marked() -> None:
+    chat = StandInChat("Fotosentez, bitkilerin ışıkla besin üretmesidir.", route="general")
+    hits = [hit("İlgisiz bir metin.", score=REFUSE_BELOW - 0.1)]
+    events = await events_of(answerer(hits, chat), "Fotosentez nedir?")
+    answer = final(events)
+    assert (answer.status, answer.kind, answer.citations) == ("answered", "general", [])
+    assert any(isinstance(event, Generating) for event in events)
+
+
+async def test_general_answers_can_be_turned_off() -> None:
+    chat = StandInChat("Fotosentez...", route="general")
+    search = StandInSearch([hit("İlgisiz bir metin.", score=REFUSE_BELOW - 0.1)])
+    source = Answerer(search, chat, refuse_below=REFUSE_BELOW, general=False)  # type: ignore[arg-type]
+    answer = final(await events_of(source, "Fotosentez nedir?"))
+    assert (answer.status, answer.kind) == ("not_found", "documents")
+    assert chat.schemas == []
+
+
+async def test_a_message_the_model_calls_conversation_is_answered_so() -> None:
+    chat = StandInChat(
+        "Ben Synapse; belgelerinizden kaynaklı cevaplar veririm.", route="conversation"
+    )
+    hits = [hit("İlgisiz bir metin.", score=REFUSE_BELOW - 0.1)]
+    answer = final(await events_of(answerer(hits, chat), "Sen kimsin?"))
+    assert (answer.status, answer.kind) == ("answered", "conversation")
 
 
 async def test_without_reranker_scores_the_model_decides() -> None:
