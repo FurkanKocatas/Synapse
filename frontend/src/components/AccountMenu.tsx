@@ -1,5 +1,5 @@
 import { Menu } from "@base-ui/react/menu";
-import { CaretUpDownIcon, SignOutIcon, UserCircleIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, SignOutIcon, UserCircleIcon } from "@phosphor-icons/react";
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
@@ -22,7 +22,7 @@ import { storedTheme, type ThemeChoice } from "@/lib/theme";
 import { m } from "@/paraglide/messages.js";
 import { getLocale, locales, type Locale } from "@/paraglide/runtime.js";
 
-/** Who is signed in, at the foot of the navigation; the account page, the theme, the language
+/** Who is signed in, at the right of the top bar; the account page, the theme, the language
  * and signing out are in its menu. */
 export function AccountMenu() {
   const navigate = useNavigate();
@@ -41,20 +41,19 @@ export function AccountMenu() {
     <Menu.Root>
       <Menu.Trigger
         aria-label={m.account_menu()}
-        className="mt-2 flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:bg-accent"
+        className="flex h-9 items-center gap-2 rounded-lg py-1 pr-1.5 pl-1 text-left transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:bg-accent"
       >
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-semibold text-secondary-foreground">
           {initials(user?.display_name ?? "")}
         </span>
-        <span className="min-w-0 flex-1 leading-tight">
-          <span className="block truncate text-sm font-medium">{user?.display_name}</span>
-          <span className="block truncate text-xs text-muted-foreground">{user?.email}</span>
+        <span aria-hidden="true" className="hidden max-w-36 truncate text-sm font-medium xl:block">
+          {user?.display_name}
         </span>
-        <CaretUpDownIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <CaretDownIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
       </Menu.Trigger>
       <Menu.Portal>
-        <Menu.Positioner side="top" align="start" sideOffset={6} className="z-50">
-          <Menu.Popup className={`${menuPopup} w-(--anchor-width) min-w-60`}>
+        <Menu.Positioner side="bottom" align="end" sideOffset={6} className="z-50">
+          <Menu.Popup className={`${menuPopup} w-64`}>
             <div className="px-2.5 pt-1.5 pb-2 leading-snug">
               <p className="font-medium">{user?.display_name}</p>
               <p className="truncate text-xs text-muted-foreground">

@@ -43,7 +43,7 @@ export function LibraryPage() {
         )
       }
     >
-      <div className="flex min-h-0 flex-1 border-t">
+      <div className="flex min-h-0 flex-1">
         <nav
           aria-label={m.library_collections()}
           className="hidden w-60 shrink-0 overflow-y-auto border-r p-2.5 md:block"
