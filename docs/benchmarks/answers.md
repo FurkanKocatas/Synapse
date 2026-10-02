@@ -76,6 +76,23 @@ Without the 8 questions A lost to the crashes, A has 144 of 183 right (0.787) an
 
 **The chat server ran out of memory in run A.** llama-server keeps up to 8 GiB of earlier prompts in host memory by default (`--cache-ram`), and the 5 GB container was OOM-killed four times in an hour, failing the 8 answers in flight. With `--cache-ram 0` (now in the stack and in what synapsectl renders) run B peaked at 584 MiB, with no restart.
 
+## The sentence on refusing
+
+Measured 2026-10-02 with [eval/answers/prompts.py](../../eval/answers/prompts.py) on the `synapse-golden` stack, from the harness's run of that day: the 19 answerable questions the product did not answer (refused before generation or by the model), all 34 unanswerable ones, and 20 it answered correctly (seed 7). Each question is searched once and every variant gets the same sources; neither the threshold nor verification applies, so the counts show what the prompt alone does. The variants change one sentence, on when to refuse:
+
+- **strict** (until 2026-10-02): "Kaynaklar soruyu cevaplamaya yetmiyorsa sufficient alanını false yap ve tek cümle olarak 'Belgelerde bulunamadı.' yaz."
+- **lenient** (now `answering.WHEN_TO_REFUSE`): answer when the information asked for stands plainly in the sources, even if not every detail of the question does; refuse when the information itself is not there.
+- **tables**: lenient, and a table's value taken from the cell where the question's row and column headings meet.
+
+| | strict | **lenient** | tables |
+|---|---|---|---|
+| answered correctly before (20): still correct | 20 | **20** | 19 |
+| not answered before (19): answered | 5 | **10** | 12 |
+| of them correct | 3 | **7** | 6 |
+| unanswerable (34): answered | 2 | **3** | 7 |
+
+Lenient answers four more questions right and breaks none: a council decision's date and number, a centre's name, two decisions' majorities, a minute in an indicator. In the product all four were refused by the model above the threshold (`insufficient`), so it should gain them there too: 4 of 191. Its one more unanswerable answered is the cost of the sentence: asked for the 2025 health statistics yearbook, of which the corpus has only 2024's, it gives 2024's figure (and says the year); the strict prompt refused it. Of the other two, the product already answers one and refuses the other before generation, so its unanswerable refusals should go from 33 to 32 of 34, within the harness's gate (a drop of more than one). Tables answers more but right less often and lets four more unanswerable questions through; not taken. The harness measures the product with it (verification, the threshold, the second look of [design/answers.md](../design/answers.md#messages-that-are-not-questions-to-the-documents)).
+
 ## Limits
 
 - 75 questions: one answerable question is 1.5 points; the gap between the models is five to ten times that, the gap between contexts is not.
@@ -88,5 +105,5 @@ Without the 8 questions A lost to the crashes, A has 144 of 183 right (0.787) an
 1. A scorer that also accepts a golden answer's wording varied (a judge that compares the answer's facts, not its words), so the script agrees with the hand scoring; numbers are done.
 2. The same bake-off on the paraphrased questions with the shipping first stage.
 3. ~~Answer verification measured~~ Done in the product's run (above): 8 answers written again, 2 sentences removed, and none of the 19 wrong answers caught. Next: check each number against the source its own sentence cites, with its unit, and read number words with suffixes.
-4. The 15 answerable questions the model refuses with their evidence among its sources: the prompt and the context (table rows, identifiers), measured on the same run.
+4. ~~The answerable questions the model refuses with their evidence among its sources~~ The prompt's part done ("The sentence on refusing", above): four more answered right. Next: a detail that is the question's subject (a year or an edition the corpus lacks) refused while the rest of the sentence stays, and the context's part (table rows, identifiers).
 5. ~~Sources on screen within 3 seconds in the chat~~ Done after these runs: the first stage's order goes at once, the reranked order after ([design/answers.md](../design/answers.md)); the harness measures it.

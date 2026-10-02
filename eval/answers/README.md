@@ -22,10 +22,12 @@ On the CPU alone: the image `server`, and `-t 6` in place of `--device /dev/dri`
 
 ## Through the product
 
-Two scripts ask the golden set through a running stack's API instead of a bare model server: the stack of [eval/retrieval/product.py](../retrieval/README.md), with the corpus uploaded and the model servers running (`SYNAPSE_STACK_MODELS=1`).
+These scripts ask the golden set through a running stack instead of a bare model server: the stack of [eval/retrieval/product.py](../retrieval/README.md), with the corpus uploaded and the model servers running (`SYNAPSE_STACK_MODELS=1`).
 
 - [refusal.py](refusal.py): every question through `POST /api/search`, reranked; its best reranker score, and whether the evidence was among the hits. Prints the scores' spread for answerable and unanswerable questions and, per threshold, how many of each refusal before generation would refuse. Writes `work/refusal-<questions>.jsonl`.
 - [chat.py](chat.py): every question through `POST /api/chat`, each in a conversation of its own, as the page asks it: search, refusal, the context, the streamed answer, verification. Scored like answer.py (correct, cited, refused), with the time to the sources, to the first token and to the whole answer as the client sees them. With `--scores` (refusal.py's output) it also prints what each threshold of refusal before generation would make of these answers; for that the API runs with `SYNAPSE_CHAT_REFUSE_BELOW=-100`, so every question reaches the model. Writes `work/chat-<questions>.jsonl`.
+- [route.py](route.py): what the chat model calls the messages the search finds nothing good enough for (the product's route, `talk.ROUTE_SYSTEM`): every unanswerable question and the answerable ones below the threshold (from refusal.py's output) must stay questions to the documents, and messages that are not questions to them should not. Prints each group's kinds and every message that got the wrong one.
+- [prompts.py](prompts.py): variants of the answer prompt's sentence on when to refuse, on the answerable questions a harness run did not answer, every unanswerable one and a sample it answered correctly. Each question is searched once and every variant gets the same sources; the threshold and verification do not apply. Writes `work/prompts-<variant>.jsonl`.
 
 ```bash
 uv run --directory backend python ../eval/answers/refusal.py --base http://127.0.0.1:8490 \
@@ -33,9 +35,11 @@ uv run --directory backend python ../eval/answers/refusal.py --base http://127.0
 uv run --directory backend python ../eval/answers/chat.py --base http://127.0.0.1:8490 \
   --email editor@golden.example --password-file "$PWD/.dev/golden-password" \
   --scores "$PWD/eval/answers/work/refusal-questions.jsonl"
+uv run --directory backend python ../eval/answers/route.py   --refusal ../eval/answers/work/refusal-questions.jsonl
+uv run --directory backend python ../eval/answers/prompts.py --base http://127.0.0.1:8490   --email editor@golden.example --password-file "$PWD/.dev/golden-password"   --answers ~/synapse-ci/state/runs/COMMIT/answers.jsonl
 ```
 
-Results: [docs/benchmarks/refusal.md](../../docs/benchmarks/refusal.md) and [answers.md](../../docs/benchmarks/answers.md#in-the-product).
+Results: [docs/benchmarks/refusal.md](../../docs/benchmarks/refusal.md) and [answers.md](../../docs/benchmarks/answers.md#in-the-product) ([the sentence on refusing](../../docs/benchmarks/answers.md#the-sentence-on-refusing)).
 
 ## Hand scoring
 

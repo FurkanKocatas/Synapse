@@ -1,5 +1,5 @@
 """What the chat model calls messages the search found nothing good enough for (the product's
-route, answering.ROUTE_SYSTEM): every unanswerable golden question must stay ``documents``
+route, talk.ROUTE_SYSTEM): every unanswerable golden question must stay ``documents``
 (refused), and so must the answerable ones below the refusal threshold; greetings and questions
 of general knowledge should not.
 
@@ -25,7 +25,7 @@ sys.path.insert(0, str(HERE.parent / "retrieval"))
 sys.path.insert(0, str(HERE.parent / "golden"))
 
 from score import QUESTIONS  # noqa: E402
-from synapse.chat import answering  # noqa: E402
+from synapse.chat import talk  # noqa: E402
 
 LOCK = Path.home() / "synapse-ci" / "lock"
 # Runs in the API container: the chat server's address and key are there.
@@ -62,15 +62,15 @@ def body(message: str) -> str:
     return json.dumps(
         {
             "messages": [
-                {"role": "system", "content": answering.ROUTE_SYSTEM},
+                {"role": "system", "content": talk.ROUTE_SYSTEM},
                 {"role": "user", "content": message},
             ],
             "temperature": 0,
-            "max_tokens": answering.ROUTE_TOKENS,
+            "max_tokens": talk.ROUTE_TOKENS,
             "chat_template_kwargs": {"enable_thinking": False},
             "response_format": {
                 "type": "json_schema",
-                "json_schema": {"schema": answering.ROUTE_SCHEMA},
+                "json_schema": {"schema": talk.ROUTE_SCHEMA},
             },
         },
         ensure_ascii=False,
