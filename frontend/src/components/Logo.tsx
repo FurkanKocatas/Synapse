@@ -1,39 +1,42 @@
 import { cn } from "@/lib/utils";
-
 import { m } from "@/paraglide/messages.js";
 
-/** The mark: a page in front of another, with lines of text on it. */
+/** The mark (for now): a page in front of another, on a tile in the action colour. */
 export function LogoMark({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className={cn("size-6", className)}>
+    <svg viewBox="0 0 32 32" aria-hidden="true" className={cn("size-6 shrink-0", className)}>
+      <rect width="32" height="32" rx="9" className="fill-primary" />
       <rect
-        x="3.5"
-        y="2.5"
+        x="7.5"
+        y="6.5"
         width="12"
         height="16"
-        rx="2.5"
+        rx="2.2"
         fill="none"
-        strokeWidth="1.5"
-        className="stroke-muted-foreground/60"
+        strokeWidth="1.6"
+        className="stroke-primary-foreground/55"
       />
-      <rect x="8" y="5.5" width="12.5" height="16" rx="2.5" className="fill-primary" />
+      <rect x="12" y="9.5" width="12.5" height="16" rx="2.2" className="fill-primary-foreground" />
       <path
-        d="M11 10.5h6.5M11 13.5h6.5M11 16.5h4"
-        strokeWidth="1.5"
+        d="M15 14.5h6.5M15 17.5h6.5M15 20.5h4"
+        strokeWidth="1.6"
         strokeLinecap="round"
-        className="stroke-primary-foreground"
+        className="stroke-primary"
       />
     </svg>
   );
 }
 
-/** The mark and the name, as the navigation and the sign-in pages show them. */
+/** The mark and the name, as the sign-in pages show them. */
 export function Wordmark({ className }: { className?: string }) {
   return (
     <span
-      className={cn("flex items-center gap-2 text-[15px] font-semibold tracking-tight", className)}
+      className={cn(
+        "flex items-center gap-2.5 text-[15px] font-semibold tracking-tight",
+        className,
+      )}
     >
-      <LogoMark className="size-[22px]" />
+      <LogoMark className="size-7" />
       {m.app_name()}
     </span>
   );

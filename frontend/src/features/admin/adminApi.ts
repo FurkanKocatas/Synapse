@@ -46,6 +46,12 @@ export interface Grant {
   permission: Permission;
 }
 
+export interface AuditStatus {
+  ok: boolean;
+  events_checked: number;
+  problem: string | null;
+}
+
 interface Created {
   id: string;
 }
@@ -83,6 +89,8 @@ export const adminApi = {
     body: { principal_type: PrincipalType; principal: string; permission: Permission },
   ) => apiRequest<Created>("POST", `/api/admin/collections/${collectionId}/grants`, body),
   removeGrant: (grantId: string) => apiRequest<undefined>("DELETE", `/api/admin/grants/${grantId}`),
+
+  auditStatus: () => apiRequest<AuditStatus>("GET", "/api/audit/status"),
 };
 
 /** What the signed-in role may see in the administration area (the server enforces it). */
@@ -92,5 +100,11 @@ export function adminAreas(role: Role | undefined) {
     groups: role === "admin",
     collections: role === "admin" || role === "editor",
     grants: role === "admin",
+    audit: role === "auditor",
   };
+}
+
+/** Whether the role has any part of the administration panel. */
+export function hasAdministration(role: Role | undefined): boolean {
+  return Object.values(adminAreas(role)).some(Boolean);
 }

@@ -1,7 +1,6 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { useState, type SubmitEvent } from "react";
 
-import { Page } from "@/components/AppShell";
 import { FormError } from "@/components/AuthLayout";
 import { NativeSelect } from "@/components/NativeSelect";
 import { Button } from "@/components/ui/button";
@@ -11,6 +10,7 @@ import { sessionQuery } from "@/features/auth/session";
 import { fieldText } from "@/lib/forms";
 import { m } from "@/paraglide/messages.js";
 
+import { AdminPage } from "./AdminFrame";
 import { adminApi, adminAreas, type Collection } from "./adminApi";
 import { GrantsPanel } from "./GrantsPanel";
 import { useAction } from "@/lib/useAction";
@@ -58,7 +58,8 @@ export function CollectionsPage() {
   }
 
   return (
-    <Page title={m.nav_admin_collections()}>
+    <AdminPage>
+      <h2 className="text-xl font-medium tracking-tight">{m.nav_admin_collections()}</h2>
       <FormError message={error} />
       <div className="grid gap-4 md:grid-cols-2">
         <section className="flex flex-col gap-3 rounded-xl border bg-card p-5">
@@ -113,6 +114,6 @@ export function CollectionsPage() {
           </section>
         ) : null}
       </div>
-    </Page>
+    </AdminPage>
   );
 }

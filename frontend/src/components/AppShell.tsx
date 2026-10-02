@@ -94,6 +94,8 @@ interface PageProps {
   crumb?: ReactNode;
   // Page actions, at the right of the title bar.
   actions?: ReactNode;
+  // Under the title bar: the tabs of a section with several pages (administration).
+  subnav?: ReactNode;
   // A column beside the page, the full height of the window (the document viewer).
   panel?: ReactNode;
   // The page lays itself out (the chat): no scrolling, centred column of its own.
@@ -102,13 +104,16 @@ interface PageProps {
 }
 
 /** One signed-in page: a title bar over its content, and an optional panel beside it. */
-export function Page({ title, crumb, actions, panel, wide = false, children }: PageProps) {
+export function Page({ title, crumb, actions, subnav, panel, wide = false, children }: PageProps) {
   const { openNavigation } = use(Shell);
   return (
     <>
       <div className="flex min-w-0 flex-1 flex-col">
         <header
-          className={cn("flex h-13 shrink-0 items-center gap-2 px-3 md:px-5", !wide && "border-b")}
+          className={cn(
+            "flex h-13 shrink-0 items-center gap-2 px-3 md:px-5",
+            !wide && subnav === undefined && "border-b",
+          )}
         >
           <button
             type="button"
@@ -122,6 +127,7 @@ export function Page({ title, crumb, actions, panel, wide = false, children }: P
           <h1 className="min-w-0 truncate text-sm font-medium">{title}</h1>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">{actions}</div>
         </header>
+        {subnav}
         {wide ? (
           <main className="flex min-h-0 flex-1 flex-col">{children}</main>
         ) : (

@@ -1,7 +1,7 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { ShieldCheckIcon, ShieldWarningIcon } from "@phosphor-icons/react";
 import { useState, type SubmitEvent } from "react";
 
-import { Page } from "@/components/AppShell";
 import { FormError } from "@/components/AuthLayout";
 import { NativeSelect } from "@/components/NativeSelect";
 import { Button } from "@/components/ui/button";
@@ -9,9 +9,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { sessionQuery } from "@/features/auth/session";
 import { fieldText } from "@/lib/forms";
+import { initials } from "@/lib/initials";
 import { getLocale } from "@/paraglide/runtime.js";
 import { m } from "@/paraglide/messages.js";
 
+import { AdminPage } from "./AdminFrame";
 import { adminApi, ROLES, type Account, type Role } from "./adminApi";
 import { roleLabel } from "./labels";
 import { ResetPanel } from "./ResetPanel";
@@ -48,7 +50,8 @@ export function UsersPage() {
   }
 
   return (
-    <Page title={m.nav_admin_users()}>
+    <AdminPage>
+      <h2 className="text-xl font-medium tracking-tight">{m.nav_admin_users()}</h2>
       <FormError message={error} />
 
       <form
@@ -103,8 +106,7 @@ export function UsersPage() {
           <table className="w-full text-sm">
             <thead className="border-b bg-sidebar text-left text-xs text-muted-foreground">
               <tr>
-                <th className="px-3 py-2 font-medium">{m.admin_field_display_name()}</th>
-                <th className="px-3 py-2 font-medium">{m.admin_field_email()}</th>
+                <th className="px-4 py-2 font-medium">{m.admin_field_display_name()}</th>
                 <th className="px-3 py-2 font-medium">{m.admin_field_role()}</th>
                 <th className="px-3 py-2 font-medium">{m.admin_field_status()}</th>
                 <th className="px-3 py-2 font-medium">{m.admin_field_mfa()}</th>
@@ -113,9 +115,23 @@ export function UsersPage() {
             </thead>
             <tbody>
               {users.data.map((account) => (
-                <tr key={account.id} className="border-t">
-                  <td className="px-3 py-2">{account.display_name}</td>
-                  <td className="px-3 py-2">{account.email}</td>
+                <tr key={account.id} className="border-t transition-colors hover:bg-background">
+                  <td className="px-4 py-2.5">
+                    <div className="flex min-w-48 items-center gap-3">
+                      <span
+                        aria-hidden="true"
+                        className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground"
+                      >
+                        {initials(account.display_name)}
+                      </span>
+                      <span className="min-w-0 leading-tight">
+                        <span className="block truncate font-medium">{account.display_name}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {account.email}
+                        </span>
+                      </span>
+                    </div>
+                  </td>
                   <td className="px-3 py-2">
                     <NativeSelect
                       aria-label={`${m.admin_field_role()}: ${account.display_name}`}
@@ -145,7 +161,27 @@ export function UsersPage() {
                       <option value="disabled">{m.status_disabled()}</option>
                     </NativeSelect>
                   </td>
-                  <td className="px-3 py-2">{account.has_mfa ? m.mfa_on() : m.mfa_off()}</td>
+                  <td className="px-3 py-2">
+                    {account.has_mfa ? (
+                      <span className="inline-flex items-center gap-1.5 text-[13px]">
+                        <ShieldCheckIcon
+                          weight="fill"
+                          className="size-4 text-success"
+                          aria-hidden="true"
+                        />
+                        {m.mfa_on()}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-[13px] text-subtle-foreground">
+                        <ShieldWarningIcon
+                          weight="fill"
+                          className="size-4 text-warning"
+                          aria-hidden="true"
+                        />
+                        {m.mfa_off()}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2">
                     {account.id !== session?.user?.id && (
                       <Button
@@ -168,6 +204,6 @@ export function UsersPage() {
       )}
 
       {selected && <ResetPanel key={selected.id} account={selected} refresh={[USERS]} />}
-    </Page>
+    </AdminPage>
   );
 }

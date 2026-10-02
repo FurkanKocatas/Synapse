@@ -17,18 +17,10 @@ import {
 import { roleLabel } from "@/features/admin/labels";
 import { logout } from "@/features/auth/authApi";
 import { sessionQuery } from "@/features/auth/session";
+import { initials } from "@/lib/initials";
 import { storedTheme, type ThemeChoice } from "@/lib/theme";
 import { m } from "@/paraglide/messages.js";
 import { getLocale, locales, type Locale } from "@/paraglide/runtime.js";
-
-function initials(name: string): string {
-  const letters = name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word.charAt(0).toLocaleUpperCase(getLocale()));
-  return letters.join("") || "?";
-}
 
 /** Who is signed in, at the foot of the navigation; the account page, the theme, the language
  * and signing out are in its menu. */
@@ -49,7 +41,7 @@ export function AccountMenu() {
     <Menu.Root>
       <Menu.Trigger
         aria-label={m.account_menu()}
-        className="mt-1 flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:bg-accent"
+        className="mt-2 flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring data-[popup-open]:bg-accent"
       >
         <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground">
           {initials(user?.display_name ?? "")}

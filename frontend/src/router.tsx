@@ -11,7 +11,8 @@ import {
 
 import { AppLayout } from "@/components/AppShell";
 import { AccountPage } from "@/features/account/AccountPage";
-import { adminAreas } from "@/features/admin/adminApi";
+import { AdminOverview } from "@/features/admin/AdminOverview";
+import { adminAreas, hasAdministration } from "@/features/admin/adminApi";
 import { CollectionsPage } from "@/features/admin/CollectionsPage";
 import { GroupsPage } from "@/features/admin/GroupsPage";
 import { UsersPage } from "@/features/admin/UsersPage";
@@ -40,11 +41,13 @@ function guard(place: Place) {
   };
 }
 
-/** The signed-in pages' guard is on their layout; the role must also have this area. */
-function adminGuard(area: keyof ReturnType<typeof adminAreas>) {
+/** The signed-in pages' guard is on their layout; the role must also have this area (or,
+ * for the panel's overview, any area). */
+function adminGuard(area: keyof ReturnType<typeof adminAreas> | "any") {
   return async ({ context }: { context: RouterContext }) => {
     const session = await context.queryClient.query(sessionQuery);
-    if (!adminAreas(session?.user?.role)[area]) {
+    const role = session?.user?.role;
+    if (!(area === "any" ? hasAdministration(role) : adminAreas(role)[area])) {
       // eslint-disable-next-line @typescript-eslint/only-throw-error -- the router's redirect protocol
       throw redirect({ to: "/" });
     }
@@ -71,6 +74,12 @@ const signedIn = [
   }),
   createRoute({ getParentRoute: () => appRoute, path: "/library", component: LibraryPage }),
   createRoute({ getParentRoute: () => appRoute, path: "/account", component: AccountPage }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: "/admin",
+    beforeLoad: adminGuard("any"),
+    component: AdminOverview,
+  }),
   createRoute({
     getParentRoute: () => appRoute,
     path: "/admin/users",

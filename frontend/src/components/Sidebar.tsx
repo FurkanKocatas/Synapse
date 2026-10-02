@@ -1,10 +1,8 @@
 import {
   BooksIcon,
   ChatsCircleIcon,
+  GearSixIcon,
   NotePencilIcon,
-  TreeStructureIcon,
-  UserListIcon,
-  UsersThreeIcon,
   type Icon,
 } from "@phosphor-icons/react";
 import { useSuspenseQuery } from "@tanstack/react-query";
@@ -12,45 +10,29 @@ import { Link } from "@tanstack/react-router";
 import { motion } from "motion/react";
 
 import { AccountMenu } from "@/components/AccountMenu";
-import { Wordmark } from "@/components/Logo";
-import { adminAreas, type Role } from "@/features/admin/adminApi";
+import { LogoMark } from "@/components/Logo";
+import { hasAdministration } from "@/features/admin/adminApi";
 import { sessionQuery } from "@/features/auth/session";
 import { ConversationList } from "@/features/chat/ConversationList";
 import { cn } from "@/lib/utils";
 import { m } from "@/paraglide/messages.js";
 
 interface NavItem {
-  to: "/" | "/library" | "/admin/users" | "/admin/groups" | "/admin/collections";
+  to: "/" | "/library" | "/admin";
   label: () => string;
   icon: Icon;
 }
 
-const MAIN: NavItem[] = [
-  { to: "/", label: m.nav_chat, icon: ChatsCircleIcon },
-  { to: "/library", label: m.nav_library, icon: BooksIcon },
-];
+const CHAT: NavItem = { to: "/", label: m.nav_chat, icon: ChatsCircleIcon };
+const LIBRARY: NavItem = { to: "/library", label: m.nav_library, icon: BooksIcon };
+const ADMIN: NavItem = { to: "/admin", label: m.nav_admin, icon: GearSixIcon };
 
-function adminItems(role: Role | undefined): NavItem[] {
-  const areas = adminAreas(role);
-  const items: NavItem[] = [];
-  if (areas.users) items.push({ to: "/admin/users", label: m.nav_admin_users, icon: UserListIcon });
-  if (areas.groups)
-    items.push({ to: "/admin/groups", label: m.nav_admin_groups, icon: UsersThreeIcon });
-  if (areas.collections) {
-    items.push({
-      to: "/admin/collections",
-      label: m.nav_admin_collections,
-      icon: TreeStructureIcon,
-    });
-  }
-  return items;
-}
-
-/** The navigation column: a new conversation, the pages, past conversations, administration
- * for roles that have it, and the account. ``onNavigate`` closes the drawer it may sit in. */
+/** The navigation column: the product's mark, a new conversation, the pages (with the
+ * administration panel for roles that have it), past conversations, and the account.
+ * ``onNavigate`` closes the drawer it may sit in. */
 export function Sidebar({ onNavigate }: { onNavigate?: (() => void) | undefined }) {
   const { data: session } = useSuspenseQuery(sessionQuery);
-  const admin = adminItems(session?.user?.role);
+  const items = hasAdministration(session?.user?.role) ? [CHAT, LIBRARY, ADMIN] : [CHAT, LIBRARY];
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-1 p-2.5">
@@ -59,39 +41,33 @@ export function Sidebar({ onNavigate }: { onNavigate?: (() => void) | undefined 
         search={{}}
         onClick={onNavigate}
         aria-label={m.app_name()}
-        className="flex h-10 items-center self-start rounded-lg px-1.5"
+        className="flex items-center gap-2.5 self-start rounded-lg px-1.5 py-1.5"
       >
-        <Wordmark />
+        <LogoMark className="size-8" />
+        <span className="leading-tight">
+          <span className="block text-[15px] font-semibold tracking-tight">{m.app_name()}</span>
+          <span className="block text-[11px] text-muted-foreground">{m.brand_caption()}</span>
+        </span>
       </Link>
       <Link
         to="/"
         search={{}}
         state={() => ({ fresh: Date.now() })}
         onClick={onNavigate}
-        className="mt-1 flex h-9 items-center gap-2.5 rounded-lg border bg-card px-2.5 text-sm font-medium shadow-raised transition-colors hover:border-input"
+        className="mt-1.5 flex h-9 items-center gap-2.5 rounded-lg border bg-card px-2.5 text-sm font-medium shadow-raised transition-colors hover:border-input"
       >
         <NotePencilIcon className="size-4 text-secondary-foreground" aria-hidden="true" />
         {m.chat_new()}
       </Link>
       <nav aria-label={m.app_name()} className="mt-2 flex flex-col gap-px">
-        {MAIN.map((item) => (
+        {items.map((item) => (
           <NavLink key={item.to} item={item} onNavigate={onNavigate} />
         ))}
       </nav>
       <ConversationList onNavigate={onNavigate} />
-      {admin.length > 0 && (
-        <div className="-mx-2.5 border-t px-2.5 pt-1">
-          <p className="px-2.5 pt-2.5 pb-1 text-xs font-medium text-muted-foreground">
-            {m.nav_section_admin()}
-          </p>
-          <nav aria-label={m.nav_section_admin()} className="flex flex-col gap-px">
-            {admin.map((item) => (
-              <NavLink key={item.to} item={item} onNavigate={onNavigate} />
-            ))}
-          </nav>
-        </div>
-      )}
-      <AccountMenu />
+      <div className="-mx-2.5 border-t px-2.5">
+        <AccountMenu />
+      </div>
     </div>
   );
 }
@@ -102,6 +78,7 @@ function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: (() => void
     <Link
       to={item.to}
       onClick={onNavigate}
+      // The panel's link stays lit on every administration page.
       activeOptions={{ exact: item.to === "/", includeSearch: false }}
       className="group relative flex h-8 items-center gap-2.5 rounded-lg px-2.5 text-sm text-subtle-foreground transition-colors hover:text-foreground data-[status=active]:font-medium data-[status=active]:text-foreground"
     >

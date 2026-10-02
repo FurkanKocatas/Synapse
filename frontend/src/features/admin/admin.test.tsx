@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -41,19 +41,23 @@ describe("adminAreas", () => {
       groups: true,
       collections: true,
       grants: true,
+      audit: false,
     });
     expect(adminAreas("editor")).toEqual({
       users: false,
       groups: false,
       collections: true,
       grants: false,
+      audit: false,
     });
     expect(adminAreas("member")).toEqual({
       users: false,
       groups: false,
       collections: false,
       grants: false,
+      audit: false,
     });
+    expect(adminAreas("auditor").audit).toBe(true);
   });
 });
 
@@ -84,7 +88,9 @@ describe("users page", () => {
     render(<App />);
 
     // In the table (the navigation's account menu shows the same address).
-    expect(await screen.findByRole("cell", { name: "admin@example.org" })).toBeInTheDocument();
+    expect(
+      await within(await screen.findByRole("table")).findByText("admin@example.org"),
+    ).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(m.admin_field_display_name()), "Ayşe");
     await userEvent.type(screen.getByLabelText(m.admin_field_email()), "admin@example.org");
     await userEvent.type(screen.getByLabelText(m.admin_field_password()), "a long passphrase here");
@@ -147,5 +153,67 @@ describe("users page", () => {
       await screen.findByRole("heading", { name: greeting("Admin", new Date().getHours()) }),
     ).toBeInTheDocument();
     expect(window.location.pathname).toBe("/");
+  });
+});
+
+describe("administration panel", () => {
+  it("sums up accounts, groups and collections, and says what needs attention", async () => {
+    window.history.replaceState(null, "", "/admin");
+    fakeApi((call) => {
+      if (call.path === "/api/auth/session") {
+        return { status: 200, body: { auth_level: "full", csrf_token: "c", user: admin } };
+      }
+      if (call.path === "/api/admin/users") {
+        return {
+          status: 200,
+          body: [
+            { ...admin, status: "active", has_mfa: true },
+            { ...admin, id: "u1", email: "b@example.org", status: "active", has_mfa: false },
+            { ...admin, id: "u2", email: "c@example.org", status: "disabled", has_mfa: false },
+          ],
+        };
+      }
+      if (call.path === "/api/admin/groups") {
+        return { status: 200, body: [{ id: "g1", name: "Mali", member_count: 0 }] };
+      }
+      if (call.path === "/api/admin/collections") {
+        return {
+          status: 200,
+          body: [
+            { id: "c1", parent_id: null, name: "Kararlar" },
+            { id: "c2", parent_id: "c1", name: "2026" },
+          ],
+        };
+      }
+      return { status: 200, body: [] };
+    });
+    render(<App />);
+
+    expect(
+      await screen.findByText(m.admin_stat_users_detail({ active: "2", disabled: "1" })),
+    ).toBeInTheDocument();
+    expect(screen.getByText(m.admin_stat_collections_detail({ top: "1" }))).toBeInTheDocument();
+    // Only the active account without a second factor counts; the disabled one is listed apart.
+    expect(screen.getByText(m.admin_attention_mfa({ count: "1" }))).toBeInTheDocument();
+    expect(screen.getByText(m.admin_attention_disabled({ count: "1" }))).toBeInTheDocument();
+    expect(screen.getByText(m.admin_attention_empty_groups({ count: "1" }))).toBeInTheDocument();
+    const tabs = screen.getByRole("navigation", { name: m.nav_admin() });
+    expect(within(tabs).getAllByRole("link")).toHaveLength(4);
+  });
+
+  it("is not in the navigation of a role without administration", async () => {
+    fakeApi((call) =>
+      call.path === "/api/auth/session"
+        ? {
+            status: 200,
+            body: { auth_level: "full", csrf_token: "c", user: { ...admin, role: "member" } },
+          }
+        : { status: 200, body: [] },
+    );
+    render(<App />);
+    expect(
+      await screen.findByRole("heading", { name: greeting("Admin", new Date().getHours()) }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: m.nav_admin() })).not.toBeInTheDocument();
   });
 });

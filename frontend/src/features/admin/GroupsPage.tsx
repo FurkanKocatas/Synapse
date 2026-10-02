@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, type SubmitEvent } from "react";
 
-import { Page } from "@/components/AppShell";
 import { FormError } from "@/components/AuthLayout";
 import { NativeSelect } from "@/components/NativeSelect";
 import { Button } from "@/components/ui/button";
@@ -10,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { fieldText } from "@/lib/forms";
 import { m } from "@/paraglide/messages.js";
 
+import { AdminPage } from "./AdminFrame";
 import { adminApi, type Group } from "./adminApi";
 import { useAction } from "@/lib/useAction";
 
@@ -27,7 +27,8 @@ export function GroupsPage() {
   }
 
   return (
-    <Page title={m.nav_admin_groups()}>
+    <AdminPage>
+      <h2 className="text-xl font-medium tracking-tight">{m.nav_admin_groups()}</h2>
       <FormError message={error} />
       <div className="grid gap-4 md:grid-cols-2">
         <section className="flex flex-col gap-3 rounded-xl border bg-card p-5">
@@ -66,7 +67,7 @@ export function GroupsPage() {
           )}
         </section>
       </div>
-    </Page>
+    </AdminPage>
   );
 }
 
