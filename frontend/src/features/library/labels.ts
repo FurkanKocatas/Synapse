@@ -4,11 +4,14 @@ import { m } from "@/paraglide/messages.js";
 
 import type { VersionStatus } from "./libraryApi";
 
+// In the words of someone who does not know how a document is processed: a scan being read is
+// "reading" (with a note that it takes a while), and a document searchable by its words is
+// "ready" though its meaning is still to be added.
 export const statusLabel: Record<VersionStatus, () => string> = {
   queued: m.status_queued,
   parsing: m.status_parsing,
-  parsed: m.status_parsed,
-  ocr: m.status_ocr,
+  ocr: m.status_parsing,
+  parsed: m.status_ready,
   embedding: m.status_embedding,
   ready: m.status_ready,
   failed: m.status_failed,

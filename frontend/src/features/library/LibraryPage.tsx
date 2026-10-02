@@ -1,27 +1,40 @@
-import { BooksIcon, CaretRightIcon, FolderSimpleIcon, LockSimpleIcon } from "@phosphor-icons/react";
+import {
+  BooksIcon,
+  CaretRightIcon,
+  ChatsCircleIcon,
+  FolderOpenIcon,
+  FolderSimpleIcon,
+  LockSimpleIcon,
+} from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import { AnimatePresence } from "motion/react";
 import { useState } from "react";
 
 import { Page } from "@/components/AppShell";
 import { NativeSelect } from "@/components/NativeSelect";
+import { buttonVariants } from "@/components/ui/button";
 import { inTreeOrder } from "@/features/admin/CollectionsPage";
+import { DocumentViewer, type Viewed } from "@/features/chat/DocumentViewer";
 import { cn } from "@/lib/utils";
 import { m } from "@/paraglide/messages.js";
 
 import { DocumentTable } from "./DocumentTable";
-import { libraryApi, type LibraryCollection } from "./libraryApi";
+import { libraryApi, type LibraryCollection, type LibraryDocument } from "./libraryApi";
 import { UploadBox } from "./UploadBox";
 
 // Tailwind needs literal class names; deeper levels share the last one.
 const INDENT = ["pl-2.5", "pl-6", "pl-9", "pl-12", "pl-15"];
 
-/** The collections the user can read, as a tree beside the documents of the chosen one. */
+/** The folders (collections) the user can read, as a tree beside the documents of the chosen
+ * one; a document opens in the viewer beside the list. */
 export function LibraryPage() {
   const collections = useQuery({
     queryKey: ["library", "collections"],
     queryFn: libraryApi.collections,
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<Viewed | null>(null);
   const tree = inTreeOrder(collections.data ?? []);
   // The first collection is open until the user picks another.
   const selected =
@@ -42,6 +55,19 @@ export function LibraryPage() {
           </span>
         )
       }
+      panel={
+        <AnimatePresence>
+          {viewing !== null && (
+            <DocumentViewer
+              key={viewing.document_id}
+              source={viewing}
+              onClose={() => {
+                setViewing(null);
+              }}
+            />
+          )}
+        </AnimatePresence>
+      }
     >
       <div className="flex min-h-0 flex-1">
         <nav
@@ -59,6 +85,7 @@ export function LibraryPage() {
                   <button
                     type="button"
                     aria-current={current ? "true" : undefined}
+                    title={collection.can_write ? undefined : m.library_view_only()}
                     className={cn(
                       "flex h-10 w-full items-center gap-2.5 rounded-xl pr-2.5 text-left text-[14.5px] text-subtle-foreground transition-colors hover:bg-accent hover:text-foreground",
                       INDENT[Math.min(depth, INDENT.length - 1)],
@@ -111,7 +138,13 @@ export function LibraryPage() {
             ) : selected === null ? (
               <Empty />
             ) : (
-              <CollectionView key={selected.id} collection={selected} />
+              <CollectionView
+                key={selected.id}
+                collection={selected}
+                onOpen={(document) => {
+                  setViewing(opened(document));
+                }}
+              />
             )}
           </div>
         </div>
@@ -129,14 +162,45 @@ function Empty() {
   );
 }
 
-function CollectionView({ collection }: { collection: LibraryCollection }) {
+/** A document as the viewer opens it from the list: its first page, nothing marked. */
+function opened(document: LibraryDocument): Viewed {
+  return {
+    document_id: document.id,
+    title: document.title,
+    version: document.latest_version,
+    ordinal: null,
+    page_start: 1,
+    page_end: 1,
+  };
+}
+
+function CollectionView({
+  collection,
+  onOpen,
+}: {
+  collection: LibraryCollection;
+  onOpen: (document: LibraryDocument) => void;
+}) {
   return (
     <>
-      <header>
-        <h2 className="text-2xl font-semibold tracking-tight">{collection.name}</h2>
-        {collection.can_write && (
-          <p className="mt-0.5 text-sm text-muted-foreground">{m.library_can_write()}</p>
-        )}
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-2.5 text-2xl font-semibold tracking-tight">
+            <FolderOpenIcon
+              weight="duotone"
+              className="size-7 shrink-0 text-secondary-foreground"
+              aria-hidden="true"
+            />
+            <span className="min-w-0 truncate">{collection.name}</span>
+          </h2>
+          {collection.can_write && (
+            <p className="mt-1 text-sm text-muted-foreground">{m.library_can_write()}</p>
+          )}
+        </div>
+        <Link to="/" search={{}} className={buttonVariants({ variant: "outline" })}>
+          <ChatsCircleIcon aria-hidden="true" />
+          {m.library_ask()}
+        </Link>
       </header>
       {collection.can_write ? (
         <UploadBox collectionId={collection.id} />
@@ -146,7 +210,7 @@ function CollectionView({ collection }: { collection: LibraryCollection }) {
           {m.library_read_only()}
         </p>
       )}
-      <DocumentTable collection={collection} />
+      <DocumentTable collection={collection} onOpen={onOpen} />
     </>
   );
 }

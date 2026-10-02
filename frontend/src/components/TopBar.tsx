@@ -3,14 +3,15 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
 import { AccountMenu } from "@/components/AccountMenu";
+import { HistoryButtons } from "@/components/HistoryButtons";
 import { LogoMark } from "@/components/Logo";
 import { hasAdministration } from "@/features/admin/adminApi";
 import { sessionQuery } from "@/features/auth/session";
 import { m } from "@/paraglide/messages.js";
 
 /** The bar across the top of the signed-in pages. Three equal-width parts, so the mark stays
- * in the middle whatever the page's title: the page's title and actions (filled by Page), the
- * mark, and administration with the account menu on the right. */
+ * in the middle whatever the page's title: back and forward with the page's title and actions
+ * (filled by Page), the mark, and administration with the account menu on the right. */
 export function TopBar({
   titleSlot,
   onOpenNavigation,
@@ -32,6 +33,8 @@ export function TopBar({
         >
           <ListIcon className="size-5" aria-hidden="true" />
         </button>
+        <HistoryButtons />
+        <span aria-hidden="true" className="mx-1 hidden h-5 w-px shrink-0 bg-border sm:block" />
         <div ref={titleSlot} className="hidden min-w-0 items-center gap-2 sm:flex" />
       </div>
 

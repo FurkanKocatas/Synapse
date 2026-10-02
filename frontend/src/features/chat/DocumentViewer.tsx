@@ -56,9 +56,18 @@ export function pageQuery(documentId: string, version: number, number: number) {
 const WIDTH = 560;
 const EASE = [0.32, 0.72, 0, 1] as const;
 
-/** The page a citation points to, its cited passage highlighted, in a panel beside the chat.
- * On wide screens the chat makes room for it; on narrow ones it slides over the chat. */
-export function DocumentViewer({ source, onClose }: { source: Source; onClose: () => void }) {
+/** What the viewer opens: a citation's page and passage, or (from the documents page) a
+ * document's first page with no passage to mark. */
+export type Viewed = Pick<
+  Source,
+  "document_id" | "title" | "version" | "page_start" | "page_end"
+> & {
+  ordinal: number | null;
+};
+
+/** The page a citation points to, its cited passage highlighted, in a panel beside the page.
+ * On wide screens the page makes room for it; on narrow ones it slides over the page. */
+export function DocumentViewer({ source, onClose }: { source: Viewed; onClose: () => void }) {
   const [number, setNumber] = useState(source.page_start);
   const page = useQuery(pageQuery(source.document_id, source.version, number));
   const close = useRef<HTMLButtonElement>(null);
