@@ -63,6 +63,14 @@ TRANSCRIBE = (
     "code character for character, in the original language and spelling; do not translate, "
     "correct, summarise or add anything. If a part is unreadable, leave it out."
 )
+# Not a reading: what kind of page it is, to keep translations, Ottoman originals and
+# handwriting apart in a test set whose truth was typed by people (wikisource.py).
+KIND = (
+    "Look at this page image and answer with one line of JSON and nothing else: "
+    '{"script": "latin" or "arabic" or "cyrillic" or "greek" or "mixed" or "none", '
+    '"writing": "printed" or "handwritten" or "typewritten" or "mixed" or "none", '
+    '"language": the two-letter code of the main language of the text}'
+)
 DOTS_PROMPT = (
     "Please output the layout information from the PDF image, including each layout "
     "element's bbox, its category, and the corresponding text content within the "
@@ -190,6 +198,20 @@ RECIPES = {
             "--quantization",
             "fp8",
         ),
+    ),
+    "page-kind": Recipe(
+        "Qwen/Qwen3-VL-4B-Instruct",
+        KIND,
+        max_tokens=60,
+        serve=(
+            "--gpu-memory-utilization",
+            "0.85",
+            "--max-model-len",
+            "16384",
+            "--quantization",
+            "fp8",
+        ),
+        text=str.strip,
     ),
 }
 
