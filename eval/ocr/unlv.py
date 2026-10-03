@@ -18,17 +18,19 @@ from pathlib import Path
 from PIL import Image
 
 CONDITIONS = {"2B": "200dpi", "3B": "300dpi", "3A": "300dpi-adaptive"}
+BOX_FIELDS = 4  # a zone line starts with left, top, width and height
 
 
 def zones_only(tif: Path, target: Path) -> None:
     """The scan with everything outside its zones (.uzn: left top width height type) white."""
-    with Image.open(tif) as page:
-        page = page.convert("L")
+    with Image.open(tif) as scan:
+        page = scan.convert("L")
         out = Image.new("L", page.size, 255)
         for line in tif.with_suffix(".uzn").read_text(encoding="latin-1").splitlines():
             parts = line.split()
-            if len(parts) >= 4 and all(p.lstrip("-").isdigit() for p in parts[:4]):
-                left, top, width, height = map(int, parts[:4])
+            box_numbers = parts[:4]
+            if len(box_numbers) == BOX_FIELDS and all(p.lstrip("-").isdigit() for p in box_numbers):
+                left, top, width, height = map(int, box_numbers)
                 box = (left, top, left + width, top + height)
                 out.paste(page.crop(box), box[:2])
         out.save(target, optimize=True)
