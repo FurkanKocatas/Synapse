@@ -101,11 +101,32 @@ def layout_text(reply: str) -> str:
     return "\n".join(plain(text) for text in texts if text)
 
 
+def without_tail_loop(text: str) -> str:
+    """OvisOCR2's own clean-up (its model card's ``_clean_truncated_repeats``): a reply that ran
+    to its length repeating a unit of 1 to 200 characters at least 5 times keeps one."""
+    n = len(text)
+    if n < 8000:  # noqa: PLR2004  (the card's values throughout)
+        return text
+    for unit in range(1, min(200, n - 1) + 1):
+        if text[n - 1] != text[n - 1 - unit]:
+            continue
+        match = 1
+        i = n - 2
+        while i >= unit and text[i] == text[i - unit]:
+            match += 1
+            i -= 1
+        total = match + unit
+        if total // unit >= 5 and total >= 100:  # noqa: PLR2004
+            return text[: n - total + unit] + text[n - total % unit :]
+    return text
+
+
 RECIPES = {
     "ovisocr2": Recipe(
         "ATH-MaaS/OvisOCR2",
         OVIS_PROMPT,
         max_tokens=16384,
+        text=lambda reply: plain(without_tail_loop(reply)),
         extra={
             "chat_template_kwargs": {"enable_thinking": False},
             "mm_processor_kwargs": {
@@ -120,7 +141,10 @@ RECIPES = {
         max_tokens=16384,
         serve=(
             "--gpu-memory-utilization",
-            "0.85",
+            "0.9",
+            # The default context (131,072) leaves no room for its cache on 12 GB.
+            "--max-model-len",
+            "24576",
             "--chat-template-content-format",
             "string",
             "--served-model-name",
@@ -133,7 +157,13 @@ RECIPES = {
     "deepseek-ocr-2": Recipe(
         "deepseek-ai/DeepSeek-OCR-2",
         "<image>\n<|grounding|>Convert the document to markdown. ",
-        serve=("--trust-remote-code", "--gpu-memory-utilization", "0.85"),
+        serve=(
+            "--trust-remote-code",
+            "--gpu-memory-utilization",
+            "0.9",
+            "--max-model-len",
+            "16384",
+        ),
     ),
     "qwen3-vl-8b": Recipe(
         "Qwen/Qwen3-VL-8B-Instruct",
@@ -218,7 +248,15 @@ def main() -> None:
     options.add_argument("--base-url", default="http://127.0.0.1:8000/v1")
     options.add_argument("--parallel", type=int, default=4)
     options.add_argument("--serve", action="store_true", help="print how to start the server")
+    options.add_argument("--retext", action="store_true", help="write the text again from raw/")
     args = options.parse_args()
+    if args.retext:
+        recipe = RECIPES[args.recipe]
+        target = args.out / args.recipe
+        for raw in sorted((target / "raw").glob("*.md")):
+            text = recipe.text(raw.read_text(encoding="utf-8"))
+            (target / f"{raw.stem}.txt").write_text(text, encoding="utf-8")
+        return
     if args.serve:
         recipe = RECIPES[args.recipe]
         print(" ".join(["vllm", "serve", recipe.model, *recipe.serve]))
