@@ -44,6 +44,9 @@ GAP = 1.5
 STEM = 4
 # A word pair or triple seen this many times in the pivot at most places a chunk (in_order_of).
 RARE = 3
+# An engine reading fewer words than this share of the page's median reading failed on that page
+# (an empty table, a refusal) and is left out of its vote rather than voting "nothing here".
+SHORT = 0.3
 FOLD = str.maketrans("çğıöşüâîûÇĞİÖŞÜÂÎÛ", "cgiosuaiuCGIOSUAIU")
 HATS = set("âîûÂÎÛ")
 
@@ -212,6 +215,13 @@ def agreement(pivot: list[str], others: list[list[str]]) -> float:
     return same / (len(pivot) * len(others))
 
 
+def present(readings: list[list[str]]) -> list[int]:
+    """The engines (indices) whose reading of a page is long enough to vote; the pivot always."""
+    lengths = sorted(len(r) for r in readings)
+    median = lengths[len(lengths) // 2]
+    return [k for k, r in enumerate(readings) if k == 0 or len(r) >= SHORT * median]
+
+
 def lexicon(vocabulary: set[str]) -> dict[str, float]:
     from wordfreq import zipf_frequency  # noqa: PLC0415  (only for --lexicon)
 
@@ -263,9 +273,11 @@ def main() -> None:
     if args.lexicon:
         frequency = lexicon({w for page in readings.values() for r in page for w in r})
     for page, page_readings in readings.items():
-        letters = engines.index(args.letters) if args.letters else None
-        hats = engines.index(args.hats) if args.hats else None
-        result = vote(page_readings, frequency, args.rule, letters, hats)
+        kept = present(page_readings)
+        trusted = {e: kept.index(engines.index(e)) for e in engines if engines.index(e) in kept}
+        letters = trusted.get(args.letters) if args.letters else None
+        hats = trusted.get(args.hats) if args.hats else None
+        result = vote([page_readings[k] for k in kept], frequency, args.rule, letters, hats)
         (target / page).write_text(" ".join(result), encoding="utf-8")
     print(name, len(pages), "pages")
 

@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from vote import agreement, in_order_of, vote
+from vote import agreement, in_order_of, present, vote
 
 
 def test_the_reading_most_engines_give_wins() -> None:
@@ -102,3 +102,8 @@ def test_a_far_commoner_variant_in_turkish_letters_wins() -> None:
         ["eğitim", "fıkrada", "dış"],
     ]
     assert vote(readings, frequency, rule="gap") == ["eğitim", "fıkrada", "diş"]
+
+
+def test_an_engine_that_failed_on_a_page_does_not_vote() -> None:
+    page = ["Meclis", "kararı", "kabul", "edildi", "ve", "yayımlandı"]
+    assert present([page, page, [], page[:1], page]) == [0, 1, 4]
