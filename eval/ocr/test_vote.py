@@ -71,3 +71,34 @@ def test_the_alignment_that_pairs_the_right_words_agrees_more() -> None:
     as_read = ["İkinci", "sütun", "şöyle", "devam", "eder", "Birinci", "sütunun", "metni", "burada"]
     chunks = [as_read[:5], as_read[5:]]
     assert agreement(pivot, [in_order_of(pivot, chunks)]) > agreement(pivot, [as_read])
+
+
+def test_the_engine_trusted_with_turkish_letters_settles_them() -> None:
+    glyphs = ["fıkrası", "uyarınca", "Büyükşehir"]
+    language = ["fikrası", "uyarınca", "Büyüksehir"]
+    assert vote([glyphs, language, language]) == language
+    assert vote([glyphs, language, language], letters=0) == glyphs
+    assert vote([language, language, glyphs], letters=2) == glyphs
+    # a different word is still the majority's
+    other = ["fıkrası", "uyarınca", "Belediye"]
+    assert vote([other, language, language], letters=0) == ["fıkrası", "uyarınca", "Büyüksehir"]
+
+
+def test_the_engine_trusted_with_circumflexes_adds_them() -> None:
+    plain = ["malî", "hizmetler"]
+    dropped = ["mali", "hizmetler"]
+    dotless = ["malı", "hizmetler"]
+    assert vote([dropped, dropped, plain]) == dropped
+    assert vote([dropped, dotless, dropped, plain], letters=0, hats=3) == plain
+    # circumflexes go on letters only, never on another word
+    assert vote([["idari"], ["idari"], ["iddia"]], hats=2) == ["idari"]
+
+
+def test_a_far_commoner_variant_in_turkish_letters_wins() -> None:
+    frequency = {"eğitim": 5.6, "egitim": 3.6, "diş": 4.7, "dış": 5.3, "fıkra": 3.8}
+    readings = [
+        ["egitim", "fikrada", "diş"],
+        ["egitim", "fikrada", "diş"],
+        ["eğitim", "fıkrada", "dış"],
+    ]
+    assert vote(readings, frequency, rule="gap") == ["eğitim", "fıkrada", "diş"]

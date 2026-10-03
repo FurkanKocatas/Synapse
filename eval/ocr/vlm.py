@@ -165,12 +165,26 @@ RECIPES = {
             "16384",
         ),
     ),
+    # Does not fit 12 GB: 9.9 GiB of weights even in fp8, and vLLM's profiling spills into
+    # system memory under WSL (shared GPU memory) and stalls.
     "qwen3-vl-8b": Recipe(
         "Qwen/Qwen3-VL-8B-Instruct",
         TRANSCRIBE,
         serve=(
             "--gpu-memory-utilization",
             "0.9",
+            "--max-model-len",
+            "16384",
+            "--quantization",
+            "fp8",
+        ),
+    ),
+    "qwen3-vl-4b": Recipe(
+        "Qwen/Qwen3-VL-4B-Instruct",
+        TRANSCRIBE,
+        serve=(
+            "--gpu-memory-utilization",
+            "0.85",
             "--max-model-len",
             "16384",
             "--quantization",
