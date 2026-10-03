@@ -9,6 +9,10 @@ place, ties going to the earlier engine in ``--engines``; where most engines rea
 added where most of the other engines insert that same word at that place. Nothing new is ever
 written: every word of the result is some engine's reading.
 
+Engines read columns and boxes in different orders. For each page the others are aligned
+either as read or with their lines put in the pivot's order (in_order_of), whichever agrees
+more with the pivot: reordering alone mends pages read in another order and breaks others.
+
 With ``--lexicon``, readings that differ only in Turkish letters or circumflexes ("fıkra" and
 "fikra") are looked up in Turkish word frequencies (wordfreq): by default the vote's winner gives
 way to such a variant only when it is no Turkish word and the variant is (``--rule unknown``);
@@ -31,6 +35,8 @@ from measure import words
 # Zipf frequencies (wordfreq): below UNKNOWN a reading is not taken for a Turkish word, from
 # KNOWN on it is one.
 UNKNOWN, KNOWN = 1.5, 2.5
+# A word pair or triple seen this many times in the pivot at most places a chunk (in_order_of).
+RARE = 3
 FOLD = str.maketrans("çğıöşüâîûÇĞİÖŞÜÂÎÛ", "cgiosuaiuCGIOSUAIU")
 
 
@@ -105,6 +111,43 @@ def vote(
     return result
 
 
+def in_order_of(pivot: list[str], chunks: list[list[str]]) -> list[str]:
+    """Another engine's lines or paragraphs put in the pivot's reading order before the words
+    are aligned: each goes where its word pairs and triples that are rare in the pivot (three
+    times at most) say it stands there; a chunk with none follows the one before it. Two engines
+    that read a page's columns or boxes in different orders then align instead of clashing."""
+    index: dict[tuple[str, ...], list[int]] = {}
+    for n in (3, 2):
+        for k in range(len(pivot) - n + 1):
+            index.setdefault(tuple(pivot[k : k + n]), []).append(k)
+    rare = {gram: places for gram, places in index.items() if len(places) <= RARE}
+    placed: list[tuple[float, int, list[str]]] = []
+    previous = -1.0
+    for number, chunk in enumerate(chunks):
+        offsets: Counter[int] = Counter()
+        for n in (3, 2):
+            for k in range(len(chunk) - n + 1):
+                for place in rare.get(tuple(chunk[k : k + n]), ()):
+                    offsets[place - k] += 1
+            if offsets:
+                break
+        where = float(offsets.most_common(1)[0][0]) if offsets else previous + 0.001
+        placed.append((where, number, chunk))
+        previous = where
+    return [word for _, _, chunk in sorted(placed) for word in chunk]
+
+
+def agreement(pivot: list[str], others: list[list[str]]) -> float:
+    """How often the other engines, aligned to the pivot, read the pivot's own word: an
+    alignment that pairs the right words agrees more, and the truth is not needed to see it."""
+    if not pivot or not others:
+        return 0.0
+    same = sum(
+        1 for other in others for i, w in enumerate(aligned(pivot, other)[0]) if w == pivot[i]
+    )
+    return same / (len(pivot) * len(others))
+
+
 def lexicon(vocabulary: set[str]) -> dict[str, float]:
     from wordfreq import zipf_frequency  # noqa: PLC0415  (only for --lexicon)
 
@@ -118,6 +161,9 @@ def main() -> None:
     options.add_argument("--name")
     options.add_argument("--lexicon", action="store_true")
     options.add_argument("--rule", choices=("unknown", "first"), default="unknown")
+    # How the others are aligned: the page as one sequence, its chunks in the pivot's order, or
+    # per page whichever of the two agrees more with the pivot (the default).
+    options.add_argument("--order", choices=("page", "chunks", "best"), default="best")
     args = options.parse_args()
     engines = args.engines.split(",")
     name = args.name or "vote-" + "+".join(engines) + ("-lexicon" if args.lexicon else "")
@@ -126,9 +172,23 @@ def main() -> None:
     target.mkdir(parents=True, exist_ok=True)
     pages = sorted(p.name for p in (out / engines[0]).glob("*.txt"))
     pages = [p for p in pages if all((out / e / p).exists() for e in engines)]
-    readings = {
-        p: [words((out / e / p).read_text(encoding="utf-8")) for e in engines] for p in pages
-    }
+    readings = {}
+    for page in pages:
+        texts = [(out / e / page).read_text(encoding="utf-8") for e in engines]
+        pivot = words(texts[0])
+        as_read = [words(text) for text in texts[1:]]
+        reordered = [
+            in_order_of(pivot, [w for line in text.splitlines() if (w := words(line))])
+            for text in texts[1:]
+        ]
+        if args.order == "page":
+            others = as_read
+        elif args.order == "chunks":
+            others = reordered
+        else:
+            better = agreement(pivot, reordered) > agreement(pivot, as_read)
+            others = reordered if better else as_read
+        readings[page] = [pivot, *others]
     frequency = None
     if args.lexicon:
         frequency = lexicon({w for page in readings.values() for r in page for w in r})

@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from vote import vote
+from vote import agreement, in_order_of, vote
 
 
 def test_the_reading_most_engines_give_wins() -> None:
@@ -55,3 +55,19 @@ def test_a_rare_word_the_engines_agree_on_is_kept() -> None:
     readings = [["diş", "hekimi"], ["diş", "hekimi"], ["dış", "hekimi"]]
     assert vote(readings, frequency) == ["diş", "hekimi"]
     assert vote(readings, frequency, rule="first") == ["dış", "hekimi"]
+
+
+def test_columns_read_in_another_order_are_put_in_the_pivots() -> None:
+    pivot = ["Birinci", "sütunun", "metni", "burada", "İkinci", "sütun", "şöyle", "devam", "eder"]
+    chunks = [
+        ["İkinci", "sütun", "şöyle", "devam", "eder"],
+        ["Birinci", "sütunun", "metni", "burada"],
+    ]
+    assert in_order_of(pivot, chunks) == pivot
+
+
+def test_the_alignment_that_pairs_the_right_words_agrees_more() -> None:
+    pivot = ["Birinci", "sütunun", "metni", "burada", "İkinci", "sütun", "şöyle", "devam", "eder"]
+    as_read = ["İkinci", "sütun", "şöyle", "devam", "eder", "Birinci", "sütunun", "metni", "burada"]
+    chunks = [as_read[:5], as_read[5:]]
+    assert agreement(pivot, [in_order_of(pivot, chunks)]) > agreement(pivot, [as_read])
