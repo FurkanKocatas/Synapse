@@ -105,6 +105,9 @@ FIRST = {
 # Bytes per page above which a source file is taken for a scan (born-digital PDFs hold a few kB).
 SCANNED = 40_000
 SOFT_HYPHEN, NBSP = chr(0xAD), chr(0xA0)
+# A transcriber's note in brackets: several words ("[Twitter iletileri görüntüsü]", "[Cumhuriyet
+# gazetesinin iç sayfalarından"); a footnote mark ("[1]") is not one.
+DESCRIBED = re.compile(r"\[[^\]\d]*[^\W\d_]{3,}\s+[^\W\d_]{2,}")
 # A page with fewer letters than this holds no text to read (a photograph, a blank page).
 LETTERS = 20
 # Footnotes go to the page's foot, where the scan shows them.
@@ -274,9 +277,15 @@ def from_html(page_html: str) -> str:
     return "\n".join(line.strip() for line in text.split("\n") if line.strip())
 
 
-def layout(root: Path, work: Path) -> None:
+def layout(root: Path, work: Path, labels_path: Path | None = None) -> None:
+    """``labels`` (JSON, kept with the data) names the source files whose pages are not printed
+    Latin-script transcriptions: "exclude" (a translation's original, Ottoman script, two
+    languages, a watermark the digitiser added), "handwriting", "photo"; and single pages by
+    revision ("pages": {revid: kind}). Every other scanned page is "scan"."""
     pages = json.loads((root / "pages.json").read_text(encoding="utf-8"))
     files = json.loads((root / "files.json").read_text(encoding="utf-8"))
+    labels = json.loads(labels_path.read_text(encoding="utf-8")) if labels_path else {}
+    by_file, by_page = labels.get("files", {}), labels.get("pages", {})
     (work / "truth").mkdir(parents=True, exist_ok=True)
     (work / "images").mkdir(parents=True, exist_ok=True)
     kept: Counter = Counter()
@@ -287,10 +296,18 @@ def layout(root: Path, work: Path) -> None:
         if not (rendered.exists() and image.exists() and source):
             continue
         text = from_html(rendered.read_text(encoding="utf-8"))
-        if sum(c.isalpha() for c in text) < LETTERS:
+        # A transcriber who described a picture instead of reading it: "[Twitter görüntüsü]".
+        if sum(c.isalpha() for c in text) < LETTERS or DESCRIBED.search(text):
+            kept["skipped"] += 1
             continue
         per_page = source["bytes"] / max(1, source.get("pagecount") or 1)
         condition = "scan" if per_page >= SCANNED else "digital"
+        kind = by_page.get(str(page["revid"])) or by_file.get(page["file"])
+        if kind == "exclude":
+            kept["excluded"] += 1
+            continue
+        if kind:
+            condition = kind
         (work / "truth" / f"{page['revid']}.txt").write_text(text + "\n", encoding="utf-8")
         link = work / "images" / f"{page['revid']}.{condition}.jpg"
         if not link.exists():
@@ -305,13 +322,14 @@ def main() -> None:
     lay = sub.add_parser("layout")
     lay.add_argument("--root", type=Path, required=True)
     lay.add_argument("--work", type=Path, required=True)
+    lay.add_argument("--labels", type=Path)
     t = sub.add_parser("truth")
     t.add_argument("--pages", type=Path, required=True)
     t.add_argument("--out", type=Path, required=True)
     t.add_argument("--html", type=Path)
     args = options.parse_args()
     if args.command == "layout":
-        layout(args.root, args.work)
+        layout(args.root, args.work, args.labels)
         return
     pages = json.loads(args.pages.read_text(encoding="utf-8"))
     args.out.mkdir(parents=True, exist_ok=True)
