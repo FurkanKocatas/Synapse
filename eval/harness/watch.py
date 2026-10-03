@@ -65,9 +65,9 @@ INGESTION = [
     "synapsectl/src/synapsectl/models.py",
 ]
 # What the measurement does not read: a commit that changes only these is marked and
-# skipped. The web interface is not part of it (run.py asks the API), and neither is how
-# this watcher schedules runs.
-NOT_MEASURED = ("docs/", "frontend/", "README.md", "eval/harness/watch.py")
+# skipped. The web interface is not part of it (run.py asks the API), nor the OCR
+# benchmark's tools (run apart, on their own data), nor how this watcher schedules runs.
+NOT_MEASURED = ("docs/", "frontend/", "README.md", "eval/ocr/", "eval/harness/watch.py")
 
 
 def log(message: str) -> None:
