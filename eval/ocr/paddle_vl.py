@@ -24,6 +24,7 @@ os.environ.setdefault("PADDLE_PDX_MODEL_SOURCE", "huggingface")
 
 from plaintext import plain
 
+IMAGES = frozenset({".png", ".jpg", ".jpeg"})
 # Blocks that hold no text of the page.
 PICTURES = frozenset({"image", "chart", "seal_image", "figure"})
 
@@ -45,6 +46,9 @@ def main() -> None:
     options.add_argument("--version", default="v1.6")
     options.add_argument("--engine", default="paddleocr-vl-1.6")
     options.add_argument("--retext", action="store_true")
+    # The recogniser served by vLLM (its model card's accelerated path), e.g.
+    # http://127.0.0.1:8000/v1; without it, PaddlePaddle runs it itself (slower).
+    options.add_argument("--server")
     args = options.parse_args()
     target = args.out / args.engine
     (target / "raw").mkdir(parents=True, exist_ok=True)
@@ -58,8 +62,9 @@ def main() -> None:
 
     timings_file = target / "timings.json"
     timings = json.loads(timings_file.read_text()) if timings_file.exists() else {}
-    pipeline = PaddleOCRVL(pipeline_version=args.version)
-    images = sorted(p for folder in args.images for p in folder.glob("*.png"))
+    served = {"vl_rec_backend": "vllm-server", "vl_rec_server_url": args.server}
+    pipeline = PaddleOCRVL(pipeline_version=args.version, **(served if args.server else {}))
+    images = sorted(p for folder in args.images for p in folder.iterdir() if p.suffix in IMAGES)
     for number, image in enumerate(images, start=1):
         if (target / f"{image.stem}.txt").exists():
             continue
