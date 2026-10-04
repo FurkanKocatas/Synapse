@@ -248,32 +248,60 @@ class _Text(HTMLParser):
         {"p", "div", "br", "li", "tr", "td", "th", "h1", "h2", "h3", "h4", "table", "dd", "dt"}
     )
 
+    # The law template writes an article's heading in one span and numbers its clauses "f1.",
+    # "f2." in another. The page prints "1.", "2.", and no number when an article has one clause.
+    ARTICLE = ("id", "Madde")
+    CLAUSE_NUMBER = ("id", "fıkrano")
+
     def __init__(self) -> None:
         super().__init__()
         self.out: list[str] = []
         self.skip = 0
+        self.clause_number = False
 
     def handle_starttag(self, tag, attrs):
         if tag in {"style", "script"}:
             self.skip += 1
         if tag in self.BLOCK:
             self.out.append("\n")
+        if tag == "span" and self.ARTICLE in attrs:
+            self.out.append(ARTICLE_MARK)
+        if tag == "span" and self.CLAUSE_NUMBER in attrs:
+            self.clause_number = True
 
     def handle_endtag(self, tag):
         if tag in {"style", "script"} and self.skip:
             self.skip -= 1
         if tag in self.BLOCK:
             self.out.append("\n")
+        if tag == "span":
+            self.clause_number = False
 
     def handle_data(self, data):
+        if self.clause_number:
+            data = re.sub(r"^f(?=\d)", CLAUSE_MARK, data)
         if not self.skip:
             self.out.append(data)
+
+
+ARTICLE_MARK, CLAUSE_MARK = chr(1), chr(2)
+
+
+def _clause_numbers(text: str) -> str:
+    """Clause numbers as printed: an article with a single clause has none. The page's last
+    article may go on overleaf, so its number stays."""
+    parts = text.split(ARTICLE_MARK)
+    for i in range(1, len(parts) - 1):
+        if parts[i].count(CLAUSE_MARK) == 1:
+            parts[i] = re.sub(CLAUSE_MARK + r"1\.\s*", "", parts[i])
+    return "".join(parts).replace(CLAUSE_MARK, "")
 
 
 def from_html(page_html: str) -> str:
     parser = _Text()
     parser.feed(page_html)
-    text = "".join(parser.out).replace("Bu sayfa doğrulanmış", "").replace(SOFT_HYPHEN, "")
+    text = _clause_numbers("".join(parser.out))
+    text = text.replace("Bu sayfa doğrulanmış", "").replace(SOFT_HYPHEN, "")
     return "\n".join(line.strip() for line in text.split("\n") if line.strip())
 
 
