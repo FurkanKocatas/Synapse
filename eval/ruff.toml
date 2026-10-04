@@ -9,9 +9,10 @@ extend-ignore = ["T201"]
 [lint.per-file-ignores]
 "ocr/run.py" = ["PLW0603", "PLC0415", "S603", "S108"]
 "ocr/hybrid.py" = ["PLW0603", "PLC0415", "S603"]
-# Seeded randomness picks benchmark pages, simulates scans and samples chunks to time;
-# nothing secret depends on it.
+# Seeded randomness picks benchmark pages, simulates scans, samples chunks to time and picks the
+# language model's training text; nothing secret depends on it.
 "ocr/prepare.py" = ["S311"]
+"ocr/char_lm.py" = ["S311"]
 "retrieval/embed.py" = ["S311"]
 # The answer benchmark and the llama.cpp encoders talk to a llama.cpp server on this machine; the
 # answer benchmark samples questions with a seed.

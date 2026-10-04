@@ -1,0 +1,77 @@
+"""Per text line of each page: PP-OCRv6's detection box and its recogniser's frame-by-frame
+character distributions (top k), so decoders (greedy, beam search with a language model,
+ctc_decode.py) can be compared offline without running the recogniser again.
+
+    python eval/ocr/ctc_dump.py --images DIR --out DIR [--rec-dir DIR] [--topk 12]
+
+Writes OUT/<page>.npz: boxes (n, 4), and per line i arrays idx_i (T, k) int32 and prob_i (T, k)
+float16; OUT/chars.txt holds the recogniser's character list (index 0 is the CTC blank).
+``--rec-dir`` takes a fine-tuned recogniser exported for inference. Needs paddleocr 3.x; the
+distributions are taken from the predictor's post-processing step, which is not a public API.
+"""
+
+import argparse
+import time
+from pathlib import Path
+
+import numpy as np
+from paddleocr import TextDetection, TextRecognition
+from PIL import Image
+
+MIN_SIDE = 4  # pixels; thinner detections are specks, not text
+
+
+def main() -> None:
+    options = argparse.ArgumentParser()
+    options.add_argument("--images", type=Path, required=True)
+    options.add_argument("--out", type=Path, required=True)
+    options.add_argument("--rec-dir")
+    options.add_argument("--topk", type=int, default=12)
+    args = options.parse_args()
+    det = TextDetection(model_name="PP-OCRv6_medium_det", device="cpu")
+    kwargs = {"model_dir": args.rec_dir} if args.rec_dir else {}
+    rec = TextRecognition(model_name="PP-OCRv6_medium_rec", device="cpu", **kwargs)
+    predictor = rec.paddlex_predictor
+    predictor = getattr(predictor, "_predictor", predictor)
+    post = predictor.post_op
+    captured: list[np.ndarray] = []
+    original = post.__call__
+
+    def capture(pred, **kwargs):
+        captured.append(np.array(pred[0]))
+        return original(pred, **kwargs)
+
+    predictor.post_op = capture
+    args.out.mkdir(parents=True, exist_ok=True)
+    (args.out / "chars.txt").write_text("\n".join(post.character), encoding="utf-8")
+    images = sorted(p for p in args.images.iterdir() if p.suffix in {".png", ".jpg"})
+    todo = [p for p in images if not (args.out / f"{p.stem}.npz").exists()]
+    start = time.time()
+    for n, path in enumerate(todo, 1):
+        page = Image.open(path).convert("RGB")
+        polys = det.predict(str(path))[0]["dt_polys"]
+        boxes = []
+        crops = []
+        for poly in polys:
+            xs, ys = [float(p[0]) for p in poly], [float(p[1]) for p in poly]
+            box = (max(0, int(min(xs))), max(0, int(min(ys))), int(max(xs)) + 1, int(max(ys)) + 1)
+            if box[2] - box[0] < MIN_SIDE or box[3] - box[1] < MIN_SIDE:
+                continue
+            boxes.append(box)
+            # BGR, as the predictor reads
+            crops.append(np.asarray(page.crop(box))[:, :, ::-1].copy())
+        arrays = {"boxes": np.array(boxes, dtype=np.int32).reshape(-1, 4)}
+        for i, crop in enumerate(crops):
+            captured.clear()
+            list(rec.predict(crop, batch_size=1))
+            probs = captured[-1][0]
+            top = np.argsort(-probs, axis=1)[:, : args.topk]
+            arrays[f"idx_{i}"] = top.astype(np.int32)
+            arrays[f"prob_{i}"] = np.take_along_axis(probs, top, axis=1).astype(np.float16)
+        np.savez_compressed(args.out / f"{path.stem}.npz", **arrays)
+        if n % 10 == 0 or n == len(todo):
+            print(f"{n}/{len(todo)} {(time.time() - start) / n:.1f} s/page", flush=True)
+
+
+if __name__ == "__main__":
+    main()
