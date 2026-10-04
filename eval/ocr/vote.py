@@ -49,6 +49,40 @@ RARE = 3
 SHORT = 0.3
 FOLD = str.maketrans("çğıöşüâîûÇĞİÖŞÜÂÎÛ", "cgiosuaiuCGIOSUAIU")
 HATS = set("âîûÂÎÛ")
+# Letters Turkish has not, as a recogniser trained on many Latin alphabets writes the Turkish
+# letter they look like: PP-OCRv6 writes the Romanian s with a comma for ş, I with an acute for
+# İ, a grave or acute i for î. Mapped back before the vote (--turkish-letters); measured on its
+# output: +0.1 to +0.8 points of words.
+FOREIGN = str.maketrans(
+    {
+        "ș": "ş",
+        "Ș": "Ş",
+        "š": "ş",
+        "Š": "Ş",
+        "č": "ç",
+        "Č": "Ç",
+        "ć": "ç",
+        "Ć": "Ç",
+        "ġ": "ğ",
+        "Ġ": "Ğ",
+        "ǧ": "ğ",
+        "Ǧ": "Ğ",
+        "Í": "İ",
+        "Ì": "İ",
+        "í": "î",
+        "ì": "î",
+        "ł": "l",
+        "Ł": "L",
+        "ę": "e",
+        "ą": "a",
+        "ā": "â",
+        "á": "â",
+        "à": "â",
+        "ū": "û",
+        "ú": "û",
+        "ù": "û",
+    }
+)
 
 
 def folded(word: str) -> str:
@@ -241,6 +275,8 @@ def main() -> None:
     options.add_argument("--letters")
     # The engine whose circumflexes are added to the chosen reading.
     options.add_argument("--hats")
+    # Map letters Turkish has not to the Turkish letter they look like (FOREIGN).
+    options.add_argument("--turkish-letters", action="store_true")
     # How the others are aligned: the page as one sequence, its chunks in the pivot's order, or
     # per page whichever of the two agrees more with the pivot (the default).
     options.add_argument("--order", choices=("page", "chunks", "best"), default="best")
@@ -255,6 +291,8 @@ def main() -> None:
     readings = {}
     for page in pages:
         texts = [(out / e / page).read_text(encoding="utf-8") for e in engines]
+        if args.turkish_letters:
+            texts = [text.translate(FOREIGN) for text in texts]
         pivot = words(texts[0])
         as_read = [words(text) for text in texts[1:]]
         reordered = [

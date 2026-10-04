@@ -106,9 +106,23 @@ def tesseract(tessdata: str) -> object:
     return read
 
 
-def read_all(work: Path, engine: str, tessdata: str) -> None:
-    recognise = tesseract(tessdata)
+def ppocr(model_dir: Path | None) -> object:
+    """PP-OCRv6's recogniser, the published one or a fine-tuned export of it (``model_dir``)."""
+    from paddleocr import TextRecognition  # noqa: PLC0415  (not in the Tesseract image)
+
+    kwargs = {"model_dir": str(model_dir)} if model_dir else {}
+    model = TextRecognition(model_name="PP-OCRv6_medium_rec", **kwargs)
+
+    def read(paths: list[str]) -> list[str]:
+        return [r["rec_text"] for r in model.predict(paths, batch_size=32)]
+
+    return read
+
+
+def read_all(work: Path, engine: str, recognise: object, only: str | None = None) -> None:
     for listing in sorted((work / "sets").glob("*.tsv")):
+        if only and not listing.stem.startswith(only):
+            continue
         target = work / "out" / engine / listing.name
         if target.exists():
             continue
@@ -167,8 +181,11 @@ def main() -> None:
     lay.add_argument("--scu", type=Path)
     rd = sub.add_parser("read")
     rd.add_argument("--work", type=Path, required=True)
-    rd.add_argument("--engine", choices=("tesseract",), default="tesseract")
+    rd.add_argument("--engine", choices=("tesseract", "ppocrv6"), default="tesseract")
     rd.add_argument("--tessdata", default="/models/best")
+    rd.add_argument("--model-dir", type=Path, help="a fine-tuned PP-OCRv6 recogniser")
+    rd.add_argument("--name", help="the output's name (default: the engine's)")
+    rd.add_argument("--only", help="sets whose name starts with this")
     sc = sub.add_parser("score")
     sc.add_argument("--work", type=Path, required=True)
     args = options.parse_args()
@@ -180,7 +197,15 @@ def main() -> None:
         if args.scu:
             layout_scu(args.work, args.scu)
     elif args.command == "read":
-        read_all(args.work, "tesseract-best-tur+eng", args.tessdata)
+        if args.engine == "tesseract":
+            read_all(
+                args.work,
+                args.name or "tesseract-best-tur+eng",
+                tesseract(args.tessdata),
+                args.only,
+            )
+        else:
+            read_all(args.work, args.name or "ppocrv6-medium", ppocr(args.model_dir), args.only)
     else:
         score(args.work)
 

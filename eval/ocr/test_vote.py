@@ -107,3 +107,9 @@ def test_a_far_commoner_variant_in_turkish_letters_wins() -> None:
 def test_an_engine_that_failed_on_a_page_does_not_vote() -> None:
     page = ["Meclis", "kararı", "kabul", "edildi", "ve", "yayımlandı"]
     assert present([page, page, [], page[:1], page]) == [0, 1, 4]
+
+
+def test_letters_turkish_has_not_become_the_turkish_letter_they_look_like() -> None:
+    from vote import FOREIGN  # noqa: PLC0415
+
+    assert "işçi karșı Ístanbul siyasì".translate(FOREIGN) == "işçi karşı İstanbul siyasî"
