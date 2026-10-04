@@ -16,17 +16,17 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from char_lm import CharLM, load
-from ctc_decode import Search, beam, greedy, rows
+from ctc_decode import Search, beam, greedy
 
-CHARS = ["", "a", "l", "m", "ı", "i", " "]  # index 0 is the CTC blank
+CHARS = ["", "a", "l", "m", "ı", "i", " ", "1", "2"]  # index 0 is the CTC blank
 
 
-def frames(*rows_: dict[str, float]) -> tuple[np.ndarray, np.ndarray]:
+def frames(*lines: dict[str, float]) -> tuple[np.ndarray, np.ndarray]:
     """Top-k arrays as ctc_dump.py writes them, from one {character: probability} per frame."""
-    k = max(len(r) for r in rows_)
-    idx = np.zeros((len(rows_), k), dtype=np.int32)
-    prob = np.zeros((len(rows_), k), dtype=np.float32)
-    for t, r in enumerate(rows_):
+    k = max(len(r) for r in lines)
+    idx = np.zeros((len(lines), k), dtype=np.int32)
+    prob = np.zeros((len(lines), k), dtype=np.float32)
+    for t, r in enumerate(lines):
         for j, (ch, p) in enumerate(sorted(r.items(), key=lambda kv: -kv[1])):
             idx[t, j], prob[t, j] = CHARS.index(ch), p
     return idx, prob
@@ -61,6 +61,22 @@ def test_the_model_settles_a_letter_the_image_leaves_open() -> None:
     assert beam(idx, prob, CHARS, lm, Search(alpha=1, beta=0)) == "malı"
 
 
+def test_a_digit_is_not_free_where_no_number_fits() -> None:
+    lm = CharLM(3)
+    lm.train("malı alım malı 12 21 malı")
+    lm.finish()
+    idx, prob = frames({"m": 1}, {"a": 1}, {"l": 1}, {"ı": 0.45, "1": 0.55})
+    assert beam(idx, prob, CHARS, lm, Search(alpha=1, beta=0)) == "malı"
+
+
+def test_the_model_does_not_choose_between_digits() -> None:
+    lm = CharLM(3)
+    lm.train("12 12 12 12")
+    lm.finish()
+    idx, prob = frames({"1": 1}, {"": 1}, {"1": 0.55, "2": 0.45})
+    assert beam(idx, prob, CHARS, lm, Search(alpha=1, beta=0)) == "11"
+
+
 def test_a_model_pickled_from_the_script_loads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -80,8 +96,3 @@ def test_a_file_holding_anything_else_is_refused(tmp_path: Path) -> None:
     (tmp_path / "other.pkl").write_bytes(pickle.dumps(Path("x")))
     with pytest.raises(pickle.UnpicklingError):
         load(tmp_path / "other.pkl")
-
-
-def test_lines_are_read_in_rows_then_left_to_right() -> None:
-    boxes = np.array([[200, 10, 300, 30], [0, 12, 100, 32], [0, 50, 100, 70]])
-    assert rows(boxes, ["ikinci", "birinci", "alt"]) == ["birinci ikinci", "alt"]

@@ -3,14 +3,15 @@ with a character language model (char_lm.py) weighed in.
 
     python eval/ocr/ctc_decode.py --dump DIR --out DIR [--lm FILE --alpha 0.3 --beta 2.0 --beam 8]
 
-score(prefix) = log P_ctc + alpha * log P_lm + beta * characters. The language model's weight is
-zero for digits (a number is what the image shows, not what is common). Lines are put in reading
-order as the PP-OCR runner does (rows by vertical centre, left to right). The pages land in
+score(prefix) = log P_ctc + alpha * log P_lm + beta * characters. A digit is scored by the
+model's probability of any digit in its place: whether a number fits there ("Sayı", not "Say1"),
+not which number is common (a number is what the image shows). Lines are put in reading
+order by reading_order.py (rows, and columns one after the other). The pages land in
 OUT/<page>.txt for measure.py.
 
-On 200 pages of Wikisource books kept out of fine-tuning, the fine-tuned PP-OCRv6 went from
-89.5% of words greedy to 91.6-91.7% with the 6-gram model at alpha 0.3 and beta 1 to 3; beam
-search without the model gave 89.5%, alpha 0.5 fell back to 90.9%.
+On 188 pages of Wikisource books kept out of fine-tuning, the fine-tuned PP-OCRv6 went from
+92.5% of words greedy to 94.8% with the 6-gram model (alpha 0.3, beta 2.0; alpha 0.2 to 0.4
+and beta 1.5 to 3 are a plateau, alpha 0.5 falls back), stock PP-OCRv6 to 94.9%.
 """
 
 import argparse
@@ -25,8 +26,10 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from char_lm import CharLM, load
+from reading_order import reading_order
 
 NEG = -1e30
+DIGITS = "0123456789"
 
 
 @dataclass(frozen=True)
@@ -63,12 +66,18 @@ def beam(
     cache: dict[tuple[str, str], float] = {}
 
     def lm_score(prefix: str, ch: str) -> float:
-        if lm is None or ch.isdigit():
+        if lm is None:
             return 0.0
-        key = (prefix[-(lm.order - 1) :], ch)
+        context = prefix[-(lm.order - 1) :]
+        if len(prefix) < lm.order - 1:
+            context = " " + context  # a line starts as a word does in the training text
+        digit = ch.isdigit()
+        key = (context, DIGITS if digit else ch)
         if key not in cache:
-            # a line's first characters follow a space, as a word's do in the training text
-            cache[key] = lm.logprob(" " + key[0] if len(prefix) < lm.order - 1 else key[0], ch)
+            if digit:  # whether a number fits here, not which number is common
+                cache[key] = math.log(sum(lm.prob(context, d) for d in DIGITS))
+            else:
+                cache[key] = lm.logprob(context, ch)
         return cache[key]
 
     for t in range(idx.shape[0]):
@@ -101,20 +110,6 @@ def beam(
     return max(beams.items(), key=lambda kv: logsumexp(kv[1][0], kv[1][1]))[0]
 
 
-def rows(boxes: np.ndarray, texts: list[str]) -> list[str]:
-    items = sorted(
-        ((b[1] + b[3]) / 2, b[0], b[3] - b[1], t) for b, t in zip(boxes, texts, strict=True) if t
-    )
-    out: list[list[tuple[float, str]]] = []
-    centre = None
-    for y, x, height, text in items:
-        if centre is None or y - centre > height / 2:
-            out.append([])
-            centre = y
-        out[-1].append((x, text))
-    return [" ".join(t for _, t in sorted(row)) for row in out]
-
-
 def main() -> None:
     options = argparse.ArgumentParser()
     options.add_argument("--dump", type=Path, required=True)
@@ -140,7 +135,10 @@ def main() -> None:
                 if lm is None and args.beam <= 1
                 else beam(idx, prob, chars, lm, search)
             )
-        (args.out / f"{f.stem}.txt").write_text("\n".join(rows(boxes, texts)), encoding="utf-8")
+        (args.out / f"{f.stem}.txt").write_text(
+            "\n".join(reading_order(list(zip(boxes.tolist(), texts, strict=True)))),
+            encoding="utf-8",
+        )
     print("decoded", len(pages), "pages to", args.out)
 
 

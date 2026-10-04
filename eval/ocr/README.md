@@ -23,6 +23,18 @@ uv run --directory backend python ../eval/ocr/combine.py         # Tesseract tex
 
 `eval/ocr/work/` is git-ignored; it holds rendered pages of corpus documents. `--user` matters on Linux: without it the container writes its output as root into the bind-mounted `work/out/` (Docker Desktop on macOS hides this). The image needs no network at run time.
 
+## Decoding PP-OCRv6 with a language model
+
+PP-OCRv6's recogniser gives a character distribution per frame; reading the likeliest character each time (greedy) throws away the second guesses where Turkish letters often sit. The three scripts keep the distributions, so decoders can be compared without running the recogniser again (needs paddleocr 3.x):
+
+```bash
+python eval/ocr/char_lm.py train --parquet TURKISH_TEXT.parquet --out char_lm6.pkl   # 6-gram, 15M characters, 67 MB
+python eval/ocr/ctc_dump.py --images DIR --out DUMP [--rec-dir FINE_TUNED] [--device gpu]
+python eval/ocr/ctc_decode.py --dump DUMP --out eval/ocr/work/out/ENGINE --lm char_lm6.pkl
+```
+
+`ctc_dump.py` detects and crops lines as PaddleOCR's own pipeline does; `ctc_decode.py` runs a prefix beam search with the model weighed in and puts the lines in reading order (`reading_order.py`: rows, and columns one after the other).
+
 ## Limits
 
 - The truth is the PDF's text layer: its reading order follows the typesetting program, so character error rates on multi-column and table pages are pessimistic. Word F1 and the recalls do not depend on order.

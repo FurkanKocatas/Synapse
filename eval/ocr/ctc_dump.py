@@ -2,12 +2,17 @@
 character distributions (top k), so decoders (greedy, beam search with a language model,
 ctc_decode.py) can be compared offline without running the recogniser again.
 
-    python eval/ocr/ctc_dump.py --images DIR --out DIR [--rec-dir DIR] [--topk 12]
+    python eval/ocr/ctc_dump.py --images DIR --out DIR [--rec-dir DIR] [--topk 12] [--device gpu]
 
 Writes OUT/<page>.npz: boxes (n, 4), and per line i arrays idx_i (T, k) int32 and prob_i (T, k)
 float16; OUT/chars.txt holds the recogniser's character list (index 0 is the CTC blank).
-``--rec-dir`` takes a fine-tuned recogniser exported for inference. Needs paddleocr 3.x; the
-distributions are taken from the predictor's post-processing step, which is not a public API.
+``--rec-dir`` takes a fine-tuned recogniser exported for inference.
+
+Detection and line crops are those of PaddleOCR's OCR pipeline: the page is not shrunk (the
+detection module alone scales the long side down to 960 pixels, which loses small print on
+150 dpi scans) and each line is cut out along its tilted rectangle, not its upright bounding
+box. Needs paddleocr 3.x; the distributions are taken from the predictor's post-processing
+step and the crops from the pipeline's cropping component, neither of them a public API.
 """
 
 import argparse
@@ -16,9 +21,18 @@ from pathlib import Path
 
 import numpy as np
 from paddleocr import TextDetection, TextRecognition
+from paddlex.inference.pipelines.components.common.crop_image_regions import CropByPolys
 from PIL import Image
 
 MIN_SIDE = 4  # pixels; thinner detections are specks, not text
+# PaddleOCR's OCR pipeline settings for PP-OCRv6 (paddlex configs/pipelines/OCR.yaml)
+DETECTION = {
+    "limit_side_len": 64,
+    "limit_type": "min",
+    "thresh": 0.3,
+    "box_thresh": 0.6,
+    "unclip_ratio": 1.5,
+}
 
 
 def main() -> None:
@@ -27,10 +41,12 @@ def main() -> None:
     options.add_argument("--out", type=Path, required=True)
     options.add_argument("--rec-dir")
     options.add_argument("--topk", type=int, default=12)
+    options.add_argument("--device", default="cpu")
     args = options.parse_args()
-    det = TextDetection(model_name="PP-OCRv6_medium_det", device="cpu")
+    det = TextDetection(model_name="PP-OCRv6_medium_det", device=args.device, **DETECTION)
     kwargs = {"model_dir": args.rec_dir} if args.rec_dir else {}
-    rec = TextRecognition(model_name="PP-OCRv6_medium_rec", device="cpu", **kwargs)
+    rec = TextRecognition(model_name="PP-OCRv6_medium_rec", device=args.device, **kwargs)
+    crop_lines = CropByPolys(det_box_type="quad")
     predictor = rec.paddlex_predictor
     predictor = getattr(predictor, "_predictor", predictor)
     post = predictor.post_op
@@ -48,18 +64,16 @@ def main() -> None:
     todo = [p for p in images if not (args.out / f"{p.stem}.npz").exists()]
     start = time.time()
     for n, path in enumerate(todo, 1):
-        page = Image.open(path).convert("RGB")
-        polys = det.predict(str(path))[0]["dt_polys"]
-        boxes = []
-        crops = []
-        for poly in polys:
+        page = np.asarray(Image.open(path).convert("RGB"))[:, :, ::-1].copy()  # BGR, as read
+        boxes, polys = [], []
+        for poly in det.predict(page)[0]["dt_polys"]:
             xs, ys = [float(p[0]) for p in poly], [float(p[1]) for p in poly]
             box = (max(0, int(min(xs))), max(0, int(min(ys))), int(max(xs)) + 1, int(max(ys)) + 1)
             if box[2] - box[0] < MIN_SIDE or box[3] - box[1] < MIN_SIDE:
                 continue
             boxes.append(box)
-            # BGR, as the predictor reads
-            crops.append(np.asarray(page.crop(box))[:, :, ::-1].copy())
+            polys.append(poly)
+        crops = crop_lines(page, polys) if polys else []
         arrays = {"boxes": np.array(boxes, dtype=np.int32).reshape(-1, 4)}
         for i, crop in enumerate(crops):
             captured.clear()
