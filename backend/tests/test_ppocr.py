@@ -4,7 +4,7 @@ fails. The models themselves are checked against Paddle in eval (docs/benchmarks
 
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -18,9 +18,9 @@ from tests import ppocr_children
 
 
 def test_the_detector_reads_the_page_at_its_own_size_in_multiples_of_32() -> None:
-    assert ppocr.detection_size(2730, 1920) == (2720, 1920)
+    assert ppocr.detection_size(2400, 1700) == (2400, 1696)
     assert ppocr.detection_size(40, 100) == (64, 160)  # the short side is raised to 64
-    assert ppocr.detection_size(5000, 3000) == (4000, 2400)  # the long side is capped at 4000
+    assert ppocr.detection_size(5000, 3000) == (2496, 1504)  # the long side is capped at 2500
 
 
 def test_a_line_is_scaled_to_height_48_and_padded_to_at_least_320() -> None:
@@ -154,3 +154,60 @@ def test_the_worker_reads_with_ppocr_when_its_models_are_configured(tmp_path: Pa
     finally:
         configured.close()
         default.close()
+
+
+LINE: ppocr.Line = ((0, 0, 10, 10), np.zeros((1, 3), dtype=np.float32))
+
+
+class Flaky:
+    """Models whose first detection finds nothing, as three test pages once did under load."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def lines(self, page: np.ndarray[Any, Any]) -> list[ppocr.Line]:
+        self.calls += 1
+        return [] if self.calls == 1 else [LINE]
+
+
+class Steady(Flaky):
+    def lines(self, page: np.ndarray[Any, Any]) -> list[ppocr.Line]:
+        self.calls += 1
+        return [LINE, LINE, LINE]
+
+
+def test_a_page_with_ink_and_no_line_is_read_again_and_a_blank_one_is_not() -> None:
+    printed = np.full((100, 100, 3), 255, dtype=np.uint8)
+    printed[40:60, 10:90] = 0
+    flaky = Flaky()
+    assert ppocr.detected_lines(cast(ppocr.Models, flaky), printed) == [LINE]
+    assert flaky.calls == 2
+    blank, flaky = np.full((100, 100, 3), 250, dtype=np.uint8), Flaky()
+    assert ppocr.detected_lines(cast(ppocr.Models, flaky), blank) == []
+    assert flaky.calls == 1
+
+
+def test_a_page_with_lines_enough_is_read_once() -> None:
+    printed = np.zeros((100, 100, 3), dtype=np.uint8)
+    steady = Steady()
+    assert len(ppocr.detected_lines(cast(ppocr.Models, steady), printed)) == 3
+    assert steady.calls == 1
+
+
+class InTurn:
+    """A stand-in session that returns its outputs in turn."""
+
+    def __init__(self, *outputs: np.ndarray[Any, Any]) -> None:
+        self.outputs = list(outputs)
+
+    def run(self, names: object, feeds: dict[str, np.ndarray[Any, Any]]) -> list[Any]:
+        return [self.outputs.pop(0)]
+
+
+def test_an_output_that_is_not_finite_is_run_again_and_then_an_error() -> None:
+    good = np.ones((1, 2), dtype=np.float32)
+    bad = np.full((1, 2), np.nan, dtype=np.float32)
+    x = np.zeros((1, 3, 4, 4), dtype=np.float32)
+    assert ppocr.finite_run(InTurn(bad, good), x) is good
+    with pytest.raises(ppocr.NotFiniteError):
+        ppocr.finite_run(InTurn(bad, bad), x)

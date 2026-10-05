@@ -32,9 +32,12 @@ from synapse.knowledge.ocr import OCR_TIMEOUT_SECONDS, OcrError
 
 PAGES_PER_CHILD = 25
 
-# PaddleOCR's OCR pipeline settings for PP-OCRv6 (paddlex configs/pipelines/OCR.yaml). The page
-# is not shrunk: the detection module's own default (long side 960) lost small print on scans.
-LIMIT_SIDE, MAX_SIDE = 64, 4000
+# PaddleOCR's OCR pipeline settings for PP-OCRv6 (paddlex configs/pipelines/OCR.yaml), except
+# the long side: the pipeline's 4000 lets the detector take 2.7 GB on a 300 dpi page. At 2500
+# it takes 1.5 GB and reads as well (corpus benchmark clean 98.25 -> 98.33, scan 98.27 -> 98.29;
+# old books 94.73 -> 94.66, within noise). Much smaller is not better: the detection module's
+# own default (long side 960) lost small print on 150 dpi scans.
+LIMIT_SIDE, MAX_SIDE = 64, 2500
 THRESH, BOX_THRESH, UNCLIP = 0.3, 0.6, 1.5
 MAX_CANDIDATES, MIN_SIZE = 1000, 3
 MEAN, STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
@@ -42,7 +45,13 @@ REC_HEIGHT, REC_MIN_WIDTH, REC_MAX_WIDTH = 48, 320, 3200
 MIN_SIDE = 4  # pixels; a thinner detection is a speck, not text
 UPRIGHT = 1.5  # a crop this many times taller than wide is a vertical line, turned to read
 
+DARK, INK_SHARE = 128, 0.01  # a page with more than 1% of pixels darker than mid-grey has ink
+FEW_LINES = 3  # fewer lines than this on a page with ink: read it again
+RUNS = 2  # tries for a model output that is not finite
+
 Quad = NDArray[np.int16]  # 4 x 2, clockwise from the top left
+# a line's upright box (x0, y0, x1, y1) and its frame-by-frame character distributions
+Line = tuple[tuple[int, int, int, int], NDArray[np.float32]]
 
 
 # onnxruntime, OpenCV and pyclipper are imported where they are used: the API process imports
@@ -65,7 +74,7 @@ def _session(model: Path, threads: int) -> Any:
 
 def detection_size(height: int, width: int) -> tuple[int, int]:
     """The size the detector reads the page at: multiples of 32, the short side at least 64,
-    the long side at most 4000 (DetResizeForTest, limit type "min")."""
+    the long side at most MAX_SIDE (DetResizeForTest, limit type "min")."""
     ratio = LIMIT_SIDE / min(height, width) if min(height, width) < LIMIT_SIDE else 1.0
     h, w = int(height * ratio), int(width * ratio)
     if max(h, w) > MAX_SIDE:
@@ -178,6 +187,22 @@ def recognition_input(crop: NDArray[np.uint8]) -> NDArray[np.float32]:
     return x[None]
 
 
+class NotFiniteError(RuntimeError):
+    """A model gave NaN or infinite values twice for the same input."""
+
+
+def finite_run(session: Any, x: NDArray[np.float32]) -> NDArray[np.float32]:
+    """The model's output for ``x``, run again if it is not finite. Under memory pressure from
+    other work the detector once returned a map of NaN for a page it reads normally otherwise
+    (no line found, an empty page): a second run, or an error the reader reports, never an
+    empty text taken for the page's."""
+    for _ in range(RUNS):
+        out: NDArray[np.float32] = session.run(None, {"x": x})[0]
+        if np.isfinite(out).all():
+            return out
+    raise NotFiniteError("the model gave values that are not finite")
+
+
 @dataclass
 class Models:
     detector: Any
@@ -197,9 +222,7 @@ class Models:
             lm=CharLM.load(directory / "charlm.npz"),
         )
 
-    def lines(
-        self, page: NDArray[np.uint8]
-    ) -> list[tuple[tuple[int, int, int, int], NDArray[np.float32]]]:
+    def lines(self, page: NDArray[np.uint8]) -> list[Line]:
         """Each text line's box and frame-by-frame character distributions, for a BGR page."""
         import cv2  # noqa: PLC0415  (see above)
 
@@ -210,7 +233,7 @@ class Models:
             resized[:, :, c].astype(np.float32) * (1 / 255 / STD[c]) - MEAN[c] / STD[c]
             for c in range(3)
         ]
-        pred = self.detector.run(None, {"x": np.stack(planes)[None]})[0][0, 0]
+        pred = finite_run(self.detector, np.stack(planes)[None])[0, 0]
         out = []
         for quad in boxes_from_map(pred, width, height):
             xs, ys = quad[:, 0].astype(float), quad[:, 1].astype(float)
@@ -222,7 +245,7 @@ class Models:
             )
             if box[2] - box[0] < MIN_SIDE or box[3] - box[1] < MIN_SIDE:
                 continue
-            probs = self.recognizer.run(None, {"x": recognition_input(crop_line(page, quad))})[0][0]
+            probs = finite_run(self.recognizer, recognition_input(crop_line(page, quad)))[0]
             out.append((box, probs))
         return out
 
@@ -245,9 +268,24 @@ def read_page(image: str, directory: str, threads: int) -> str:  # runs in the c
     score, search = LanguageScore(models.lm), Search()
     lines = [
         (box, read_line(probs, models.characters, score, search))
-        for box, probs in models.lines(page)
+        for box, probs in detected_lines(models, page)
     ]
     return "\n".join(reading_order(lines))
+
+
+def inked(page: NDArray[np.uint8]) -> bool:
+    """Whether more than INK_SHARE of the page is dark: not a blank page."""
+    return float((page.mean(axis=2) < DARK).mean()) > INK_SHARE
+
+
+def detected_lines(models: Models, page: NDArray[np.uint8]) -> list[Line]:
+    """The page's lines; a page with ink and next to no line is read a second time. In long runs
+    beside other heavy work, five of 312 test pages came back with no line or a few words, and
+    read normally when read again (the cause is not known)."""
+    lines = models.lines(page)
+    if len(lines) < FEW_LINES and inked(page):
+        lines = models.lines(page)
+    return lines
 
 
 class PpOcrEngine:

@@ -1,6 +1,6 @@
 # OCR engines for Turkish: benchmark
 
-Status: **decided**, 2026-09-28. Every candidate has run on the full set on the reference hardware. No single engine reaches the targets; a combination of two does on most of them (below).
+Status: **decided**, 2026-09-28. Every candidate has run on the full set on the reference hardware. No single engine reaches the targets; a combination of two does on most of them (below). A successor was measured in October 2026: PP-OCRv6 with a Turkish character language model, in the product behind a setting ([below](#october-2026-pp-ocrv6-with-a-turkish-language-model)).
 
 **Decision (Furkan, 2026-09-28):** Tesseract best `tur+eng` gives the text (`tur+eng` rather than `tur`: a wrong number in the text, such as "%40" read as "640", costs more than 0.01 of Turkish-letter recall); RapidOCR, reading one line at a time, gives a second reading of the identifiers, used as search terms and as the flag for uncertain identifiers; "£" before a digit is read as "₺". Implemented in [knowledge/ocr.py](../../backend/src/synapse/knowledge/ocr.py) and [knowledge/rapid.py](../../backend/src/synapse/knowledge/rapid.py), described in [design/knowledge-base.md](../design/knowledge-base.md#ocr).
 
@@ -108,6 +108,34 @@ The first inversion made things worse (identifiers on `scan` 0.928 to 0.918): th
 With RapidOCR's identifiers added (the product's reading), identifiers do not move (0.974, 0.974, 0.958); word F1 on `scan` 0.959 to 0.961, Turkish-letter words 0.968 to 0.972; on `clean` word F1 falls 0.967 to 0.965 (worst tenth 0.864 to 0.844). On the three real scans nothing improves and the committee report gets worse (word F1 0.972 to 0.963, Turkish-letter words 0.917 to 0.896).
 
 Page by page the effect is uneven. Pages where the clean-up changes 1 to 5% of the pixels (rules) gain (word F1 +0.008, identifiers +0.025 on 55 images); pages where it changes more than 5% (large dark areas: covers, photos) lose (-0.006, -0.006 on 31); and Tesseract's layout analysis reacts to tiny changes: 0.05% of a page's pixels changed cost one page 0.09 of word F1. The two pages that prompted this got worse on identifiers. A rule deciding where to clean would be tuned on this same set of 112 pages, so the clean-up stays a benchmark engine. (Timings of this run are not comparable: it ran next to the embedding benchmark.)
+
+## October 2026: PP-OCRv6 with a Turkish language model
+
+OCR became the first priority on 2026-10-03, with a stricter target: 99% of words exactly right. The measure is [measure.py](../../eval/ocr/measure.py): one minus the bag-of-words error rate (OCR-D's definition), so a reading order the typesetting did not follow is not an error; the order-kept rate, identifier recall and Turkish character sensitivity are reported beside it. Two page sets came in beside the corpus benchmark above: pages of old Turkish books from Wikisource, split by book so that no book the recogniser was fine-tuned on is tested (188 pages from 44 books, with pages whose transcription covers only part of the page left out), and 24 of those pages whose truth was checked by eye against the scan (`gold`). The work is logged in the handoff repository (research/ocr-2026-10-03/results-log.md).
+
+What raised the numbers, in order of size:
+
+- **A character language model for decoding.** PP-OCRv6's recogniser emits a distribution per frame; prefix beam search with a 6-gram Witten-Bell model of 15 million characters of Turkish Wikipedia ([knowledge/ctc.py](../../backend/src/synapse/knowledge/ctc.py), [knowledge/charlm.py](../../backend/src/synapse/knowledge/charlm.py)) took stock PP-OCRv6 on the old books from 90.6% to 94.9%. Digits are scored by the model's probability of any digit in their place: given for free, they had turned letters into digits ("Say1").
+- **Fine-tuning the recogniser for Turkish** on 300,000 synthetic lines and receipt lines (desktop GPU, 4,000 steps: about half an epoch). On the corpus benchmark it reads the `scan` condition at 98.3% with the language model (stock 96.8%). Real lines cut from the training books, added at four times their share, made it worse (punctuation and digits lost): the crops were short and nearly free of punctuation.
+- **Reading order by columns** ([knowledge/reading.py](../../backend/src/synapse/knowledge/reading.py)): grouping lines into rows merged the two columns of 24 test pages line by line, which broke words hyphenated at line ends and made Turkish characters look worse than they were.
+- **PaddleOCR's own detection settings and line crops.** The detection module alone shrinks a page's long side to 960 pixels; on 150 dpi scans that lost a quarter of the words.
+
+Words exactly right (corpus benchmark: `clean` / `scan` / `poor` / three real scans):
+
+| Engine | Corpus benchmark | Old books (188) | Gold (24) |
+|---|---|---|---|
+| Tesseract best `tur+eng` (the present engine) | 96.8 / 96.3 / 93.6 / 95.9 | 92.5 | 93.2 |
+| PP-OCRv6 stock, PaddleOCR's own decoding | 94.9 / 93.6 / 91.1 / 94.9 | 90.6 | |
+| PP-OCRv6 stock + language model | 97.0 / 96.8 / 95.9 / 97.5 | 94.9 | 95.5 |
+| PP-OCRv6 fine-tuned + language model | 98.3 / 98.3 / 97.0 / 99.3 | 94.8 | 95.6 |
+| Vote of four (PP-OCRv6 fine-tuned and stock, PP-OCRv5 Latin mobile, Tesseract) | 98.4 / 98.4 / 97.7 / 99.7 | 95.9 | 97.0 |
+| Qwen3-VL-8B (GPU, a yardstick only) | | 94.2 | 95.6 |
+
+The vote is eval/ocr/vote.py (ROVER-style alignment to a pivot reading); the product does not have it yet. About 0.6 points of every engine's error on the old books was the truth's (editors' corrections, case, words glued in the transcription), which the gold pages remove; the remaining errors are mostly letters, footnote marks and short tokens.
+
+**In the product** ([knowledge/ppocr.py](../../backend/src/synapse/knowledge/ppocr.py)): PP-OCRv6 exported to ONNX and run on onnxruntime (already a dependency) with PaddleOCR's steps re-implemented, so it reads as Paddle does (boxes in the same order, 99.9% of the likeliest characters equal). Set `ocr_ppocr_dir` to a directory with `detection.onnx`, `recognition.onnx`, `characters.json` and `charlm.npz`, and the fine-tuned recogniser with the language model gives the text of OCR'd pages; RapidOCR still reads the identifiers a second time. Run through the product on the 188 old-book pages it reads 94.8% of words, as eval's decode of the same recogniser does (one page differs, by one word). On the reference machine a page takes about 10 s with four threads. The detector reads a page with its long side at most 2500 pixels, not PaddleOCR's 4000: at 4000 it alone took 2.7 GB on a 300 dpi page, at 2500 1.5 GB, and it read as well or better (corpus benchmark clean 98.3, scan 98.3; old books 94.7); the engine's child process peaks at 2.2 GB. Under memory pressure from other work the detector once returned a map of NaN for a page it otherwise reads normally (the page came out empty); every model output is now checked, run again when it is not finite, and reported as an OCR error when it is not finite twice, so the page keeps its text. That does not yet fit beside RapidOCR's child (up to 2 GB) in the 16 GB tier's worker limit of 2.5 GB: the next step reads the identifiers a second time with another recogniser in the same child, on the same detection. Unset, Tesseract gives the text as before: the models are not yet fetched when the image is built.
+
+Next: the vote in the product, keeping the pivot's lines; fetching the models at image build with their checksums; a licence check of the language model's and the lexicon's sources (Turkish Wikipedia and wordfreq are CC BY-SA); full-line real training data; more gold pages.
 
 ## Safety, whatever the engine
 

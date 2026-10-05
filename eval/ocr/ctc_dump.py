@@ -36,20 +36,11 @@ DETECTION = {
 }
 
 
-def main() -> None:
-    options = argparse.ArgumentParser()
-    options.add_argument("--images", type=Path, required=True)
-    options.add_argument("--out", type=Path, required=True)
-    options.add_argument("--rec-dir")
-    # another PaddleOCR recogniser by name, e.g. latin_PP-OCRv5_mobile_rec (a voice for the vote)
-    options.add_argument("--rec-model", default="PP-OCRv6_medium_rec")
-    options.add_argument("--topk", type=int, default=12)
-    options.add_argument("--device", default="cpu")
-    args = options.parse_args()
-    det = TextDetection(model_name="PP-OCRv6_medium_det", device=args.device, **DETECTION)
-    kwargs = {"model_dir": args.rec_dir} if args.rec_dir else {}
-    rec = TextRecognition(model_name=args.rec_model, device=args.device, **kwargs)
-    crop_lines = CropByPolys(det_box_type="quad")
+def recognizer(name: str, directory: str | None, device: str):
+    """The recogniser, its post-processing step wrapped so that each call's frame
+    distributions land in the returned list, and its character list."""
+    kwargs = {"model_dir": directory} if directory else {}
+    rec = TextRecognition(model_name=name, device=device, **kwargs)
     predictor = rec.paddlex_predictor
     predictor = getattr(predictor, "_predictor", predictor)
     post = predictor.post_op
@@ -61,8 +52,29 @@ def main() -> None:
         return original(pred, **kwargs)
 
     predictor.post_op = capture
+    return rec, captured, post.character
+
+
+def main() -> None:
+    options = argparse.ArgumentParser()
+    options.add_argument("--images", type=Path, required=True)
+    options.add_argument("--out", type=Path, required=True)
+    options.add_argument("--rec-dir")
+    # another PaddleOCR recogniser by name, e.g. latin_PP-OCRv5_mobile_rec (a voice for the vote)
+    options.add_argument("--rec-model", default="PP-OCRv6_medium_rec")
+    options.add_argument("--topk", type=int, default=12)
+    options.add_argument("--device", default="cpu")
+    # the detector reads the page with its long side at most this (pixels); memory, blur
+    options.add_argument("--det-max-side", type=int)
+    args = options.parse_args()
+    detection = dict(DETECTION)
+    if args.det_max_side:
+        detection.update(limit_side_len=args.det_max_side, limit_type="max")
+    det = TextDetection(model_name="PP-OCRv6_medium_det", device=args.device, **detection)
+    rec, captured, characters = recognizer(args.rec_model, args.rec_dir, args.device)
+    crop_lines = CropByPolys(det_box_type="quad")
     args.out.mkdir(parents=True, exist_ok=True)
-    (args.out / "chars.txt").write_text("\n".join(post.character), encoding="utf-8")
+    (args.out / "chars.txt").write_text("\n".join(characters), encoding="utf-8")
     images = sorted(p for p in args.images.iterdir() if p.suffix in {".png", ".jpg"})
     todo = [p for p in images if not (args.out / f"{p.stem}.npz").exists()]
     start = time.time()

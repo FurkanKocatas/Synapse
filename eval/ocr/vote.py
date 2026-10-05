@@ -264,12 +264,35 @@ def lexicon(vocabulary: set[str]) -> dict[str, float]:
     return {w: zipf_frequency(w, "tr") for w in keys}
 
 
+def lm_lexicon(vocabulary: set[str], path: Path) -> dict[str, float]:
+    """Words scored by the character language model (synapse.knowledge.charlm): log10 of the
+    probability of the word between spaces, so differences read like zipf differences and an
+    inflected form needs no prefix. No wordfreq: its data is CC BY-SA."""
+    import math  # noqa: PLC0415  (only for --lm)
+
+    from synapse.knowledge.charlm import CharLM  # noqa: PLC0415
+
+    lm = CharLM.load(path)
+
+    def score(word: str) -> float:
+        text = " " + word + " "
+        lp = sum(
+            lm.logprob(text[max(0, i - lm.order + 1) : i], text[i]) for i in range(1, len(text))
+        )
+        return lp / math.log(10)
+
+    return {w: score(w) for w in vocabulary}
+
+
 def main() -> None:
     options = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     options.add_argument("--work", type=Path, required=True)
     options.add_argument("--engines", required=True)
     options.add_argument("--name")
     options.add_argument("--lexicon", action="store_true")
+    # Turkish word scores from the character language model instead of wordfreq (packed .npz);
+    # measured on the clean old-book pages: no better than no lexicon (wordfreq +0.15).
+    options.add_argument("--lm", type=Path)
     options.add_argument("--rule", choices=("unknown", "first", "gap"), default="unknown")
     # The engine whose Turkish letters settle readings that differ only in them.
     options.add_argument("--letters")
@@ -310,6 +333,8 @@ def main() -> None:
     frequency = None
     if args.lexicon:
         frequency = lexicon({w for page in readings.values() for r in page for w in r})
+    if args.lm:
+        frequency = lm_lexicon({w for page in readings.values() for r in page for w in r}, args.lm)
     for page, page_readings in readings.items():
         kept = present(page_readings)
         trusted = {e: kept.index(engines.index(e)) for e in engines if engines.index(e) in kept}
