@@ -59,6 +59,9 @@ ADD --checksum=sha256:20e6127d910ef10be0d0fe4a49e68d2474b07e83f57600cdd177b3edb5
     https://github.com/FurkanKocatas/Synapse/releases/download/ocr-models-2/latin-recognition.onnx /usr/share/synapse/ppocr/latin-recognition.onnx
 ADD --checksum=sha256:736f1593b68e36ffc935e557b1452a2cd43267808eb49ee705a90fb0be8d22c0 --chmod=644 \
     https://github.com/FurkanKocatas/Synapse/releases/download/ocr-models-2/latin-characters.json /usr/share/synapse/ppocr/latin-characters.json
+# Some BuildKit versions give the directory ADD creates --chmod's mode too (644: nobody but
+# root may enter it), so the directory gets its own.
+RUN chmod 755 /usr/share/synapse/ppocr
 # Uploaded files live on a volume mounted here; creating the directory in the image gives a new
 # volume this owner and mode.
 RUN install -d -o 10001 -g 10001 -m 0700 /var/lib/synapse/blobs
@@ -69,5 +72,9 @@ ENV PATH=/app/.venv/bin:$PATH \
     SYNAPSE_OCR_TESSDATA_DIR=/usr/share/synapse/tessdata \
     SYNAPSE_OCR_PPOCR_DIR=/usr/share/synapse/ppocr
 USER 10001:10001
+# The OCR models must be readable by the user the application runs as: an image whose model
+# directory was closed to it failed every scanned page, and the smoke test, built elsewhere,
+# did not see it.
+RUN for model in /usr/share/synapse/ppocr/* /usr/share/synapse/tessdata/*; do test -r "$model" || exit 1; done
 ENTRYPOINT ["synapse"]
 CMD ["api"]

@@ -43,9 +43,13 @@ MAX_ATTEMPTS = 2
 BUILD_ATTEMPTS = 3
 BASE = "http://127.0.0.1:8490"
 EMAIL = "editor@golden.example"
-# What a chunk's text, terms and vector depend on: a change here means ingesting again.
+# What a chunk's text, terms and vector depend on: a change here means ingesting again. The
+# OCR engines and their models are part of it (deploy/app/Dockerfile fetches the models; uv.lock
+# pins the libraries that render and read pages): pages that go to OCR are text like any other.
 INGESTION = [
+    "backend/src/synapse/knowledge/charlm.py",
     "backend/src/synapse/knowledge/chunking.py",
+    "backend/src/synapse/knowledge/ctc.py",
     "backend/src/synapse/knowledge/dedup.py",
     "backend/src/synapse/knowledge/entities.py",
     "backend/src/synapse/knowledge/filetypes.py",
@@ -53,14 +57,19 @@ INGESTION = [
     "backend/src/synapse/knowledge/language.py",
     "backend/src/synapse/knowledge/ocr.py",
     "backend/src/synapse/knowledge/parsing.py",
+    "backend/src/synapse/knowledge/ppocr.py",
     "backend/src/synapse/knowledge/processing.py",
     "backend/src/synapse/knowledge/quality.py",
     "backend/src/synapse/knowledge/rapid.py",
+    "backend/src/synapse/knowledge/reading.py",
     "backend/src/synapse/knowledge/search.py",
     "backend/src/synapse/knowledge/structure.py",
     "backend/src/synapse/knowledge/turkish.py",
+    "backend/src/synapse/knowledge/vote.py",
     "backend/src/synapse/knowledge/data",
     "backend/src/synapse/models/llama.py",
+    "backend/uv.lock",
+    "deploy/app/Dockerfile",
     "eval/corpus/manifest.csv",
     "synapsectl/src/synapsectl/models.py",
 ]
@@ -117,13 +126,14 @@ def comment(repo: str, sha: str, body: Path) -> None:
 
 def fingerprint() -> str:
     """The ingestion's files as git tracks them at the checked-out commit: ``__pycache__`` and
-    anything else untracked in those directories does not count."""
+    anything else untracked in those directories does not count. A name that is not in the tree
+    is an error, not a file that never changes: a renamed module would otherwise go unwatched."""
     lines = []
     for name in INGESTION:
         try:
             lines.append(f"{name} {run('git', 'rev-parse', f'HEAD:{name}').strip()}")
-        except RuntimeError:
-            lines.append(f"{name} missing")
+        except RuntimeError as error:
+            raise RuntimeError(f"{name} is not in the tree: update INGESTION") from error
     return hashlib.sha256("\n".join(lines).encode()).hexdigest()
 
 

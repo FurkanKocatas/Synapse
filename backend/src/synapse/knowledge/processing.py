@@ -162,9 +162,12 @@ class Processor:
                     reading = await asyncio.to_thread(
                         self._read, path, claimed.media_type, page.number, Path(directory)
                     )
-                except OcrError:
+                except OcrError as error:
                     log.warning(
-                        "ingest.ocr.page_failed", version_id=str(version_id), page=page.number
+                        "ingest.ocr.page_failed",
+                        version_id=str(version_id),
+                        page=page.number,
+                        error=str(error),
                     )
                     failed += 1
                     continue
