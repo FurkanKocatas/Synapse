@@ -77,11 +77,16 @@ def main() -> None:
         arrays = {"boxes": np.array(boxes, dtype=np.int32).reshape(-1, 4)}
         for i, crop in enumerate(crops):
             captured.clear()
-            list(rec.predict(crop, batch_size=1))
+            list(rec.predict(crop, batch_size=1))  # one line a call: a batch pads to the widest
             probs = captured[-1][0]
-            top = np.argsort(-probs, axis=1)[:, : args.topk]
+            # the k likeliest characters per frame, likeliest first; a full sort of the whole
+            # character set took most of the time (6 s of 7 per page on a GPU)
+            top = np.argpartition(-probs, args.topk, axis=1)[:, : args.topk]
+            kept = np.take_along_axis(probs, top, axis=1)
+            order = np.argsort(-kept, axis=1, kind="stable")
+            top, kept = np.take_along_axis(top, order, 1), np.take_along_axis(kept, order, 1)
             arrays[f"idx_{i}"] = top.astype(np.int32)
-            arrays[f"prob_{i}"] = np.take_along_axis(probs, top, axis=1).astype(np.float16)
+            arrays[f"prob_{i}"] = kept.astype(np.float16)
         np.savez_compressed(args.out / f"{path.stem}.npz", **arrays)
         if n % 10 == 0 or n == len(todo):
             print(f"{n}/{len(todo)} {(time.time() - start) / n:.1f} s/page", flush=True)
