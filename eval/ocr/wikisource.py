@@ -253,11 +253,15 @@ class _Text(HTMLParser):
     ARTICLE = ("id", "Madde")
     CLAUSE_NUMBER = ("id", "fıkrano")
 
+    # A footnote marker the wiki numbers itself ("[2]" where the page prints a superscript 3).
+    FOOTNOTE_MARKER = ("class", "reference")
+
     def __init__(self) -> None:
         super().__init__()
         self.out: list[str] = []
         self.skip = 0
         self.clause_number = False
+        self.markers = 0
 
     def handle_starttag(self, tag, attrs):
         if tag in {"style", "script"}:
@@ -268,6 +272,9 @@ class _Text(HTMLParser):
             self.out.append(ARTICLE_MARK)
         if tag == "span" and self.CLAUSE_NUMBER in attrs:
             self.clause_number = True
+        if tag == "sup" and (self.markers or self.FOOTNOTE_MARKER in attrs):
+            self.markers += 1
+            self.skip += 1
 
     def handle_endtag(self, tag):
         if tag in {"style", "script"} and self.skip:
@@ -276,6 +283,9 @@ class _Text(HTMLParser):
             self.out.append("\n")
         if tag == "span":
             self.clause_number = False
+        if tag == "sup" and self.markers:
+            self.markers -= 1
+            self.skip -= 1
 
     def handle_data(self, data):
         if self.clause_number:

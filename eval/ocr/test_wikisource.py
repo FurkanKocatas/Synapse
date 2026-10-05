@@ -39,3 +39,12 @@ def test_an_article_of_one_clause_has_no_number_unless_it_may_go_on_overleaf() -
     page = article(17, "Tek") + article(18, "Bir", "İki") + article(19, "Son")
     lines = ["Madde 17", "Tek", "Madde 18", "1.  Bir", "2.  İki", "Madde 19", "1.  Son"]
     assert from_html(page) == "\n".join(lines)
+
+
+def test_the_wikis_footnote_markers_are_dropped_and_the_notes_kept() -> None:
+    page = (
+        '<p>argo kullanımı<sup id="cite_ref-2" class="reference"><a href="#cite_note-2">'
+        '<span class="cite-bracket">[</span>2<span class="cite-bracket">]</span></a></sup>'
+        ' yönünden <sup>2</sup></p><p><span class="reference-text">Not metni.</span></p>'
+    )
+    assert from_html(page) == "argo kullanımı yönünden 2\nNot metni."
