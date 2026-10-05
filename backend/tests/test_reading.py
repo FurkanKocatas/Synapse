@@ -1,16 +1,6 @@
-"""Reading order (reading_order.py) on page layouts small enough to draw by hand.
+"""Reading order on page layouts small enough to draw by hand."""
 
-uv run --directory backend pytest ../eval/ocr/test_reading_order.py
-"""
-
-# ruff: noqa: S101  (pytest asserts)
-
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from reading_order import gutter, reading_order, rows
+from synapse.knowledge.reading import gutter, reading_order, rows
 
 
 def column(x0: int, x1: int, top: int, n: int, name: str) -> list[tuple[list[int], str]]:

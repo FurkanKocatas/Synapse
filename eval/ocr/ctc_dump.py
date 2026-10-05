@@ -2,7 +2,8 @@
 character distributions (top k), so decoders (greedy, beam search with a language model,
 ctc_decode.py) can be compared offline without running the recogniser again.
 
-    python eval/ocr/ctc_dump.py --images DIR --out DIR [--rec-dir DIR] [--topk 12] [--device gpu]
+    python eval/ocr/ctc_dump.py --images DIR --out DIR [--rec-dir DIR | --rec-model NAME]
+                                [--topk 12] [--device gpu]
 
 Writes OUT/<page>.npz: boxes (n, 4), and per line i arrays idx_i (T, k) int32 and prob_i (T, k)
 float16; OUT/chars.txt holds the recogniser's character list (index 0 is the CTC blank).
@@ -40,12 +41,14 @@ def main() -> None:
     options.add_argument("--images", type=Path, required=True)
     options.add_argument("--out", type=Path, required=True)
     options.add_argument("--rec-dir")
+    # another PaddleOCR recogniser by name, e.g. latin_PP-OCRv5_mobile_rec (a voice for the vote)
+    options.add_argument("--rec-model", default="PP-OCRv6_medium_rec")
     options.add_argument("--topk", type=int, default=12)
     options.add_argument("--device", default="cpu")
     args = options.parse_args()
     det = TextDetection(model_name="PP-OCRv6_medium_det", device=args.device, **DETECTION)
     kwargs = {"model_dir": args.rec_dir} if args.rec_dir else {}
-    rec = TextRecognition(model_name="PP-OCRv6_medium_rec", device=args.device, **kwargs)
+    rec = TextRecognition(model_name=args.rec_model, device=args.device, **kwargs)
     crop_lines = CropByPolys(det_box_type="quad")
     predictor = rec.paddlex_predictor
     predictor = getattr(predictor, "_predictor", predictor)

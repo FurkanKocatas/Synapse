@@ -3,6 +3,7 @@ Wikipedia text, for scoring OCR hypotheses character by character (ctc_decode.py
 
     python eval/ocr/char_lm.py train --parquet FILE --out FILE [--order 6] [--chars 15000000]
     python eval/ocr/char_lm.py probe --lm FILE
+    uv run --directory backend python ../eval/ocr/char_lm.py pack --lm FILE --out FILE.npz
 
 Characters are kept as written (case and Turkish letters); runs of whitespace become one space.
 Memory grows with the order and the text: order 6 on 15 million characters is 67 MB on disk and
@@ -75,6 +76,17 @@ def clean(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def pack(lm: CharLM, out: Path) -> None:
+    """The model as the product loads it (synapse.knowledge.charlm): sorted 64-bit hashes and
+    float64 shares, computed as ``prob`` computes them so the two agree to the last bit."""
+    from synapse.knowledge import charlm  # noqa: PLC0415 - only packing needs the backend
+
+    packed = charlm.from_counts(lm.counts, len(lm.vocab))
+    packed.save(out)
+    contexts, pairs = len(packed.context_keys), len(packed.pair_keys)
+    print(f"packed {contexts:,} contexts and {pairs:,} pairs into {out}")
+
+
 def main() -> None:
     options = argparse.ArgumentParser()
     sub = options.add_subparsers(dest="command", required=True)
@@ -85,7 +97,13 @@ def main() -> None:
     tr.add_argument("--chars", type=int, default=15_000_000)
     pr = sub.add_parser("probe")
     pr.add_argument("--lm", type=Path, required=True)
+    pa = sub.add_parser("pack")
+    pa.add_argument("--lm", type=Path, required=True)
+    pa.add_argument("--out", type=Path, required=True)
     args = options.parse_args()
+    if args.command == "pack":
+        pack(load(args.lm), args.out)
+        return
     if args.command == "train":
         import pyarrow.parquet as pq  # noqa: PLC0415 - only training reads parquet
 
