@@ -18,7 +18,7 @@ from synapse.knowledge.public import (
     LightParser,
     LocalBlobStore,
     PageReader,
-    PpOcrEngine,
+    PpOcrReader,
     Processor,
     RapidOcrEngine,
     Reindexed,
@@ -32,12 +32,13 @@ log = structlog.get_logger(__name__)
 
 
 def page_reader(settings: Settings) -> PageReader:
-    text: PpOcrEngine | TesseractEngine
     if settings.ocr_ppocr_dir is not None:
-        text = PpOcrEngine(settings.ocr_ppocr_dir, threads=settings.ocr_threads)
-    else:
-        text = TesseractEngine(tessdata_dir=settings.ocr_tessdata_dir)
-    return TwoEngineReader(text, RapidOcrEngine(threads=settings.ocr_threads))
+        # PP-OCRv6 reads the identifiers a second time itself, in the same child process
+        return PpOcrReader(settings.ocr_ppocr_dir, threads=settings.ocr_threads)
+    return TwoEngineReader(
+        TesseractEngine(tessdata_dir=settings.ocr_tessdata_dir),
+        RapidOcrEngine(threads=settings.ocr_threads),
+    )
 
 
 async def run(

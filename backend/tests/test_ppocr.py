@@ -12,7 +12,7 @@ import pytest
 from synapse.kernel.config import Settings
 from synapse.knowledge import ppocr
 from synapse.knowledge.ctc import LanguageScore, Search, read_line
-from synapse.knowledge.ocr import OcrError, TesseractEngine, TwoEngineReader
+from synapse.knowledge.ocr import OcrError, PageReading, TesseractEngine, TwoEngineReader
 from synapse.worker_cli import page_reader
 from tests import ppocr_children
 
@@ -147,8 +147,8 @@ def test_the_worker_reads_with_ppocr_when_its_models_are_configured(tmp_path: Pa
     configured = page_reader(Settings(ocr_ppocr_dir=tmp_path))
     default = page_reader(Settings())
     try:
-        assert isinstance(configured, TwoEngineReader)
-        assert isinstance(configured.text_engine, ppocr.PpOcrEngine)
+        # PP-OCRv6 reads the identifiers a second time itself: no RapidOCR child beside it
+        assert isinstance(configured, ppocr.PpOcrReader)
         assert isinstance(default, TwoEngineReader)
         assert isinstance(default.text_engine, TesseractEngine)
     finally:
@@ -156,7 +156,7 @@ def test_the_worker_reads_with_ppocr_when_its_models_are_configured(tmp_path: Pa
         default.close()
 
 
-LINE: ppocr.Line = ((0, 0, 10, 10), np.zeros((1, 3), dtype=np.float32))
+LINE: ppocr.Detected = ((0, 0, 10, 10), np.zeros((4, 4, 3), dtype=np.uint8))
 
 
 class Flaky:
@@ -165,13 +165,13 @@ class Flaky:
     def __init__(self) -> None:
         self.calls = 0
 
-    def lines(self, page: np.ndarray[Any, Any]) -> list[ppocr.Line]:
+    def detect(self, page: np.ndarray[Any, Any]) -> list[ppocr.Detected]:
         self.calls += 1
         return [] if self.calls == 1 else [LINE]
 
 
 class Steady(Flaky):
-    def lines(self, page: np.ndarray[Any, Any]) -> list[ppocr.Line]:
+    def detect(self, page: np.ndarray[Any, Any]) -> list[ppocr.Detected]:
         self.calls += 1
         return [LINE, LINE, LINE]
 
@@ -180,17 +180,17 @@ def test_a_page_with_ink_and_no_line_is_read_again_and_a_blank_one_is_not() -> N
     printed = np.full((100, 100, 3), 255, dtype=np.uint8)
     printed[40:60, 10:90] = 0
     flaky = Flaky()
-    assert ppocr.detected_lines(cast(ppocr.Models, flaky), printed) == [LINE]
+    assert ppocr.detected(cast(ppocr.Models, flaky), printed) == [LINE]
     assert flaky.calls == 2
     blank, flaky = np.full((100, 100, 3), 250, dtype=np.uint8), Flaky()
-    assert ppocr.detected_lines(cast(ppocr.Models, flaky), blank) == []
+    assert ppocr.detected(cast(ppocr.Models, flaky), blank) == []
     assert flaky.calls == 1
 
 
 def test_a_page_with_lines_enough_is_read_once() -> None:
     printed = np.zeros((100, 100, 3), dtype=np.uint8)
     steady = Steady()
-    assert len(ppocr.detected_lines(cast(ppocr.Models, steady), printed)) == 3
+    assert len(ppocr.detected(cast(ppocr.Models, steady), printed)) == 3
     assert steady.calls == 1
 
 
@@ -211,3 +211,25 @@ def test_an_output_that_is_not_finite_is_run_again_and_then_an_error() -> None:
     assert ppocr.finite_run(InTurn(bad, good), x) is good
     with pytest.raises(ppocr.NotFiniteError):
         ppocr.finite_run(InTurn(bad, bad), x)
+
+
+def test_the_reader_gives_the_text_and_flags_identifiers_the_second_reading_lacks(
+    tmp_path: Path,
+) -> None:
+    reader = ppocr.PpOcrReader(tmp_path, read=ppocr_children.two)
+    try:
+        reading = reader.read(tmp_path / "a.png")
+    finally:
+        reader.close()
+    assert reading == PageReading(
+        text="Karar 2026/35 ile 15.03.2025 tarihli",
+        engine="ppocrv6-tr-lm+latin",
+        extra_identifiers=("2026/36",),
+        uncertain_identifiers=("2026/35",),
+    )
+
+
+def test_a_directory_without_the_second_recogniser_is_an_error() -> None:
+    models = ppocr.Models(detector=None, recognizer=None, characters=[""], lm=None)
+    with pytest.raises(OcrError, match="second recogniser"):
+        ppocr._text(models, [LINE], second=True)

@@ -19,7 +19,7 @@ from synapse.knowledge.filetypes import MediaType, UnsupportedFileError, detect
 from synapse.knowledge.library import Folder, Listed, Overview
 from synapse.knowledge.ocr import PageReader, PageReading, TesseractEngine, TwoEngineReader
 from synapse.knowledge.parsing import LightParser, Page, Parsed, ParseError, Parser
-from synapse.knowledge.ppocr import PpOcrEngine
+from synapse.knowledge.ppocr import PpOcrEngine, PpOcrReader
 from synapse.knowledge.processing import Processor, Reindexed, reindex
 from synapse.knowledge.rapid import RapidOcrEngine
 from synapse.knowledge.search import MAX_QUERY, Found, Hit, Search
@@ -51,6 +51,7 @@ __all__ = [
     "Parsed",
     "Parser",
     "PpOcrEngine",
+    "PpOcrReader",
     "Processor",
     "RapidOcrEngine",
     "Receiver",

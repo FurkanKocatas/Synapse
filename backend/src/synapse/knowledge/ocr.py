@@ -136,21 +136,28 @@ class TwoEngineReader:
         return f"{self.text_engine.name}+{self.second_engine.name}"
 
     def read(self, image: Path) -> PageReading:
-        text = normalize(fix_lira(self.text_engine.recognize(image)))
-        first = identifiers(text)
-        second = identifiers(self.second_engine.recognize(image))
-        return PageReading(
-            text=text,
-            engine=self.name,
-            extra_identifiers=tuple(sorted(second - first)),
-            uncertain_identifiers=tuple(sorted(first - second)),
-        )
+        text = self.text_engine.recognize(image)
+        return two_readings(text, self.second_engine.recognize(image), self.name)
 
     def close(self) -> None:
         for engine in (self.text_engine, self.second_engine):
             close = getattr(engine, "close", None)
             if close is not None:
                 close()
+
+
+def two_readings(text: str, second: str, engine: str) -> PageReading:
+    """The page's text, with the identifiers a second reading adds (search terms only) and those
+    it does not confirm (to flag in answers)."""
+    text = normalize(fix_lira(text))
+    first = identifiers(text)
+    other = identifiers(second)
+    return PageReading(
+        text=text,
+        engine=engine,
+        extra_identifiers=tuple(sorted(other - first)),
+        uncertain_identifiers=tuple(sorted(first - other)),
+    )
 
 
 def fix_lira(text: str) -> str:
