@@ -8,8 +8,10 @@ they do under Paddle: on 200 test pages the boxes came out in the same order, a 
 two pixels apart, and 99.9% of the recogniser's likeliest characters were the same.
 
 The model directory (``ocr_ppocr_dir``) holds detection.onnx, recognition.onnx, characters.json
-(the recogniser's character list, index 0 the CTC blank), charlm.npz (synapse.knowledge.charlm)
-and, for the second reading of identifiers, second.onnx and second.json (PP-OCRv5 Latin mobile).
+(the recogniser's character list, index 0 the CTC blank) and charlm.npz (synapse.knowledge.charlm).
+Tesseract reads the page again for the identifiers (worker_cli.page_reader): its errors are
+its own, while a second PP-OCR recogniser on the same detection and language model made the
+same ones and flagged a fifth to two thirds of the wrong identifiers Tesseract flags.
 
 The child process is arranged as RapidOCR's (rapid.py): onnxruntime holds on to memory for the
 input shapes it has seen, and a crash in native code must not take the worker with it.
@@ -29,7 +31,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from synapse.knowledge.ocr import OCR_TIMEOUT_SECONDS, OcrError, PageReading, two_readings
+from synapse.knowledge.ocr import OCR_TIMEOUT_SECONDS, OcrError
 
 PAGES_PER_CHILD = 25
 
@@ -212,26 +214,17 @@ class Models:
     recognizer: Any
     characters: list[str]
     lm: Any
-    # A second recogniser (second.onnx, second.json) reads the same lines once more: the second
-    # reading of identifiers that RapidOCR gives beside Tesseract, without a second detector.
-    second: Any | None = None
-    second_characters: list[str] | None = None
 
     @classmethod
     def load(cls, directory: Path, threads: int) -> Models:
         from synapse.knowledge.charlm import CharLM  # noqa: PLC0415  (numpy only, still lazy)
 
-        def characters(name: str) -> list[str]:
-            return list(json.loads((directory / name).read_text(encoding="utf-8")))
-
-        has_second = (directory / "second.onnx").exists()
+        characters = json.loads((directory / "characters.json").read_text(encoding="utf-8"))
         return cls(
             detector=_session(directory / "detection.onnx", threads),
             recognizer=_session(directory / "recognition.onnx", threads),
-            characters=characters("characters.json"),
+            characters=characters,
             lm=CharLM.load(directory / "charlm.npz"),
-            second=_session(directory / "second.onnx", threads) if has_second else None,
-            second_characters=characters("second.json") if has_second else None,
         )
 
     def detect(self, page: NDArray[np.uint8]) -> list[Detected]:
@@ -260,10 +253,9 @@ class Models:
             out.append((box, crop_line(page, quad)))
         return out
 
-    def recognize(self, crop: NDArray[np.uint8], *, second: bool = False) -> NDArray[np.float32]:
-        """A line's frame-by-frame character distributions, by the recogniser or the second."""
-        session = self.second if second else self.recognizer
-        probs: NDArray[np.float32] = finite_run(session, recognition_input(crop))[0]
+    def recognize(self, crop: NDArray[np.uint8]) -> NDArray[np.float32]:
+        """A line's frame-by-frame character distributions."""
+        probs: NDArray[np.float32] = finite_run(self.recognizer, recognition_input(crop))[0]
         return probs
 
     def lines(self, page: NDArray[np.uint8]) -> list[Line]:
@@ -300,17 +292,14 @@ def _prepared(image: str, directory: str, threads: int) -> tuple[Models, NDArray
     return _models[directory, threads], page
 
 
-def _text(models: Models, found: list[Detected], *, second: bool = False) -> str:
-    """The lines read by one recogniser with the language model, in reading order."""
+def _text(models: Models, found: list[Detected]) -> str:
+    """The lines read with the language model, in reading order."""
     from synapse.knowledge.ctc import LanguageScore, Search, read_line  # noqa: PLC0415
     from synapse.knowledge.reading import reading_order  # noqa: PLC0415
 
-    characters = models.second_characters if second else models.characters
-    if characters is None:
-        raise OcrError("the model directory has no second recogniser (second.onnx)")
     score, search = LanguageScore(models.lm), Search()
     lines = [
-        (box, read_line(models.recognize(crop, second=second), characters, score, search))
+        (box, read_line(models.recognize(crop), models.characters, score, search))
         for box, crop in found
     ]
     return "\n".join(reading_order(lines))
@@ -319,13 +308,6 @@ def _text(models: Models, found: list[Detected], *, second: bool = False) -> str
 def read_page(image: str, directory: str, threads: int) -> str:  # runs in the child process
     models, page = _prepared(image, directory, threads)
     return _text(models, detected(models, page))
-
-
-def read_page_twice(image: str, directory: str, threads: int) -> tuple[str, str]:  # in the child
-    """The page's text and the second recogniser's reading of the same lines."""
-    models, page = _prepared(image, directory, threads)
-    found = detected(models, page)
-    return _text(models, found), _text(models, found, second=True)
 
 
 class _Child:
@@ -393,35 +375,6 @@ class PpOcrEngine:
     def recognize(self, image: Path) -> str:
         text: str = self._child.run(self._read, str(image), str(self._directory), self._threads)
         return text
-
-    def close(self) -> None:
-        self._child.close()
-
-
-class PpOcrReader:
-    """The page reader (PageReader): PP-OCRv6's text, and the second recogniser's reading of the
-    same lines for a second reading of the identifiers, as RapidOCR gives one beside Tesseract
-    (TwoEngineReader) but without a second detector or a second child process: the two children
-    did not fit the worker's memory together."""
-
-    name = "ppocrv6-tr-lm+latin"
-
-    def __init__(
-        self,
-        directory: Path,
-        threads: int = 1,
-        *,
-        read: Callable[[str, str, int], tuple[str, str]] = read_page_twice,
-        timeout: float = OCR_TIMEOUT_SECONDS,
-    ) -> None:
-        self._directory = directory
-        self._threads = threads
-        self._read = read
-        self._child = _Child(timeout)
-
-    def read(self, image: Path) -> PageReading:
-        text, second = self._child.run(self._read, str(image), str(self._directory), self._threads)
-        return two_readings(text, second, self.name)
 
     def close(self) -> None:
         self._child.close()

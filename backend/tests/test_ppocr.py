@@ -12,7 +12,7 @@ import pytest
 from synapse.kernel.config import Settings
 from synapse.knowledge import ppocr
 from synapse.knowledge.ctc import LanguageScore, Search, read_line
-from synapse.knowledge.ocr import OcrError, PageReading, TesseractEngine, TwoEngineReader
+from synapse.knowledge.ocr import OcrError, TesseractEngine, TwoEngineReader
 from synapse.worker_cli import page_reader
 from tests import ppocr_children
 
@@ -147,8 +147,10 @@ def test_the_worker_reads_with_ppocr_when_its_models_are_configured(tmp_path: Pa
     configured = page_reader(Settings(ocr_ppocr_dir=tmp_path))
     default = page_reader(Settings())
     try:
-        # PP-OCRv6 reads the identifiers a second time itself: no RapidOCR child beside it
-        assert isinstance(configured, ppocr.PpOcrReader)
+        assert isinstance(configured, TwoEngineReader)
+        assert isinstance(configured.text_engine, ppocr.PpOcrEngine)
+        # Tesseract reads the identifiers a second time: no RapidOCR child beside PP-OCRv6's
+        assert isinstance(configured.second_engine, TesseractEngine)
         assert isinstance(default, TwoEngineReader)
         assert isinstance(default.text_engine, TesseractEngine)
     finally:
@@ -211,25 +213,3 @@ def test_an_output_that_is_not_finite_is_run_again_and_then_an_error() -> None:
     assert ppocr.finite_run(InTurn(bad, good), x) is good
     with pytest.raises(ppocr.NotFiniteError):
         ppocr.finite_run(InTurn(bad, bad), x)
-
-
-def test_the_reader_gives_the_text_and_flags_identifiers_the_second_reading_lacks(
-    tmp_path: Path,
-) -> None:
-    reader = ppocr.PpOcrReader(tmp_path, read=ppocr_children.two)
-    try:
-        reading = reader.read(tmp_path / "a.png")
-    finally:
-        reader.close()
-    assert reading == PageReading(
-        text="Karar 2026/35 ile 15.03.2025 tarihli",
-        engine="ppocrv6-tr-lm+latin",
-        extra_identifiers=("2026/36",),
-        uncertain_identifiers=("2026/35",),
-    )
-
-
-def test_a_directory_without_the_second_recogniser_is_an_error() -> None:
-    models = ppocr.Models(detector=None, recognizer=None, characters=[""], lm=None)
-    with pytest.raises(OcrError, match="second recogniser"):
-        ppocr._text(models, [LINE], second=True)

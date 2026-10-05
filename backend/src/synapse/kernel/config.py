@@ -69,9 +69,8 @@ class Settings(BaseSettings):
     # worker reads one page at a time with them.
     ocr_threads: int = Field(default=1, ge=1, le=16)
     # PP-OCRv6's model directory (knowledge/ppocr.py). Set, PP-OCRv6 with the Turkish character
-    # language model gives the text of pages that need OCR, in place of Tesseract, and a second
-    # recogniser in the same process reads their identifiers again, in place of RapidOCR.
-    # Unset, Tesseract gives the text and RapidOCR the second reading.
+    # language model gives the text of pages that need OCR, and Tesseract reads their identifiers
+    # a second time. Unset, Tesseract gives the text and RapidOCR the second reading.
     ocr_ppocr_dir: Path | None = None
     # Model servers (ADR 0009, ADR 0018): llama.cpp on the internal network, one per role, each
     # with its own API key. A role without a URL has no model: ingestion then stores no vectors.

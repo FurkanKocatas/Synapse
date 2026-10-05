@@ -20,8 +20,3 @@ def hang(image: str, directory: str, threads: int) -> str:
 
 def fail(image: str, directory: str, threads: int) -> str:
     raise ValueError("unreadable image")
-
-
-def two(image: str, directory: str, threads: int) -> tuple[str, str]:
-    # the second reading has a different decision number and the same date
-    return "Karar 2026/35 ile 15.03.2025 tarihli", "Karar 2026/36 ile 15.03.2025 tarihli"
