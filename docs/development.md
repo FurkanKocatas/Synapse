@@ -64,6 +64,8 @@ pnpm dev                 # http://localhost:5173, /api is proxied to http://127.
 SYNAPSE_API_URL=http://127.0.0.1:8765 pnpm dev   # proxy to an API on another port
 ```
 
+Components from shadcn/ui are added with its CLI, run on demand from `frontend/`: `pnpm dlx shadcn@4.21.0 add <component>` (settings in `components.json`). The CLI is not a dependency: its file matching pulls in `braces`, which has a high advisory without a fix (GHSA-vfj7-8cjw-p6xm), and `pnpm audit` gates CI. The CSS the package provides is copied into `src/styles/shadcn.css`.
+
 Translations live in `frontend/messages/tr.json` and `frontend/messages/en.json`. Paraglide compiles them into typed functions under `src/paraglide/` (generated, not committed). Add every new key to both files; the build fails on a key missing from Turkish, and `pnpm i18n:check` fails on any difference between the two.
 
 ## Checks

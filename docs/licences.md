@@ -38,6 +38,10 @@ The licence is **MIT with the Commons Clause**, a "source available" licence und
 
 They use `motion` (MIT). React Bits components that need GSAP (licensed under GSAP's own terms, not MIT) are not used.
 
+### CSS copied from shadcn, reviewed 2026-10-05
+
+`frontend/src/styles/shadcn.css` is the stylesheet of the shadcn package 4.21.0 (`dist/tailwind.css`: animation keyframes, `data-*` variants and the `no-scrollbar`, `scroll-fade` and `shimmer` utilities), copied unchanged. The package is not a dependency, so the licence gate does not see it and this entry records it. The licence is MIT (copyright (c) 2023 shadcn): **allowed**; the file names its source and licence, and the licence text goes into the third-party notices.
+
 ### OCR programs and models in the application image, reviewed 2026-09-28
 
 | Component | Source | Licence | Redistribution in the image |

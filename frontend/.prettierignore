@@ -1,6 +1,8 @@
 dist
 src/paraglide
 pnpm-lock.yaml
+# Copied unchanged from the shadcn package; kept as published.
+src/styles/shadcn.css
 # Files that inlang generates inside the project folder; only settings.json is ours.
 project.inlang/*
 !project.inlang/settings.json
