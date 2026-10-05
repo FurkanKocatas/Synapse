@@ -14,6 +14,7 @@ from synapse.knowledge.ocr import (
     PageReading,
     TesseractEngine,
     TwoEngineReader,
+    VotingReader,
     better_text,
     fix_lira,
     identifiers,
@@ -146,6 +147,31 @@ class Meeting:
     def recognize(self, image: Path) -> str:
         self.barrier.wait()
         return "Karar 2026/35"
+
+
+@dataclass
+class Voices:
+    """A voice engine that returns the same readings for every image."""
+
+    voices: tuple[str, ...]
+    readings: list[str]
+
+    def recognize_voices(self, image: Path) -> list[str]:
+        return self.readings
+
+
+def test_the_voting_reader_votes_and_tesseract_gives_the_second_reading(tmp_path: Path) -> None:
+    reader = VotingReader(
+        Voices(("a", "b"), ["Tutar ₺2.500 karar 2026/35", "Tutar ₺2.500 karar 2026/36"]),
+        Fixed("tesseract", "Tutar £2.500 karar 2026/35 tarih 15.03.2026"),
+    )
+    reading = reader.read(tmp_path / "page.png")
+    assert reading.text == "Tutar ₺2.500 karar 2026/35"
+    assert reading.engine == "vote-a+b+tesseract"
+    # Tesseract's "£" is the lira before the vote; its date, read by one voice only, a search term
+    assert reading.extra_identifiers == ("15.03.2026",)
+    assert reading.uncertain_identifiers == ()
+    reader.close()
 
 
 def test_the_two_engines_read_a_page_at_the_same_time(tmp_path: Path) -> None:

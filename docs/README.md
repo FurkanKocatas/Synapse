@@ -34,3 +34,4 @@
 | [0017](adr/0017-data-access.md) | psycopg 3 with explicit SQL, migrations with Alembic |
 | [0018](adr/0018-model-defaults.md) | Model defaults: bge-m3, bge-reranker-v2-m3 and Qwen3.5-4B on llama.cpp |
 | [0019](adr/0019-page-ocr.md) | Page OCR: PP-OCRv6 with a Turkish language model |
+| [0020](adr/0020-ocr-vote.md) | Page OCR: a vote of three readings |

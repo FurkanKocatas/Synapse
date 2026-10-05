@@ -71,7 +71,8 @@ class Settings(BaseSettings):
     ocr_threads: int = Field(default=4, ge=1, le=16)
     # PP-OCRv6's model directory (knowledge/ppocr.py). Set, PP-OCRv6 with the Turkish character
     # language model gives the text of pages that need OCR, and Tesseract reads their identifiers
-    # a second time; the application image sets it (ADR 0019). Unset, Tesseract gives the text
+    # a second time; with PP-OCRv5's Latin recogniser in it too, the three readings are voted
+    # (ADR 0020). The application image sets it (ADR 0019). Unset, Tesseract gives the text
     # and RapidOCR the second reading.
     ocr_ppocr_dir: Path | None = None
     # Model servers (ADR 0009, ADR 0018): llama.cpp on the internal network, one per role, each

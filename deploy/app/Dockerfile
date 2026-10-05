@@ -54,6 +54,11 @@ ADD --checksum=sha256:e6948b0b16c8d2c1255403b884fb9b3ecc3e5dea0ddafdfebe7276ef41
     https://github.com/FurkanKocatas/Synapse/releases/download/ocr-models-1/characters.json /usr/share/synapse/ppocr/characters.json
 ADD --checksum=sha256:f2312bc47859d24537294c3a4fa7ac139458725657ab08a5649c5b731b58d4c5 --chmod=644 \
     https://github.com/FurkanKocatas/Synapse/releases/download/ocr-models-1/charlm.npz /usr/share/synapse/ppocr/charlm.npz
+# PP-OCRv5's Latin recogniser, a second voice in the vote of three readings (ADR 0020).
+ADD --checksum=sha256:20e6127d910ef10be0d0fe4a49e68d2474b07e83f57600cdd177b3edb561d194 --chmod=644 \
+    https://github.com/FurkanKocatas/Synapse/releases/download/ocr-models-2/latin-recognition.onnx /usr/share/synapse/ppocr/latin-recognition.onnx
+ADD --checksum=sha256:736f1593b68e36ffc935e557b1452a2cd43267808eb49ee705a90fb0be8d22c0 --chmod=644 \
+    https://github.com/FurkanKocatas/Synapse/releases/download/ocr-models-2/latin-characters.json /usr/share/synapse/ppocr/latin-characters.json
 # Uploaded files live on a volume mounted here; creating the directory in the image gives a new
 # volume this owner and mode.
 RUN install -d -o 10001 -g 10001 -m 0700 /var/lib/synapse/blobs

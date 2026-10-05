@@ -37,6 +37,7 @@ from PIL import Image
 
 from synapse.knowledge import quality
 from synapse.knowledge.parsing import PDFIUM_LOCK, Page, normalize
+from synapse.knowledge.vote import vote
 
 # The engines read scans at their own resolution: enlarging to 300 dpi first made identifiers
 # worse in the benchmark (a ministry circular fell from 0.80 to 0.30).
@@ -150,6 +151,43 @@ class TwoEngineReader:
 
     def close(self) -> None:
         for engine in (self.text_engine, self.second_engine):
+            close = getattr(engine, "close", None)
+            if close is not None:
+                close()
+
+
+class VoiceEngine(Protocol):
+    """An engine that reads a page several times, its voices (knowledge/ppocr.py)."""
+
+    voices: tuple[str, ...]
+
+    def recognize_voices(self, image: Path) -> list[str]: ...
+
+
+@dataclass
+class VotingReader:
+    """The voice engine's readings and the second engine's, voted word by word (knowledge/vote.py,
+    ADR 0020): PP-OCRv6's fine-tuned recogniser as the pivot, its Latin recogniser, Tesseract.
+    Tesseract's reading is the second reading of the identifiers too, as in TwoEngineReader."""
+
+    voice_engine: VoiceEngine
+    second_engine: TextEngine
+
+    @property
+    def name(self) -> str:
+        return "vote-" + "+".join((*self.voice_engine.voices, self.second_engine.name))
+
+    def read(self, image: Path) -> PageReading:
+        # As in TwoEngineReader, the engines read the page at the same time.
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            second = pool.submit(self.second_engine.recognize, image)
+            voices = self.voice_engine.recognize_voices(image)
+            other = fix_lira(second.result())
+        # The pivot's circumflexes ("malî") go on the chosen words: the others mostly drop them.
+        return two_readings(vote([*voices, other], hats=0), other, self.name)
+
+    def close(self) -> None:
+        for engine in (self.voice_engine, self.second_engine):
             close = getattr(engine, "close", None)
             if close is not None:
                 close()

@@ -17,7 +17,13 @@ from synapse.knowledge.documents import (
 )
 from synapse.knowledge.filetypes import MediaType, UnsupportedFileError, detect
 from synapse.knowledge.library import Folder, Listed, Overview
-from synapse.knowledge.ocr import PageReader, PageReading, TesseractEngine, TwoEngineReader
+from synapse.knowledge.ocr import (
+    PageReader,
+    PageReading,
+    TesseractEngine,
+    TwoEngineReader,
+    VotingReader,
+)
 from synapse.knowledge.parsing import LightParser, Page, Parsed, ParseError, Parser
 from synapse.knowledge.ppocr import PpOcrEngine
 from synapse.knowledge.processing import Processor, Reindexed, reindex
@@ -64,6 +70,7 @@ __all__ = [
     "Uploaded",
     "Uploader",
     "VersionInfo",
+    "VotingReader",
     "detect",
     "estimate_tokens",
     "lower",

@@ -24,6 +24,7 @@ from synapse.knowledge.public import (
     Reindexed,
     TesseractEngine,
     TwoEngineReader,
+    VotingReader,
     reindex,
 )
 from synapse.models.public import Embedder, Models, models_from
@@ -36,9 +37,11 @@ def page_reader(settings: Settings) -> PageReader:
     if settings.ocr_ppocr_dir is not None:
         # Tesseract's errors are its own, so it is the second reading of PP-OCRv6's identifiers;
         # no RapidOCR child beside PP-OCRv6's (the two did not fit the worker's memory).
-        return TwoEngineReader(
-            PpOcrEngine(settings.ocr_ppocr_dir, threads=settings.ocr_threads), tesseract
-        )
+        ppocr = PpOcrEngine(settings.ocr_ppocr_dir, threads=settings.ocr_threads)
+        if len(ppocr.voices) > 1:
+            # PP-OCRv6's two recognisers and Tesseract, voted word by word (ADR 0020).
+            return VotingReader(ppocr, tesseract)
+        return TwoEngineReader(ppocr, tesseract)
     return TwoEngineReader(tesseract, RapidOcrEngine(threads=settings.ocr_threads))
 
 

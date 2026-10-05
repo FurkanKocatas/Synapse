@@ -162,7 +162,7 @@ scanned="$(editor -H 'Content-Type: application/octet-stream' --data-binary "@$s
 wait_parsed "$scanned" 240
 read_back="$(page_query "$scanned" "text_source || ' ' || ocr_engine || ' ' || text")"
 echo "$read_back"
-grep -q "^ocr ppocrv6-tr-lm+tesseract-tur+eng " <<<"$read_back"
+grep -q "^ocr vote-ppocrv6-tr-lm+ppocrv5-latin-lm+tesseract-tur+eng " <<<"$read_back"
 grep -q "Karar 2026/35 kabul edildi" <<<"$read_back"
 grep -q "15.03.2026" <<<"$read_back"
 rm -f "$editor_jar" "$sample" "$sample.back"

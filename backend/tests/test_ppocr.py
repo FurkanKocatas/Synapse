@@ -12,7 +12,7 @@ import pytest
 from synapse.kernel.config import Settings
 from synapse.knowledge import ppocr
 from synapse.knowledge.ctc import LanguageScore, Search, read_line
-from synapse.knowledge.ocr import OcrError, TesseractEngine, TwoEngineReader
+from synapse.knowledge.ocr import OcrError, TesseractEngine, TwoEngineReader, VotingReader
 from synapse.worker_cli import page_reader
 from tests import ppocr_children
 
@@ -93,6 +93,42 @@ def test_each_detected_line_is_recognised_and_read() -> None:
     box, probs = lines[0]
     assert box[1] < 20 and box[3] > 30  # the line's box, grown around the marked core
     assert read_line(probs, chars, LanguageScore(None), Search(width=1)) == "al"
+
+
+def test_the_second_recogniser_reads_the_same_lines_with_its_own_characters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pred = np.zeros((1, 1, 64, 128), dtype=np.float32)
+    pred[0, 0, 20:30, 10:100] = 0.9
+    frames = np.zeros((1, 3, 3), dtype=np.float32)
+    frames[0, 0, 1], frames[0, 1, 0], frames[0, 2, 2] = 1, 1, 1  # first, blank, second
+    detector = Session(pred)
+    page = np.full((64, 128, 3), 255, dtype=np.uint8)
+    one = ppocr.Models(detector, Session(frames), ["", "a", "l"], lm=None)
+    two = ppocr.Models(
+        detector, Session(frames), ["", "a", "l"], None, Session(frames), ["", "k", "m"]
+    )
+    monkeypatch.setattr(ppocr, "_prepared", lambda image, directory, threads: (two, page))
+    assert ppocr.read_voices("page.png", "models", 1) == ["al", "km"]
+    assert len(detector.inputs) == 1  # one detection for both
+    monkeypatch.setattr(ppocr, "_prepared", lambda image, directory, threads: (one, page))
+    assert ppocr.read_voices("page.png", "models", 1) == ["al"]
+    with pytest.raises(OcrError, match="no second recogniser"):
+        ppocr._text(one, one.detect(page), second=True)
+
+
+def test_the_engine_has_a_voice_for_each_recogniser_in_its_directory(tmp_path: Path) -> None:
+    assert ppocr.PpOcrEngine(tmp_path).voices == ("ppocrv6-tr-lm",)
+    (tmp_path / ppocr.LATIN_MODEL).touch()
+    engine = ppocr.PpOcrEngine(tmp_path, threads=2, read_all=ppocr_children.voices)
+    try:
+        assert engine.voices == ("ppocrv6-tr-lm", "ppocrv5-latin-lm")
+        assert engine.recognize_voices(tmp_path / "a.png") == [
+            f"first {tmp_path / 'a.png'}",
+            "second 2",
+        ]
+    finally:
+        engine.close()
 
 
 def test_pages_are_read_in_a_child_process_that_is_replaced_after_a_while(
@@ -176,6 +212,18 @@ def test_the_worker_reads_with_ppocr_when_its_models_are_configured(tmp_path: Pa
     finally:
         configured.close()
         default.close()
+
+
+def test_the_worker_votes_when_the_latin_recogniser_is_there_too(tmp_path: Path) -> None:
+    (tmp_path / ppocr.LATIN_MODEL).touch()
+    reader = page_reader(Settings(ocr_ppocr_dir=tmp_path))
+    try:
+        assert isinstance(reader, VotingReader)
+        assert isinstance(reader.voice_engine, ppocr.PpOcrEngine)
+        assert isinstance(reader.second_engine, TesseractEngine)
+        assert reader.name == "vote-ppocrv6-tr-lm+ppocrv5-latin-lm+tesseract-tur+eng"
+    finally:
+        reader.close()
 
 
 LINE: ppocr.Detected = ((0, 0, 10, 10), np.zeros((4, 4, 3), dtype=np.uint8))

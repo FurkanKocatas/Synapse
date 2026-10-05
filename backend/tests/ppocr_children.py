@@ -35,5 +35,9 @@ def not_finite_in_the_first_child(image: str, directory: str, threads: int) -> s
     return f"{first.read_text()} {os.getpid()}"
 
 
+def voices(image: str, directory: str, threads: int) -> list[str]:
+    return [f"first {image}", f"second {threads}"]
+
+
 def never_finite(image: str, directory: str, threads: int) -> str:
     raise NotFiniteError("the model gave values that are not finite")
