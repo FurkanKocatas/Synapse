@@ -32,6 +32,9 @@ eval/ocr/work/
 # Parser benchmark working files (eval/parsing/run.py)
 eval/parsing/work/
 
+# The product's OCR text of the corpus's scanned pages (eval/golden/ocr_pages.py): it names officials
+eval/golden/work/
+
 # Retrieval benchmark working files (eval/retrieval/)
 eval/retrieval/work/
 

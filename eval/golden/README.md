@@ -2,7 +2,7 @@
 
 Turkish questions over the [evaluation corpus](../corpus/README.md), each anchored to the page that answers it: the reference for retrieval and answer quality ([ADR 0010](../../docs/adr/0010-rag-pipeline.md), "Evaluation gates"; [phase 4](../../docs/plan/phase-4.md), step 9).
 
-Status: **draft 1, 2026-09-29.** Checked mechanically ([check.py](check.py)) and read once against the pages by a second model; not yet reviewed by a person. Scanned documents are not covered yet (below).
+Status: **draft 1, 2026-09-29**; questions on scanned documents added 2026-10-05 ([scanned.jsonl](scanned.jsonl), below). Checked mechanically ([check.py](check.py)) and read once against the pages by a second model; not yet reviewed by a person.
 
 ## Contents
 
@@ -34,6 +34,14 @@ Evidence comes from 86 documents: 35 municipal, 28 legal, 23 health.
 
 [paraphrased.jsonl](paraphrased.jsonl) holds the same questions with every answerable one reworded to avoid the words of its source (synonyms, everyday words for official terms, another sentence structure), keeping what points at the document (the institution, the law, the year) and every identifier; `original` keeps the first wording, answers and evidence are the same. The questions were written looking at their pages and share a third of their words with the evidence quote (five-letter prefixes); the paraphrases share a tenth. Real users are somewhere between the two, so retrieval is measured on both: lexical search looks far better on the first than it will be.
 
+## Scanned documents
+
+[scanned.jsonl](scanned.jsonl) holds 31 questions on the corpus's 12 scanned PDFs (council minutes and encümen decisions, Danıştay decisions printed in 1970 and 1972, health circulars), in the same form: 19 identifier, 9 factual and 3 unanswerable questions. The harness measures them as a set of their own ([eval/harness](../harness/README.md)): how well search and answers do on what OCR read, apart from the golden set's numbers.
+
+They were written from the text the product's OCR gives those pages (the vote of three readings, [ADR 0020](../../docs/adr/0020-ocr-vote.md)), not from the images, with one rule more than the golden set's: an answer that is an identifier must not be among the page's uncertain identifiers, so Tesseract read it the same way as PP-OCRv6 (in the OCR benchmark an identifier two engines read alike was right 98 to 99% of the time). Tables whose values the two read differently were left out. Evidence on a page that goes to OCR is marked `"ocr": true`, and check.py looks for its quote in that OCR text (`--ocr-pages`, by default `work/ocr-pages.jsonl`, written by [ocr_pages.py](ocr_pages.py) from a stack's database and not committed: the minutes name officials). After an OCR change, write that file again and run check.py: a quote it no longer finds marks a page whose reading changed, for better or worse. Two Danıştay decisions carry the scanner's own text layer, which the product keeps; their evidence is that layer, errors included.
+
+Found while writing them: a scanned page whose only text layer is an e-signature stamp (doc-100 page 1) passes the page quality check and is never read by OCR, and a page scanned sideways (doc-001 page 11, a table) is read as noise.
+
 ## How it was made
 
 Questions were drafted with a language model from the per-page text the light parser extracts (pages that pass the page quality check only), document by document, with written rules: natural wording as a clerk, lawyer or hospital employee would type it, enough context to be unambiguous in the whole corpus (the municipality, the law, the year), a unique answer supported by the quoted page, no yes/no questions, no arithmetic, no outside knowledge, no personal names. Every unanswerable question was searched for in the corpus's text, and every page where its terms occur was read.
@@ -50,6 +58,6 @@ uv run --directory backend python ../eval/golden/check.py
 
 - **Not reviewed by a person yet.** The mechanical check proves anchors, not that a question is natural or that its answer is the only right one.
 - **An answer can occur elsewhere in other words.** `also` lists exact repeats of a quote only. A Board decision number, for example, can be cited in a guide and in the decision compilation. Scoring (step 9) should therefore also accept a retrieved page that holds the answer and the question's key terms, and report how often that decides a hit.
-- **Scanned documents are not covered**: the questions were written from text layers. Questions on OCR'd pages come once the corpus has been through the worker, with the uncertain-identifier flags in view.
+- **Scanned documents** have their own 31 questions (above), written from OCR text rather than from the images; a person should check their answers against the scans.
 - **Legacy `.doc` files** (three) are not read by the parser and have no questions.
 - Quotes keep the source's own errors (old orthography, OCR text of old court decisions, typos), since they must match the page.

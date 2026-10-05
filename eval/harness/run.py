@@ -34,6 +34,12 @@ it applies the gates and exits 1 when one fails:
 
 The v1 targets of ADR 0010 are reported beside them; they do not fail the run, since some are
 not met yet (docs/benchmarks/).
+
+The scanned-document questions (eval/golden/scanned.jsonl: evidence on pages that go to OCR) are
+measured as a set of their own, retrieval and answers, so that OCR's effect on search and answers
+shows and the golden set's own numbers stay comparable. Their gates apply once the baseline has
+them: a retrieval metric or correct answers more than one question below it; any unsupported
+number or failed answer fails at once.
 """
 
 import argparse
@@ -62,6 +68,7 @@ from synapse.chat.verification import check  # noqa: E402
 from synapse.knowledge.public import Hit  # noqa: E402
 
 PARAPHRASED = QUESTIONS.parent / "paraphrased.jsonl"
+SCANNED = QUESTIONS.parent / "scanned.jsonl"
 RETRIEVAL_DROP = 0.01
 RETRIEVAL_DROP_FRESH = 0.02
 ANSWER_DROP = 0.03
@@ -169,6 +176,7 @@ def answers(
         "unanswerable_refused": round(_share(unanswerable, "correct"), 3),
         "unanswerable_refused_count": sum(r["correct"] for r in unanswerable),
         "unanswerable": len(unanswerable),
+        "answerable": len(answerable),
         "failed": sum(r["status"] == "failed" for r in records),
         "unsupported_numbers": sum(len(r["unsupported"]) for r in records),
         "retried": sum(r["retried"] for r in records),
@@ -228,6 +236,26 @@ def gates(
     found.append(
         _gate(correct, _get(report, correct), ">=", round(_get(baseline, correct) - ANSWER_DROP, 3))
     )
+    return found + scanned_gates(report, baseline)
+
+
+def scanned_gates(report: dict[str, Any], baseline: dict[str, Any]) -> list[dict[str, Any]]:
+    """The scanned-document set's gates: about 30 questions, so one question's worth of slack."""
+    if "answers_scanned" not in report:
+        return []
+    answers = report["answers_scanned"]
+    found = [
+        _gate(f"answers_scanned.{key}", answers[key], "<=", 0)
+        for key in ("unsupported_numbers", "failed")
+    ]
+    if "answers_scanned" not in baseline:
+        return found
+    one = 1 / max(1, answers["answerable"])
+    for path in (
+        *(f"retrieval.scanned.all.{m}" for m in ("hit@1", "hit@10", "mrr")),
+        "answers_scanned.correct",
+    ):
+        found.append(_gate(path, _get(report, path), ">=", round(_get(baseline, path) - one, 3)))
     return found
 
 
@@ -263,6 +291,7 @@ def markdown(report: dict[str, Any]) -> str:
         + f"), cited {a['cited']}, answerable refused {a['answerable_refused']}, unanswerable "
         f"refused {a['unanswerable_refused_count']} of {a['unanswerable']}, retried "
         f"{a['retried']}, sentences removed {a['sentences_removed']}.",
+        *_scanned_line(report),
         f"Seconds (median / 90th percentile, {report['concurrency']} at a time): sources "
         f"{a['seconds']['sources']['median']} / {a['seconds']['sources']['p90']}, first token "
         f"{a['seconds']['first_token']['median']} / {a['seconds']['first_token']['p90']}, answer "
@@ -270,6 +299,18 @@ def markdown(report: dict[str, Any]) -> str:
         f"Run: {report['minutes']} minutes.",
     ]
     return "\n".join(lines) + "\n"
+
+
+def _scanned_line(report: dict[str, Any]) -> list[str]:
+    if "answers_scanned" not in report:
+        return []
+    r, a = report["retrieval"]["scanned"]["all"], report["answers_scanned"]
+    return [
+        f"Scanned documents ({a['answerable']} answerable, {a['unanswerable']} unanswerable): "
+        f"Hit@1 / Hit@10 {r['hit@1']:.2f}/{r['hit@10']:.2f}, correct {a['correct']}, cited "
+        f"{a['cited']}, answerable refused {a['answerable_refused']}, unanswerable refused "
+        f"{a['unanswerable_refused_count']}."
+    ]
 
 
 def _gate(path: str, value: float, sign: str, bar: float) -> dict[str, Any]:
@@ -322,8 +363,10 @@ def main() -> int:
     started = time.monotonic()
     documents = json.loads(args.documents.read_text(encoding="utf-8"))["documents"]
     written, paraphrased = load(QUESTIONS), load(PARAPHRASED)
+    scanned = load(SCANNED) if SCANNED.exists() else []
     if args.limit:
         written, paraphrased = written[: args.limit], paraphrased[: args.limit]
+        scanned = scanned[: args.limit]
     password = args.password_file.read_text(encoding="utf-8").strip()
     client = signed_in(args.base, args.email, password)
     try:
@@ -340,6 +383,12 @@ def main() -> int:
             },
         }
         report["answers"], records = answers(client, written, documents, args.concurrency)
+        scanned_records: list[dict[str, Any]] = []
+        if scanned:
+            report["retrieval"]["scanned"] = retrieval(client, scanned, documents, args.concurrency)
+            report["answers_scanned"], scanned_records = answers(
+                client, scanned, documents, args.concurrency
+            )
     finally:
         client.close()
     report["minutes"] = round((time.monotonic() - started) / 60, 1)
@@ -349,24 +398,26 @@ def main() -> int:
         baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
         report["gates"] = gates(report, baseline, fresh=args.fresh_ingestion)
     report["fresh_ingestion"] = args.fresh_ingestion
-    # Each question's retrieval goes to a file of its own, not into the report (and not into
-    # ``records``, which holds the answers written below).
-    for questions in ("as_written", "paraphrased"):
-        retrieved = report["retrieval"][questions].pop("records")
-        args.out.mkdir(parents=True, exist_ok=True)
-        with (args.out / f"retrieval-{questions}.jsonl").open("w", encoding="utf-8") as handle:
-            for record in retrieved:
-                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     failed = [g for g in report["gates"] if not g["ok"]]
     report["verdict"] = "no baseline" if not args.baseline else ("fail" if failed else "pass")
-    args.out.mkdir(parents=True, exist_ok=True)
-    (args.out / "report.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
-    with (args.out / "answers.jsonl").open("w", encoding="utf-8") as handle:
-        for record in records:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
-    (args.out / "report.md").write_text(markdown(report), encoding="utf-8")
+    write(args.out, report, {"answers": records, "answers-scanned": scanned_records})
     print(markdown(report))
     return 1 if failed else 0
+
+
+def write(out: Path, report: dict[str, Any], answered: dict[str, list[dict[str, Any]]]) -> None:
+    """The report, and every question's retrieval and answer in files of their own."""
+    out.mkdir(parents=True, exist_ok=True)
+    rows = {
+        f"retrieval-{name}": report["retrieval"][name].pop("records")
+        for name in report["retrieval"]
+    }
+    for name, records in (rows | answered).items():
+        with (out / f"{name}.jsonl").open("w", encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    (out / "report.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
+    (out / "report.md").write_text(markdown(report), encoding="utf-8")
 
 
 if __name__ == "__main__":

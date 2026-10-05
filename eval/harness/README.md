@@ -2,7 +2,7 @@
 
 Every ADR 0010 metric of the product on the golden set, measured through a running stack's API, and the gates that fail a commit when they drop (phase 4, step 9). Design: [docs/design/evaluation.md](../../docs/design/evaluation.md).
 
-- [run.py](run.py): one measurement. Retrieval on both question sets (`POST /api/search`, reranked: Hit@1, Hit@10, MRR per type), every question through `POST /api/chat` with the product's own settings (correct, cited, refused, failed; every final answer's numbers checked again against the sources it was given), and the time to the sources, the first token and the whole answer. Writes `report.json`, `report.md` and `answers.jsonl`; with `--baseline`, exits 1 when a gate fails.
+- [run.py](run.py): one measurement. Retrieval on both question sets (`POST /api/search`, reranked: Hit@1, Hit@10, MRR per type), every question through `POST /api/chat` with the product's own settings (correct, cited, refused, failed; every final answer's numbers checked again against the sources it was given), and the time to the sources, the first token and the whole answer. The questions on scanned documents ([scanned.jsonl](../golden/scanned.jsonl)) are measured the same way as a set of their own. Writes `report.json`, `report.md`, `answers.jsonl` and `answers-scanned.jsonl`; with `--baseline`, exits 1 when a gate fails.
 - [watch.py](watch.py): the local trigger on the reference machine. It measures the newest commit on `origin/main` and posts the result to GitHub as the commit status `synapse/eval` and a commit comment holding `report.md`.
 - `baseline.json`: the report the gates compare with, from a run of this harness on the reference machine; a commit that changes a metric on purpose updates it. Without it a run reports and gates nothing (the first run, which makes it).
 
@@ -15,6 +15,8 @@ Every ADR 0010 metric of the product on the golden set, measured through a runni
 | Failed answers | any (a model or the API failed) |
 | Unanswerable questions refused | fewer than the baseline's, beyond one question (one of 34 is 3 points, and two runs of the model can differ by one) |
 | Correct answers (the script's scoring) | more than 0.03 below the baseline (six questions) |
+| Scanned documents: Hit@1, Hit@10, MRR; correct answers | more than one question below the baseline, once the baseline has the set |
+| Scanned documents: unsupported numbers, failed answers | any |
 
 ADR 0010's v1 targets are reported beside the gates (met or not met); they do not fail a commit, since some are not met yet.
 
