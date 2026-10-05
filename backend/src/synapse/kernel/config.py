@@ -65,12 +65,14 @@ class Settings(BaseSettings):
     # OCR (docs/benchmarks/ocr.md). The application image ships Tesseract's "best" models and
     # sets this; unset means Tesseract's own models.
     ocr_tessdata_dir: Path | None = None
-    # Threads the OCR engines' onnxruntime may use (RapidOCR's second reading, PP-OCRv6). A
-    # worker reads one page at a time with them.
-    ocr_threads: int = Field(default=1, ge=1, le=16)
+    # Threads the OCR engines' onnxruntime may use (PP-OCRv6, or RapidOCR where it gives the
+    # second reading). A worker reads one page at a time with them; PP-OCRv6 reads a page about
+    # three times as fast with four as with one (docs/benchmarks/ocr.md).
+    ocr_threads: int = Field(default=4, ge=1, le=16)
     # PP-OCRv6's model directory (knowledge/ppocr.py). Set, PP-OCRv6 with the Turkish character
     # language model gives the text of pages that need OCR, and Tesseract reads their identifiers
-    # a second time. Unset, Tesseract gives the text and RapidOCR the second reading.
+    # a second time; the application image sets it (ADR 0019). Unset, Tesseract gives the text
+    # and RapidOCR the second reading.
     ocr_ppocr_dir: Path | None = None
     # Model servers (ADR 0009, ADR 0018): llama.cpp on the internal network, one per role, each
     # with its own API key. A role without a URL has no model: ingestion then stores no vectors.

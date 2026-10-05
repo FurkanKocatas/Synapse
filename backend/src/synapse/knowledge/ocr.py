@@ -3,13 +3,17 @@
 Pages that the page quality check sends to OCR are rendered to images and read by two engines,
 as measured in docs/benchmarks/ocr.md ("Two engines together"):
 
-- Tesseract (the "best" models, Turkish and English) gives the text. English adds the symbols
-  the Turkish model cannot write ("%", "+", "="); neither has "₺", which Tesseract reads as "£".
-- RapidOCR reads the page again, and only its identifiers are used: dates, decision numbers,
-  amounts. Those Tesseract lacks are kept as search terms, never as text a reader or a model
-  sees (two in five of them are wrong). Tesseract's identifiers that RapidOCR did not read are
-  marked uncertain, so an answer can flag them: in the benchmark an identifier both engines
-  read was right 98 to 99% of the time, one only Tesseract read about half the time.
+- PP-OCRv6 with a Turkish character language model (knowledge/ppocr.py) gives the text when
+  its models are there, as in the application image (ADR 0019); otherwise Tesseract (the
+  "best" models, Turkish and English) does. Tesseract's English adds the symbols its Turkish
+  model cannot write ("%", "+", "="); neither has "₺", which Tesseract reads as "£".
+- A second engine reads the page again, and only its identifiers are used: dates, decision
+  numbers, amounts. Tesseract is the second beside PP-OCRv6, RapidOCR beside Tesseract.
+  Identifiers the text lacks are kept as search terms, never as text a reader or a model sees
+  (two in five of them are wrong). The text's identifiers the second engine did not read are
+  marked uncertain, so an answer can flag them: in the benchmark of Tesseract and RapidOCR an
+  identifier both read was right 98 to 99% of the time, one only Tesseract read about half
+  the time.
 
 Whatever the engines return, the page keeps whichever text is better: a text layer flagged by
 mistake is never replaced by worse OCR, so a false alarm costs time only.
@@ -23,6 +27,7 @@ import subprocess
 import tempfile
 import unicodedata
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -126,7 +131,7 @@ class TesseractEngine:
 
 @dataclass
 class TwoEngineReader:
-    """Tesseract for the text, a second engine for a second reading of the identifiers."""
+    """One engine for the text, a second for a second reading of the identifiers."""
 
     text_engine: TextEngine
     second_engine: TextEngine
@@ -136,8 +141,12 @@ class TwoEngineReader:
         return f"{self.text_engine.name}+{self.second_engine.name}"
 
     def read(self, image: Path) -> PageReading:
-        text = self.text_engine.recognize(image)
-        return two_readings(text, self.second_engine.recognize(image), self.name)
+        # Each engine reads in a process of its own (Tesseract, an OCR child), so both read the
+        # page at the same time: a page takes the longer of the two, not their sum.
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            second = pool.submit(self.second_engine.recognize, image)
+            text = self.text_engine.recognize(image)
+            return two_readings(text, second.result(), self.name)
 
     def close(self) -> None:
         for engine in (self.text_engine, self.second_engine):

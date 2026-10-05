@@ -42,13 +42,17 @@ They use `motion` (MIT). React Bits components that need GSAP (licensed under GS
 
 `frontend/src/styles/shadcn.css` is the stylesheet of the shadcn package 4.21.0 (`dist/tailwind.css`: animation keyframes, `data-*` variants and the `no-scrollbar`, `scroll-fade` and `shimmer` utilities), copied unchanged. The package is not a dependency, so the licence gate does not see it and this entry records it. The licence is MIT (copyright (c) 2023 shadcn): **allowed**; the file names its source and licence, and the licence text goes into the third-party notices.
 
-### OCR programs and models in the application image, reviewed 2026-09-28
+### OCR programs and models in the application image, reviewed 2026-09-28 (PP-OCRv6 2026-10-05)
 
 | Component | Source | Licence | Redistribution in the image |
 |---|---|---|---|
 | Tesseract 5.5 (program and libraries) | Debian package `tesseract-ocr` | Apache-2.0; its libraries (Leptonica and image codecs) permissive | Allowed; Debian's copyright files stay in the image |
 | Tesseract `tessdata_best` 4.1.0 `tur` and `eng` | github.com/tesseract-ocr/tessdata_best, pinned by checksum | Apache-2.0 | Allowed |
 | PP-OCR detection and Latin recognition models (ONNX) | Converted by the RapidOCR project from PaddleOCR, fetched by RapidOCR 3.9.2 with its own SHA-256 | Apache-2.0 | Allowed |
+| PP-OCRv6 detection and Turkish recognition models (`detection.onnx`, `recognition.onnx`, `characters.json`) | PaddleOCR's PP-OCRv6_medium_det and PP-OCRv6_medium_rec, the recogniser fine-tuned for Turkish on synthetic lines (Turkish Wikipedia text in open fonts) and lines of the SCU-CENG Turkish Receipt Dataset (MIT); converted with paddle2onnx 2.1.0; assets of this repository's release `ocr-models-1`, pinned by checksum | Apache-2.0 | Allowed, with the licence |
+| Turkish character language model (`charlm.npz`, same release) | 6-gram statistics of 15 million characters of Turkish Wikipedia (`synapse.knowledge.charlm`), stored as hashes and probabilities | CC BY-SA 4.0, as its source text | Allowed, below |
+
+The language model is data the engine reads, not code built with it. CC BY-SA 4.0 asks for attribution and for adaptations of the material to carry the same licence: the file is distributed under CC BY-SA 4.0 with the attribution (the release notes, the third-party notices), and the share-alike does not reach the software that reads it.
 
 ### pypdfium2 and the PDFium binary, reviewed 2026-09-28
 

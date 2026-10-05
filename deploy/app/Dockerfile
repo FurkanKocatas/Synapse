@@ -43,6 +43,17 @@ ADD --checksum=sha256:8280aed0782fe27257a68ea10fe7ef324ca0f8d85bd2fd145d1c2b560b
     https://github.com/tesseract-ocr/tessdata_best/raw/4.1.0/eng.traineddata /usr/share/synapse/tessdata/eng.traineddata
 # ADD from a URL leaves files readable by root only; the application runs as 10001.
 RUN chmod -R a+rX /usr/share/synapse/tessdata
+# PP-OCRv6 with the Turkish character language model gives scanned pages their text (ADR 0019).
+# Its model directory is a release of this repository (ocr-models-1), pinned by checksum;
+# --chmod, as a chmod afterwards would copy its 227 MB into another layer.
+ADD --checksum=sha256:9d58088cce871cd690deae447f860df699f5db1d4e3ef21cc2a3229497e50ea2 --chmod=644 \
+    https://github.com/FurkanKocatas/Synapse/releases/download/ocr-models-1/detection.onnx /usr/share/synapse/ppocr/detection.onnx
+ADD --checksum=sha256:4ae1ba8a2e91758c67739ced6e9ce781bf8fe07497682418673d53c8d5af364f --chmod=644 \
+    https://github.com/FurkanKocatas/Synapse/releases/download/ocr-models-1/recognition.onnx /usr/share/synapse/ppocr/recognition.onnx
+ADD --checksum=sha256:e6948b0b16c8d2c1255403b884fb9b3ecc3e5dea0ddafdfebe7276ef41520a08 --chmod=644 \
+    https://github.com/FurkanKocatas/Synapse/releases/download/ocr-models-1/characters.json /usr/share/synapse/ppocr/characters.json
+ADD --checksum=sha256:f2312bc47859d24537294c3a4fa7ac139458725657ab08a5649c5b731b58d4c5 --chmod=644 \
+    https://github.com/FurkanKocatas/Synapse/releases/download/ocr-models-1/charlm.npz /usr/share/synapse/ppocr/charlm.npz
 # Uploaded files live on a volume mounted here; creating the directory in the image gives a new
 # volume this owner and mode.
 RUN install -d -o 10001 -g 10001 -m 0700 /var/lib/synapse/blobs
@@ -50,7 +61,8 @@ COPY --from=build /app/.venv /app/.venv
 ENV PATH=/app/.venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    SYNAPSE_OCR_TESSDATA_DIR=/usr/share/synapse/tessdata
+    SYNAPSE_OCR_TESSDATA_DIR=/usr/share/synapse/tessdata \
+    SYNAPSE_OCR_PPOCR_DIR=/usr/share/synapse/ppocr
 USER 10001:10001
 ENTRYPOINT ["synapse"]
 CMD ["api"]

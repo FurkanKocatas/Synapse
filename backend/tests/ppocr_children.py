@@ -3,6 +3,9 @@ be module-level functions: the child is a fresh interpreter that imports them by
 
 import os
 import time
+from pathlib import Path
+
+from synapse.knowledge.ppocr import NotFiniteError
 
 
 def echo(image: str, directory: str, threads: int) -> str:
@@ -20,3 +23,17 @@ def hang(image: str, directory: str, threads: int) -> str:
 
 def fail(image: str, directory: str, threads: int) -> str:
     raise ValueError("unreadable image")
+
+
+def not_finite_in_the_first_child(image: str, directory: str, threads: int) -> str:
+    """Non-finite in the first child process, the page's text in any other."""
+    first = Path(directory) / "first-child"
+    if not first.exists():
+        first.write_text(str(os.getpid()))
+    if first.read_text() == str(os.getpid()):
+        raise NotFiniteError("the model gave values that are not finite")
+    return f"{first.read_text()} {os.getpid()}"
+
+
+def never_finite(image: str, directory: str, threads: int) -> str:
+    raise NotFiniteError("the model gave values that are not finite")

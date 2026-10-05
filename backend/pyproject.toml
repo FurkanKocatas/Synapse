@@ -19,6 +19,8 @@ dependencies = [
     "pillow>=12.0",
     "procrastinate>=3.10,<3.11",
     "psycopg[binary,pool]>=3.3",
+    # Text box expansion in knowledge/ppocr.py, as in PaddleOCR.
+    "pyclipper>=1.4.0,<2",
     "pydantic>=2.13",
     "pydantic-settings>=2.15",
     "pyotp>=2.10",

@@ -18,9 +18,9 @@ from tests import ppocr_children
 
 
 def test_the_detector_reads_the_page_at_its_own_size_in_multiples_of_32() -> None:
-    assert ppocr.detection_size(2400, 1700) == (2400, 1696)
+    assert ppocr.detection_size(1500, 1100) == (1504, 1088)
     assert ppocr.detection_size(40, 100) == (64, 160)  # the short side is raised to 64
-    assert ppocr.detection_size(5000, 3000) == (2496, 1504)  # the long side is capped at 2500
+    assert ppocr.detection_size(5000, 3000) == (1600, 960)  # the long side is capped at 1600
 
 
 def test_a_line_is_scaled_to_height_48_and_padded_to_at_least_320() -> None:
@@ -132,6 +132,26 @@ def test_a_page_that_takes_too_long_kills_the_child(tmp_path: Path) -> None:
     finally:
         engine.close()
     assert time.monotonic() - started < 30
+
+
+def test_a_page_not_finite_in_one_child_is_read_again_by_a_fresh_one(tmp_path: Path) -> None:
+    engine = ppocr.PpOcrEngine(tmp_path, read=ppocr_children.not_finite_in_the_first_child)
+    try:
+        first, second = engine.recognize(tmp_path / "a.png").split()
+    finally:
+        engine.close()
+    assert first != second
+
+
+def test_a_page_not_finite_in_a_fresh_child_too_is_an_ocr_error(tmp_path: Path) -> None:
+    engine = ppocr.PpOcrEngine(tmp_path, read=ppocr_children.never_finite)
+    try:
+        with pytest.raises(OcrError, match="NotFiniteError"):
+            engine.recognize(tmp_path / "a.png")
+        engine._read = ppocr_children.echo
+        assert engine.recognize(tmp_path / "b.png").startswith(str(tmp_path / "b.png"))
+    finally:
+        engine.close()
 
 
 def test_an_error_inside_the_engine_is_an_ocr_error(tmp_path: Path) -> None:

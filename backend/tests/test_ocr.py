@@ -1,6 +1,7 @@
 """OCR without the engines: rendering, the identifier reading, and the text a page keeps."""
 
 import io
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -133,3 +134,22 @@ def test_the_second_reading_finds_extra_and_uncertain_identifiers(tmp_path: Path
     assert reading.extra_identifiers == ("$2.500.000", "2026/38")
     assert reading.uncertain_identifiers == ("2026/36", "₺2.500.000")
     reader.close()  # engines without close() are fine
+
+
+@dataclass
+class Meeting:
+    """An engine that answers only once the other engine is reading too."""
+
+    name: str
+    barrier: threading.Barrier
+
+    def recognize(self, image: Path) -> str:
+        self.barrier.wait()
+        return "Karar 2026/35"
+
+
+def test_the_two_engines_read_a_page_at_the_same_time(tmp_path: Path) -> None:
+    # One after the other, the first engine would wait for the second in vain.
+    barrier = threading.Barrier(2, timeout=10)
+    reader = TwoEngineReader(Meeting("text", barrier), Meeting("second", barrier))
+    assert reader.read(tmp_path / "page.png").text == "Karar 2026/35"

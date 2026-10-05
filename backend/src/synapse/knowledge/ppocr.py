@@ -36,11 +36,13 @@ from synapse.knowledge.ocr import OCR_TIMEOUT_SECONDS, OcrError
 PAGES_PER_CHILD = 25
 
 # PaddleOCR's OCR pipeline settings for PP-OCRv6 (paddlex configs/pipelines/OCR.yaml), except
-# the long side: the pipeline's 4000 lets the detector take 2.7 GB on a 300 dpi page. At 2500
-# it takes 1.5 GB and reads as well (corpus benchmark clean 98.25 -> 98.33, scan 98.27 -> 98.29;
-# old books 94.73 -> 94.66, within noise). Much smaller is not better: the detection module's
+# the long side: the pipeline's 4000 lets the detector take 2.7 GB on a 300 dpi page. At 1600
+# the worker's container peaked at 1.2 GB with two pages at a time (2.2 GB at 2500), a page took
+# 13 s instead of 17, and it reads as well as at the page's own size, within noise (corpus
+# benchmark clean / scan / poor 98.25 / 98.27 / 97.04 -> 98.29 / 98.45 / 97.07; old books
+# 94.73 -> 94.59; gold pages 95.60 -> 95.40). Much smaller is not better: the detection module's
 # own default (long side 960) lost small print on 150 dpi scans.
-LIMIT_SIDE, MAX_SIDE = 64, 2500
+LIMIT_SIDE, MAX_SIDE = 64, 1600
 THRESH, BOX_THRESH, UNCLIP = 0.3, 0.6, 1.5
 MAX_CANDIDATES, MIN_SIZE = 1000, 3
 MEAN, STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
@@ -197,10 +199,10 @@ class NotFiniteError(RuntimeError):
 
 
 def finite_run(session: Any, x: NDArray[np.float32]) -> NDArray[np.float32]:
-    """The model's output for ``x``, run again if it is not finite. Under memory pressure from
-    other work the detector once returned a map of NaN for a page it reads normally otherwise
-    (no line found, an empty page): a second run, or an error the reader reports, never an
-    empty text taken for the page's."""
+    """The model's output for ``x``, run again if it is not finite. The detector has returned a
+    map of NaN for pages it reads normally otherwise (no line found, an empty page), mostly under
+    memory pressure from other work, once without: a second run, a fresh process (_Child.run),
+    or an error the reader reports, never an empty text taken for the page's."""
     for _ in range(RUNS):
         out: NDArray[np.float32] = session.run(None, {"x": x})[0]
         if np.isfinite(out).all():
@@ -321,22 +323,38 @@ class _Child:
 
     def run(self, work: Callable[..., Any], *args: object) -> Any:
         with self._lock:
-            if self._pool is None:
-                self._pool = ProcessPoolExecutor(
-                    max_workers=1,
-                    # A fresh interpreter: forking a threaded worker is unsafe.
-                    mp_context=multiprocessing.get_context("spawn"),
-                    max_tasks_per_child=PAGES_PER_CHILD,
-                )
-            future = self._pool.submit(work, *args)
             try:
-                return future.result(timeout=self._timeout)
-            except (BrokenProcessPool, TimeoutError) as error:
+                return self._result(work, *args)
+            except NotFiniteError:
+                # Not finite twice in one process (finite_run): when it happened, reading the
+                # same page again in that process failed too, while the page read normally
+                # before and after. A fresh process reads it once more.
+                self._discard()
+            try:
+                return self._result(work, *args)
+            except NotFiniteError as error:
                 self._discard()
                 raise OcrError(f"ppocr failed: {type(error).__name__}") from error
-            except Exception as error:
-                # Raised inside the models or the image library; the child is still fine.
-                raise OcrError(f"ppocr failed: {type(error).__name__}") from error
+
+    def _result(self, work: Callable[..., Any], *args: object) -> Any:
+        if self._pool is None:
+            self._pool = ProcessPoolExecutor(
+                max_workers=1,
+                # A fresh interpreter: forking a threaded worker is unsafe.
+                mp_context=multiprocessing.get_context("spawn"),
+                max_tasks_per_child=PAGES_PER_CHILD,
+            )
+        future = self._pool.submit(work, *args)
+        try:
+            return future.result(timeout=self._timeout)
+        except (BrokenProcessPool, TimeoutError) as error:
+            self._discard()
+            raise OcrError(f"ppocr failed: {type(error).__name__}") from error
+        except NotFiniteError:
+            raise
+        except Exception as error:
+            # Raised inside the models or the image library; the child is still fine.
+            raise OcrError(f"ppocr failed: {type(error).__name__}") from error
 
     def close(self) -> None:
         with self._lock:
