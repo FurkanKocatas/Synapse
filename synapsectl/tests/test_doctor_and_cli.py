@@ -104,10 +104,20 @@ def test_port_check_distinguishes_our_stack_from_others() -> None:
     assert doctor.check_port(port, running=False).detail == "free"
 
 
+def test_clock_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(doctor, "_run", lambda _command: completed(0, "yes\n"))
+    assert doctor.check_clock().status is Status.OK
+    monkeypatch.setattr(doctor, "_run", lambda _command: completed(0, "no\n"))
+    assert doctor.check_clock().status is Status.WARN
+    assert "set-ntp true" in doctor.check_clock().detail
+    monkeypatch.setattr(doctor, "_run", lambda _command: None)
+    assert doctor.check_clock().status is Status.WARN
+
+
 def test_all_checks_run_and_report(monkeypatch: pytest.MonkeyPatch, config: SynapseConfig) -> None:
     monkeypatch.setattr(doctor, "_run", lambda _command: completed(0, "1\n"))
     names = [check.name for check in doctor.run_checks(prepared(config))]
-    assert names[:4] == ["docker", "cpu", "memory", "disk"]
+    assert names[:5] == ["docker", "cpu", "memory", "disk", "clock"]
     assert "secrets" in names
     assert "rendered files" in names
 

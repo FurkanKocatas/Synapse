@@ -96,6 +96,21 @@ def check_disk(path: Path) -> Check:
     return Check("disk", Status.OK, f"{free:.0f} GiB free")
 
 
+def check_clock() -> Check:
+    """The audit log, the logs and the backups carry the host's time: it must be kept right."""
+    found = _run(["timedatectl", "show", "--property=NTPSynchronized", "--value"])
+    if found is None or found.returncode != 0:
+        return Check("clock", Status.WARN, "cannot tell whether NTP keeps the clock; check it")
+    if found.stdout.strip() != "yes":
+        return Check(
+            "clock",
+            Status.WARN,
+            "NTP does not keep the clock: run timedatectl set-ntp true, with the "
+            "organisation's time server in /etc/systemd/timesyncd.conf where there is one",
+        )
+    return Check("clock", Status.OK, "kept by NTP")
+
+
 def check_port(port: int, *, running: bool) -> Check:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         in_use = probe.connect_ex(("127.0.0.1", port)) == 0
@@ -229,6 +244,7 @@ def run_checks(config: SynapseConfig, *, stack_running: bool = False) -> list[Ch
         check_cpu,
         lambda: check_memory(config),
         lambda: check_disk(config.paths.render_dir),
+        check_clock,
         lambda: check_port(config.network.http_port, running=stack_running),
         lambda: check_port(config.network.https_port, running=stack_running),
         lambda: check_secrets(config),

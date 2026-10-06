@@ -145,6 +145,11 @@ web_log="$(stack logs --no-color web)"
 grep -q '"uri":"/api/collections/' <<<"$web_log"  # the editor's requests are there
 if grep -qF "$csrf" <<<"$web_log"; then echo "the access log holds the CSRF token" >&2; exit 1; fi
 if grep -qF "Karar%202026-35" <<<"$web_log"; then echo "the access log holds a file name" >&2; exit 1; fi
+# A request body past 1 MB that is not an upload never reaches the API.
+too_big="$(head -c 2000000 /dev/zero | curl -s -o /dev/null -w '%{http_code}' -b "$editor_jar" \
+  -H "X-Synapse-CSRF: $csrf" -H 'Content-Type: application/json' --data-binary @- \
+  -X POST "$base/api/search")"
+if [[ "$too_big" != 413 ]]; then echo "a 2 MB search got $too_big, not 413" >&2; exit 1; fi
 
 # Waits until a document's first version is done (parsed, or ready with the model servers);
 # fails on failed or after $2 seconds.

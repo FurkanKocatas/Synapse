@@ -6,8 +6,8 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 | Status | Requirements |
 |---|---|
-| met | 111 |
-| partly | 57 |
+| met | 112 |
+| partly | 56 |
 | not yet | 12 |
 | not applicable | 73 |
 | **all, levels 1 and 2** | **253** |
@@ -62,7 +62,7 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 | V2.3.2 | 2 | Business Logic Security | met | backend/src/synapse/knowledge/blobs.py:147-153; backend/src/synapse/api/search_routes.py:26-43; backend/src/synapse/audit/browse.py:170-182; backend/src/synapse/identity/throttle.py:9-12 | The documented limits are enforced in code: upload size, question, scope and result limits, export cap, synonym bounds, login throttles. |
 | V2.3.3 | 2 | Business Logic Security | met | backend/src/synapse/kernel/database.py:66-72; backend/src/synapse/knowledge/documents.py:234-285 | Each operation runs in one transaction with its audit event and job, and failures roll back. Stray blob files are swept nightly. |
 | V2.3.4 | 2 | Business Logic Security | met | backend/src/synapse/knowledge/documents.py:296-299; backend/src/synapse/identity/accounts.py:193-198; backend/src/synapse/identity/repository.py:296-308; backend/src/synapse/chat/answering.py:225 | Row locks protect version numbering and the last-admin check. TOTP steps are claimed atomically. Each document has a job lock, and chat slots are queued. |
-| V2.4.1 | 2 | Anti-automation | partly | backend/src/synapse/identity/throttle.py:9-12; backend/src/synapse/chat/answering.py:225-250; backend/src/synapse/api/document_routes.py:105-120 | Login, MFA and password attempts are throttled, uploads capped, chat queued. No per-user rate limits on chat, search, uploads or downloads; no JSON body size limit. |
+| V2.4.1 | 2 | Anti-automation | partly | backend/src/synapse/identity/throttle.py:9-12; backend/src/synapse/chat/answering.py:225-250; backend/src/synapse/api/document_routes.py:105-120; deploy/web/Caddyfile (request_body); tools/stack_smoke.sh | Login, MFA and password attempts are throttled, uploads capped, chat queued, and other request bodies refused past 1 MB at the web front. No per-user rate limits on chat, search, uploads or downloads. |
 
 ## V3 Web Frontend Security
 
@@ -349,13 +349,13 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 ## V16 Security Logging and Error Handling
 
-6 met, 10 partly.
+7 met, 9 partly.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
 | V16.1.1 | 2 | Security Logging Documentation | partly | docs/adr/0014-observability.md:14-16; docs/design/audit.md:5-17,46-63; docs/installer.md; docs/deployment.md (Container hardening); synapsectl/src/synapsectl/render.py (LOGGING) | Spread across ADR 0014, audit.md, installer.md and deployment.md; no single inventory. Container logs rotate (json-file, five files of 10 MB); their access control is the host's. |
 | V16.2.1 | 2 | General Logging | partly | backend/src/synapse/audit/chain.py:26-36,59-84; backend/src/synapse/kernel/logging.py:18-25; backend/src/synapse/api/app.py:117-129; backend/src/synapse/api/deps.py (_current_session) | Audit events carry UTC time, actor, IP, action, target and outcome. Application lines carry request_id and, once signed in, user_id; not the job or trace IDs ADR 0014 promises. |
-| V16.2.2 | 2 | General Logging | partly | backend/src/synapse/kernel/logging.py:22; backend/src/synapse/audit/chain.py:55-56,107; synapsectl/src/synapsectl/doctor.py (no clock check) | Timestamps are UTC: structlog TimeStamper utc=True, audit rows UTC with microseconds. No time synchronisation (NTP) setup or check found in installer or doctor. |
+| V16.2.2 | 2 | General Logging | met | backend/src/synapse/kernel/logging.py:22; backend/src/synapse/audit/chain.py:55-56,107; synapsectl/src/synapsectl/doctor.py (check_clock); docs/installer.md#doctor | Timestamps are UTC (structlog TimeStamper utc=True, audit rows UTC with microseconds), and doctor warns when NTP does not keep the host's clock. |
 | V16.2.3 | 2 | General Logging | met | backend/src/synapse/kernel/logging.py:39-47; deploy/web/Caddyfile:55-57; docs/adr/0014-observability.md:14-16; docs/design/audit.md | Processes log only to stdout and the audit table, both documented; Caddy logs to stdout; no other sinks exist (OTLP export not implemented). |
 | V16.2.4 | 2 | General Logging | partly | backend/src/synapse/kernel/logging.py:26-30; deploy/web/Caddyfile:55-62; backend/src/synapse/api/app.py:117-129 | API and Caddy emit JSON lines, linked by X-Request-ID; PostgreSQL and llama-server logs are plain text, no trace or job IDs, no log processor shipped. |
 | V16.2.5 | 2 | General Logging | partly | backend/src/synapse/identity/service.py:166-177; deploy/web/Caddyfile:57-61; synapsectl/src/synapsectl/support.py:39-96; docs/adr/0014-observability.md:14; backend/tests/test_logging.py | Passwords/tokens not logged; unknown emails hashed; Caddy drops CSRF header; bundle redacts. No classification-based control; promised secret-scan test absent; upload filenames in access logs. |

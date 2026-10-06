@@ -37,6 +37,12 @@ http://:8099 {
 		# Answers carry documents, conversations and credentials: never kept in a cache, unless
 		# a route says otherwise (? only sets the header when the API did not).
 		header ?Cache-Control "no-store"
+		# Requests are small JSON, except uploads, whose size the API limits as it stores them.
+		# Anything else past 1 MB is refused (413) before the API spends memory on it.
+		@not_upload not path /api/collections/*/documents /api/documents/*/versions
+		request_body @not_upload {
+			max_size 1MB
+		}
 		reverse_proxy api:8000 {
 			# Chat answers are streamed; forward every chunk immediately.
 			flush_interval -1

@@ -142,6 +142,7 @@ Two details that matter for non-standard ports:
 | cpu | x86 without AVX2 (local models need it) | CPU flags unreadable |
 | memory | Less than the tier needs (16 or 32 GiB, with 10% tolerance) | |
 | disk | | Less than 50 GiB free |
+| clock | | NTP does not keep the host's clock, or `timedatectl` cannot tell (the audit log, logs and backups carry its time) |
 | port (http, https) | In use by another program | |
 | secrets | A file is missing, empty, readable by others or (as root) owned by the wrong user | |
 | rendered files | Not rendered, edited by hand, or different from what the current configuration and synapsectl version produce | |

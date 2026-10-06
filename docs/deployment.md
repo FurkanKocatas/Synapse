@@ -29,6 +29,7 @@ Applied in [deploy/compose.stack.yml](../deploy/compose.stack.yml) and required 
 - Health checks on every long-running service; one-shot `bootstrap` and `migrate` must succeed before the API starts.
 - Logs in Docker's `json-file` driver, rotated at five files of 10 MB per container (installations; [ADR 0014](adr/0014-observability.md)).
 - API answers are never cached: the web front adds `Cache-Control: no-store` to every `/api/` response that does not set its own.
+- Request bodies past 1 MB are refused by the web front (413), except uploads, which the API limits itself as it stores them.
 
 ## Web front
 
