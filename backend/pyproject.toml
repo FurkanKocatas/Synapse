@@ -145,9 +145,9 @@ name = "Layered architecture"
 type = "layers"
 layers = [
     "synapse.cli",
-    "synapse.accounts_cli | synapse.audit_cli | synapse.scheduler_cli | synapse.worker_cli",
+    "synapse.accounts_cli | synapse.audit_cli | synapse.operations_cli | synapse.scheduler_cli | synapse.worker_cli",
     "synapse.api | synapse.migrations",
-    "synapse.chat",
+    "synapse.chat | synapse.operations",
     "synapse.knowledge",
     "synapse.jobs",
     "synapse.identity | synapse.authz | synapse.dbadmin | synapse.models",

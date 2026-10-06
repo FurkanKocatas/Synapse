@@ -14,7 +14,14 @@ from pathlib import Path
 
 import uvicorn
 
-from synapse import __version__, accounts_cli, audit_cli, scheduler_cli, worker_cli
+from synapse import (
+    __version__,
+    accounts_cli,
+    audit_cli,
+    operations_cli,
+    scheduler_cli,
+    worker_cli,
+)
 from synapse.dbadmin import bootstrap, migrate
 from synapse.identity.public import PasswordPolicyError
 from synapse.jobs.queue import Queue
@@ -111,6 +118,19 @@ def build_parser() -> argparse.ArgumentParser:
     audit_commands.add_parser(
         "checkpoint", help="Print a signed checkpoint of the chain head, for export off the box."
     )
+
+    operations = commands.add_parser("operations", help="The operations page's records.")
+    operations_commands = operations.add_subparsers(dest="operations_command", required=True)
+    record = operations_commands.add_parser(
+        "record", help="Record a backup or a verification run on the host (synapsectl)."
+    )
+    record.add_argument("--kind", required=True, help="backup or backup_verify")
+    outcome = record.add_mutually_exclusive_group(required=True)
+    outcome.add_argument("--ok", dest="ok", action="store_true")
+    outcome.add_argument("--failed", dest="ok", action="store_false")
+    record.add_argument("--started", required=True, help="ISO 8601 time with its offset")
+    record.add_argument("--finished", required=True, help="ISO 8601 time with its offset")
+    record.add_argument("--details", default="{}", help="A JSON object")
     return parser
 
 
@@ -136,6 +156,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (
         accounts_cli.CommandError,
         audit_cli.AuditCommandError,
+        operations_cli.OperationsCommandError,
         PasswordPolicyError,
         worker_cli.ReindexError,
     ) as error:
@@ -159,6 +180,17 @@ def _run_admin_command(args: argparse.Namespace) -> int:
             print(report)
             return 0 if intact else 1
         print(audit_cli.checkpoint(settings))
+    elif args.command == "operations":
+        operations_cli.record(
+            settings,
+            operations_cli.run_from(
+                args.kind,
+                ok=args.ok,
+                started=args.started,
+                finished=args.finished,
+                details=args.details,
+            ),
+        )
     elif args.command == "knowledge":
         done = worker_cli.reindex_all(settings)
         print(

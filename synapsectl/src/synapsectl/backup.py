@@ -146,19 +146,25 @@ def backup(
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> str:
     """Take one backup and apply the retention; returns the snapshot's ID. The outcome is
-    recorded either way (``status.json``), for ``doctor`` and the operations page."""
+    recorded either way: in ``status.json`` for ``doctor``, and in the database for the
+    operations page."""
     started = now()
     _repository_dir(config)  # with no repository there is nowhere to record either
+    stack = Stack(config, run, echo)
     try:
-        snapshot, manifest = _backup(config, config_file, Stack(config, run, echo), started)
+        snapshot, manifest = _backup(config, config_file, stack, started)
     except (BackupError, OSError) as error:
         # the failure is recorded if it can be, and never hides the error itself
+        detail = str(error).splitlines()[0]
         with suppress(OSError):
-            record(config, "backup", started, ok=False, detail=str(error).splitlines()[0])
+            record(config, "backup", started, ok=False, detail=detail)
+        _record_run(stack, "backup", started, now(), ok=False, details={"error": detail})
         raise
     rows = sum(manifest.rows.values())
     detail = f"snapshot {snapshot[:8]}, {rows} rows, {manifest.dump_bytes} bytes of dump"
     record(config, "backup", started, ok=True, detail=detail, snapshot=snapshot)
+    details = {"snapshot": snapshot[:8], "rows": rows, "dump_bytes": manifest.dump_bytes}
+    _record_run(stack, "backup", started, now(), ok=True, details=details)
     echo(f"== Backed up: {detail}")
     return snapshot
 
@@ -278,11 +284,16 @@ def verify(
         )
         shutil.rmtree(staging_dir(config) / "data", ignore_errors=True)
     except (BackupError, OSError) as error:
+        detail = str(error).splitlines()[0]
         with suppress(OSError):
-            record(config, "verify", started, ok=False, detail=str(error).splitlines()[0])
+            record(config, "verify", started, ok=False, detail=detail)
+        _record_run(stack, "backup_verify", started, now(), ok=False, details={"error": detail})
         raise
-    detail = f"{sum(manifest.rows.values())} rows of {manifest.created} restored and counted"
+    rows = sum(manifest.rows.values())
+    detail = f"{rows} rows of {manifest.created} restored and counted"
     record(config, "verify", started, ok=True, detail=detail)
+    details = {"rows": rows, "backup_of": manifest.created}
+    _record_run(stack, "backup_verify", started, now(), ok=True, details=details)
     echo(f"== Verified: {detail}")
 
 
@@ -498,6 +509,30 @@ def install_schedule(
 
 # ----------------------------------------------------------------------------------------------
 # helpers
+
+
+def _record_run(
+    stack: Stack,
+    kind: str,
+    started: datetime,
+    finished: datetime,
+    *,
+    ok: bool,
+    details: dict[str, Any],
+) -> None:
+    """Record the run in the database, for the operations page, through the API's command
+    line. Never fails the run: with the database down it cannot be recorded, and status.json
+    has it."""
+    try:
+        stack.step(
+            "Record it for the operations page",
+            *("run", "--rm", "--no-deps", "-T", "api", "operations", "record"),
+            *("--kind", kind, "--ok" if ok else "--failed"),
+            *("--started", started.isoformat(), "--finished", finished.isoformat()),
+            *("--details", json.dumps(details)),
+        )
+    except BackupError as error:
+        stack.echo(f"!! not recorded for the operations page: {str(error).splitlines()[0]}")
 
 
 def _repository_dir(config: SynapseConfig) -> Path:

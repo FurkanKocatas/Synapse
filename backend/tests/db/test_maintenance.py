@@ -17,7 +17,7 @@ from synapse.jobs.queue import enqueue
 from synapse.kernel.config import Settings
 from synapse.kernel.database import Database
 from synapse.knowledge.pipeline import purge_job
-from synapse.knowledge.public import LocalBlobStore, Maintenance
+from synapse.knowledge.public import LocalBlobStore
 from tests import knowledge_samples as samples
 from tests.db.conftest import TestDatabase
 from tests.db.test_ingest_pipeline import (
@@ -68,16 +68,27 @@ def run_task(scheduler: Settings, name: str, now: datetime | None = None) -> Non
         database = Database(scheduler.database(application_name="synapse-tests"), max_size=2)
         await database.open()
         try:
-            maintenance = Maintenance(
-                database, LocalBlobStore(scheduler.blob_dir), now=lambda: now or datetime.now(UTC)
+            key = audit.load_signing_key(scheduler.audit_signing_key_file)
+            jobs = scheduler_cli.tasks(
+                database, scheduler, key, now=lambda: now or datetime.now(UTC)
             )
-            task = next(task for task in maintenance.tasks() if task.name == name)
+            task = next(task for task in jobs if task.name == name)
             assert scheduler.tenant_id is not None
             await task.run(scheduler.tenant_id, {})
         finally:
             await database.close()
 
     asyncio.run(run())
+
+
+def latest_run(world: World, kind: str) -> tuple[bool, dict[str, Any]]:
+    row = world.db.execute(
+        "SELECT ok, details FROM synapse.operation_runs WHERE tenant_id = %s AND kind = %s "
+        "ORDER BY finished_at DESC LIMIT 1",
+        (world.tenant_id, kind),
+    ).fetchone()
+    assert row is not None, kind
+    return row[0], row[1]
 
 
 def count(world: World, query: str, *args: Any) -> int:
@@ -232,6 +243,10 @@ def test_the_sweep_removes_files_no_row_has_named_for_a_day(
     assert live_file.exists()  # old, but its row names it
     assert recent.exists()  # no row, but not a day old
     assert not half.exists()
+    assert latest_run(world, "files_sweep") == (
+        True,
+        {"removed": 1, "incoming_removed": 1, "rows_without_file": 0},
+    )
     run_task(scheduler, "knowledge.sweep_files", now=datetime.now(UTC) + 2 * DAY)
     assert not recent.exists()
 
@@ -272,20 +287,8 @@ def test_the_scheduler_signs_the_audit_head_once_it_has_moved(
 ) -> None:
     upload(editor, samples.word(), "signed.docx")  # an audited action moves the head
 
-    async def checkpoint() -> None:
-        database = Database(scheduler.database(application_name="synapse-tests"), max_size=1)
-        await database.open()
-        try:
-            key = audit.load_signing_key(scheduler.audit_signing_key_file)
-            assert scheduler.tenant_id is not None
-            task = scheduler_cli.checkpoint_task(database, key)
-            assert task.cron == scheduler_cli.CHECKPOINT_CRON
-            await task.run(scheduler.tenant_id, {})
-            await task.run(scheduler.tenant_id, {})  # the head has not moved since
-        finally:
-            await database.close()
-
-    asyncio.run(checkpoint())
+    run_task(scheduler, "audit.checkpoint")
+    run_task(scheduler, "audit.checkpoint")  # the head has not moved since
     rows = world.db.execute(
         "SELECT c.seq, e.seq FROM synapse.audit_checkpoints c "
         "LEFT JOIN synapse.audit_events e ON e.tenant_id = c.tenant_id AND e.seq = c.seq "
@@ -297,6 +300,34 @@ def test_the_scheduler_signs_the_audit_head_once_it_has_moved(
     ).fetchone()
     assert head is not None
     assert rows == [(head[0], head[0])]
+
+
+def test_the_nightly_audit_verification_is_recorded(
+    world: World, scheduler: Settings, editor: TestClient
+) -> None:
+    upload(editor, samples.word(), "verified.docx")
+    run_task(scheduler, "audit.checkpoint")
+    run_task(scheduler, "audit.verify")
+    ok, details = latest_run(world, "audit_verify")
+    assert ok
+    assert details["events_checked"] > 0
+    assert details["checkpoints_checked"] >= 1
+    assert "problem" not in details
+
+
+def test_every_scheduled_job_has_its_cron(world: World, scheduler: Settings) -> None:
+    async def schedules() -> dict[str, str | None]:
+        database = Database(scheduler.database(application_name="synapse-tests"), max_size=1)
+        key = audit.load_signing_key(scheduler.audit_signing_key_file)
+        return {task.name: task.cron for task in scheduler_cli.tasks(database, scheduler, key)}
+
+    assert asyncio.run(schedules()) == {
+        "knowledge.purge_document": None,
+        "knowledge.purge_late": "17 * * * *",
+        "knowledge.sweep_files": "40 0 * * *",
+        "audit.checkpoint": "5 * * * *",
+        "audit.verify": "20 1 * * *",
+    }
 
 
 def test_a_purge_of_a_document_that_is_gone_succeeds(world: World, scheduler: Settings) -> None:

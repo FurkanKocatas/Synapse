@@ -21,6 +21,7 @@ ROLE_PERMISSIONS = frozenset(
         "permissions.manage",
         "settings.manage",
         "audit.read",
+        "operations.view",
     }
 )
 

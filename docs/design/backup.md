@@ -74,7 +74,7 @@ The hostname comes back with `synapse.toml`, so registered passkeys keep working
 
 `apply` writes `synapse-backup.service` and `.timer` (every night at `time`) and `synapse-backup-verify.service` and `.timer` (on the first day of January, April, July and October, three hours later) into `/etc/systemd/system` and enables the timers; `Persistent=true` runs a missed one at the next boot. Without root or systemd it prints the two commands to schedule instead.
 
-Each run records its outcome in `staging_dir/status.json`: the latest backup and verification, and separately the last good one of each. `doctor` reads it and warns (never fails) when:
+Each run records its outcome in `staging_dir/status.json`: the latest backup and verification, and separately the last good one of each; and in the database, for the operations page ([operations.md](operations.md)). `doctor` reads `status.json` and warns (never fails) when:
 
 - `[backup] repository` is not set: no backups are taken;
 - the directory holds no repository: the disk or share is not mounted, or `backup init` was not run;

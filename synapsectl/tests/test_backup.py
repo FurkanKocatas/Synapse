@@ -133,6 +133,9 @@ def test_a_backup_dumps_counts_copies_and_keeps_in_order(
         f"run --rm -T restic backup /backup/data /data/blobs --tag synapse --host {host} --json",
         f"run --rm -T restic forget --tag synapse --host {host} --prune --keep-daily 7 "
         "--keep-weekly 4 --keep-monthly 6",
+        "run --rm --no-deps -T api operations record --kind backup --ok --started "
+        f"{NOW.isoformat()} --finished {NOW.isoformat()} --details "
+        f'{{"snapshot": "4f3c2b1a", "rows": 6, "dump_bytes": {len(DUMP_BYTES)}}}',
     ]
     # the counts come from the dump, of the same moment as its data
     assert seen == dict.fromkeys(("dump", "secrets", "config", "manifest", "sha"), True)
@@ -142,12 +145,44 @@ def test_a_backup_dumps_counts_copies_and_keeps_in_order(
     assert status["backup"]["ok"] and status["backup_ok"]["snapshot"] == SNAPSHOT
 
 
+def test_a_run_that_cannot_be_recorded_in_the_database_still_counts(
+    setup: tuple[SynapseConfig, Path],
+) -> None:
+    config, config_file = setup
+    said: list[str] = []
+    docker = ScriptedDocker(
+        {**backup_answers(), "run --rm --no-deps -T api operations record": (1, "")},
+        {"run --rm -T pgtools pg_dump": write_dump(config)},
+    )
+    assert backup.backup(config, config_file, run=docker, echo=said.append, now=lambda: NOW)
+    assert any(line.startswith("!! not recorded for the operations page") for line in said)
+    assert backup.read_status(config)["backup"]["ok"]
+
+
+def test_a_failed_backup_is_recorded_for_the_operations_page(
+    setup: tuple[SynapseConfig, Path],
+) -> None:
+    config, config_file = setup
+    docker = ScriptedDocker({**backup_answers(), "run --rm -T pgtools pg_dump": (1, "")})
+    with pytest.raises(backup.BackupError):
+        backup.backup(config, config_file, run=docker, echo=quiet, now=lambda: NOW)
+    recorded = docker.commands()[-1]
+    assert recorded.startswith("run --rm --no-deps -T api operations record --kind backup --failed")
+    assert '"error": "Dump the database: failed (exit 1)"' in recorded
+
+
 def test_a_backup_needs_the_database_running(setup: tuple[SynapseConfig, Path]) -> None:
     config, config_file = setup
     docker = ScriptedDocker({"ps --status running -q db": (0, "")})
     with pytest.raises(backup.BackupError, match="database is not running"):
         backup.backup(config, config_file, run=docker, echo=quiet, now=lambda: NOW)
-    assert docker.commands() == ["ps --status running -q db"]
+    commands = docker.commands()
+    assert commands[0] == "ps --status running -q db"
+    # nothing else, but recording the failure for the operations page
+    assert len(commands) == 2
+    assert commands[1].startswith(
+        "run --rm --no-deps -T api operations record --kind backup --failed"
+    )
     assert backup.read_status(config)["backup"]["ok"] is False
 
 
@@ -369,6 +404,9 @@ def test_a_verification_restores_into_a_scratch_database_and_drops_it(
         "run --rm -T pgtools psql --dbname=postgres --no-psqlrc --tuples-only --no-align "
         "--set=ON_ERROR_STOP=1 --command DROP DATABASE IF EXISTS synapse_drill WITH (FORCE)",
         "run --rm -T restic check --read-data-subset=5%",
+        "run --rm --no-deps -T api operations record --kind backup_verify --ok --started "
+        f"{NOW.isoformat()} --finished {NOW.isoformat()} --details "
+        '{"rows": 6, "backup_of": "2026-10-06T02:30:00+00:00"}',
     ]
     # the live database is only read, and only for that one audit event
     assert [command for command in docker.commands() if "--dbname=synapse " in command] == [same]
@@ -385,7 +423,9 @@ def test_a_verification_finds_a_live_audit_log_rewritten_since_the_backup(
     docker = ScriptedDocker(verify_answers(live_hash=live_hash), restore_effects(config))
     with pytest.raises(backup.BackupError, match=f"audit event 7 of the backup .* {change}"):
         backup.verify(config, run=docker, echo=quiet, now=lambda: NOW)
-    assert "DROP DATABASE IF EXISTS synapse_drill" in docker.commands()[-1]
+    # the scratch database dropped, then the failure recorded
+    assert "DROP DATABASE IF EXISTS synapse_drill" in docker.commands()[-2]
+    assert "operations record --kind backup_verify --failed" in docker.commands()[-1]
     assert not backup.read_status(config)["verify"]["ok"]
 
 
@@ -398,7 +438,7 @@ def test_a_failed_verification_still_drops_the_scratch_database(
     )
     with pytest.raises(backup.BackupError, match="Restore the dump"):
         backup.verify(config, run=docker, echo=quiet, now=lambda: NOW)
-    assert docker.commands()[-1].endswith("DROP DATABASE IF EXISTS synapse_drill WITH (FORCE)")
+    assert docker.commands()[-2].endswith("DROP DATABASE IF EXISTS synapse_drill WITH (FORCE)")
     assert backup.read_status(config)["verify"]["ok"] is False
 
 

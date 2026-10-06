@@ -42,6 +42,9 @@ MAX_TOKENS = 512
 # XLM-R pairs a question with a passage as <s> question </s></s> passage </s>.
 PAIR_SPECIAL_TOKENS = 4
 SERVER_ERROR = 500
+# A health check waits no longer than this: the operations page asks every server at once.
+HEALTH_TIMEOUT = 3.0
+OK = 200
 
 
 def collapse(text: str) -> str:
@@ -70,6 +73,14 @@ class LlamaServer:
 
     async def close(self) -> None:
         await self._client.aclose()
+
+    async def healthy(self) -> bool:
+        """Whether the server answers ``/health`` with its model loaded (503 while loading)."""
+        try:
+            response = await self._client.get("/health", timeout=HEALTH_TIMEOUT)
+        except httpx2.TransportError:
+            return False
+        return response.status_code == OK
 
     async def post(self, path: str, body: Mapping[str, Any]) -> dict[str, Any]:
         try:

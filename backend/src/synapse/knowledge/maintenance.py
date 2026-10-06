@@ -15,8 +15,9 @@
   whose purge failed) get a purge job.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
+from typing import Protocol
 from uuid import UUID
 
 import structlog
@@ -44,6 +45,22 @@ SWEEP_CRON = "40 0 * * *"
 BLOB_LOCK = 0x626C6F62
 
 
+class Recorder(Protocol):
+    """Records a run for the operations page. The scheduler passes one in; the knowledge
+    package knows nothing of where runs are kept."""
+
+    async def __call__(
+        self,
+        tenant_id: UUID,
+        kind: str,
+        /,
+        *,
+        ok: bool,
+        started: datetime,
+        details: Mapping[str, int | str],
+    ) -> None: ...
+
+
 async def lock_blob(connection: AsyncConnection, sha256: bytes) -> None:
     """The blob's advisory lock, held until the transaction ends: uploads take it before they
     write a blob row, the sweep before it removes a file."""
@@ -58,10 +75,12 @@ class Maintenance:
         db: Database,
         blobs: LocalBlobStore,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        recorder: Recorder | None = None,
     ) -> None:
         self._db = db
         self._blobs = blobs
         self._now = now
+        self._recorder = recorder
 
     def tasks(self) -> list[Task]:
         return [
@@ -128,7 +147,24 @@ class Maintenance:
             log.warning("knowledge.purge_late", documents=len(late))
 
     async def sweep(self, tenant_id: UUID, _args: Args) -> None:
-        cutoff = self._now() - FILE_GRACE
+        started = self._now()
+        try:
+            report = await self._sweep(tenant_id, started - FILE_GRACE)
+        except Exception as error:
+            await self._record(
+                tenant_id, ok=False, started=started, details={"error": _first_line(error)}
+            )
+            raise
+        ok = report["rows_without_file"] == 0
+        await self._record(tenant_id, ok=ok, started=started, details=report)
+
+    async def _record(
+        self, tenant_id: UUID, *, ok: bool, started: datetime, details: Mapping[str, int | str]
+    ) -> None:
+        if self._recorder is not None:
+            await self._recorder(tenant_id, "files_sweep", ok=ok, started=started, details=details)
+
+    async def _sweep(self, tenant_id: UUID, cutoff: datetime) -> dict[str, int]:
         on_disk = {blob.sha256: blob.modified for blob in self._blobs.stored(tenant_id)}
         async with self._db.tenant_transaction(tenant_id) as connection:
             cursor = await connection.execute("SELECT sha256 FROM blobs")
@@ -145,6 +181,7 @@ class Maintenance:
             log.error("knowledge.files_missing", **report)
         else:
             log.info("knowledge.files_swept", **report)
+        return report
 
     async def _remove_stray(self, tenant_id: UUID, sha256: bytes, cutoff: datetime) -> bool:
         """Remove one file no row named, unless a row names it now or it was stored lately."""
@@ -158,6 +195,10 @@ class Maintenance:
                 return False
             self._blobs.delete(tenant_id, sha256)
             return True
+
+
+def _first_line(error: Exception) -> str:
+    return (str(error).splitlines() or [type(error).__name__])[0][:200]
 
 
 def _document_id(args: Args) -> UUID:

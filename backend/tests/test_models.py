@@ -363,3 +363,25 @@ async def test_closing_models_closes_their_clients(tmp_path: Path) -> None:
     await models.close()
     with pytest.raises(RuntimeError):
         await models.servers[0].post("/tokenize", {})
+
+
+@pytest.mark.parametrize(("status", "healthy"), [(200, True), (503, False)])
+async def test_a_server_is_healthy_once_its_model_is_loaded(status: int, *, healthy: bool) -> None:
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        assert request.url.path == "/health"
+        return httpx2.Response(status, json={"status": "ok" if status == 200 else "loading"})
+
+    server = LlamaServer(
+        "chat", "http://model:8080", KEY, timeout=5, transport=httpx2.MockTransport(answer)
+    )
+    assert await server.healthy() is healthy
+
+
+async def test_a_server_that_does_not_answer_is_not_healthy() -> None:
+    def fail(request: httpx2.Request) -> httpx2.Response:
+        raise httpx2.ConnectError("refused", request=request)
+
+    server = LlamaServer(
+        "chat", "http://model:8080", KEY, timeout=5, transport=httpx2.MockTransport(fail)
+    )
+    assert await server.healthy() is False
