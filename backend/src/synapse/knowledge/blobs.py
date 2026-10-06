@@ -9,12 +9,16 @@ import hashlib
 import os
 import secrets
 import shutil
+from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import BinaryIO, Protocol
 from uuid import UUID
 
 READ_BLOCK = 1 << 20
+# A blob's file name: its SHA-256 in hex.
+NAME_LENGTH = 64
 
 
 @dataclass(frozen=True)
@@ -24,6 +28,14 @@ class Incoming:
     path: Path
     size_bytes: int
     sha256: bytes
+
+
+@dataclass(frozen=True)
+class StoredBlob:
+    """A file in the store: the SHA-256 it is named by, and when its bytes were last stored."""
+
+    sha256: bytes
+    modified: datetime
 
 
 class TooLargeError(ValueError):
@@ -63,6 +75,8 @@ class LocalBlobStore:
     def put(self, tenant_id: UUID, incoming: Incoming) -> None:
         target = self.path(tenant_id, incoming.sha256)
         if target.exists():
+            # Stored again: the sweep counts a file's age from then (maintenance.py).
+            os.utime(target)
             incoming.path.unlink(missing_ok=True)
             return
         target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -75,6 +89,46 @@ class LocalBlobStore:
 
     def delete(self, tenant_id: UUID, sha256: bytes) -> None:
         self.path(tenant_id, sha256).unlink(missing_ok=True)
+
+    def stored(self, tenant_id: UUID) -> Iterator[StoredBlob]:
+        """Every file of the tenant's that is named and placed as a blob."""
+        for path in sorted((self._root / str(tenant_id)).glob("??/??/*")):
+            name = path.name
+            if (
+                len(name) != NAME_LENGTH
+                or path.parent.name != name[2:4]
+                or path.parent.parent.name != name[:2]
+            ):
+                continue
+            try:
+                sha256 = bytes.fromhex(name)
+                modified = _modified(path)
+            except ValueError, FileNotFoundError:
+                continue
+            yield StoredBlob(sha256, modified)
+
+    def modified(self, tenant_id: UUID, sha256: bytes) -> datetime | None:
+        try:
+            return _modified(self.path(tenant_id, sha256))
+        except FileNotFoundError:
+            return None
+
+    def remove_incoming(self, before: datetime) -> int:
+        """Remove uploads left half-received (a crash, a dropped connection) before ``before``;
+        returns how many."""
+        removed = 0
+        for path in (self._root / ".incoming").glob("*.part"):
+            try:
+                if _modified(path) < before:
+                    path.unlink()
+                    removed += 1
+            except FileNotFoundError:
+                continue
+        return removed
+
+
+def _modified(path: Path) -> datetime:
+    return datetime.fromtimestamp(path.stat().st_mtime, UTC)
 
 
 class Receiver:

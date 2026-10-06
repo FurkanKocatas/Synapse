@@ -6,7 +6,7 @@ Status: 2026-09-28; model servers 2026-10-01. Customer installations get their c
 
 | Image | Built from | Runs as | Contents |
 |---|---|---|---|
-| `synapse-app` | [deploy/app/Dockerfile](../deploy/app/Dockerfile) | uid 10001 | Python 3.14 and the backend, installed from `uv.lock` without development dependencies. One image for every role (`synapse api`, `synapse worker`, `synapse db migrate`, ...). The worker runs as its own database role and mounts the blob volume read-only. OCR ([benchmark](benchmarks/ocr.md), [ADR 0019](adr/0019-page-ocr.md)): PP-OCRv6's models from this repository's releases `ocr-models-1` and `ocr-models-2` and Debian's Tesseract with the official "best" Turkish and English models, all pinned by checksum, and RapidOCR's models (the second reading where PP-OCRv6 is not set), fetched at build time, so the containers need no network. The worker's memory limit is 2.5 GB on the 16 GB tier; OCR peaked at 1.2 GB with two pages at a time, beside the worker's own memory. pip is removed |
+| `synapse-app` | [deploy/app/Dockerfile](../deploy/app/Dockerfile) | uid 10001 | Python 3.14 and the backend, installed from `uv.lock` without development dependencies. One image for every role (`synapse api`, `synapse worker`, `synapse scheduler`, `synapse db migrate`, ...). The worker runs as its own database role and mounts the blob volume read-only; the scheduler, which purges deleted documents and sweeps stray files ([knowledge-base.md](design/knowledge-base.md#deleting)), runs as its own role too and may write it, within 384 MB. OCR ([benchmark](benchmarks/ocr.md), [ADR 0019](adr/0019-page-ocr.md)): PP-OCRv6's models from this repository's releases `ocr-models-1` and `ocr-models-2` and Debian's Tesseract with the official "best" Turkish and English models, all pinned by checksum, and RapidOCR's models (the second reading where PP-OCRv6 is not set), fetched at build time, so the containers need no network. The worker's memory limit is 2.5 GB on the 16 GB tier; OCR peaked at 1.2 GB with two pages at a time, beside the worker's own memory. pip is removed |
 | `synapse-web` | [deploy/web/Dockerfile](../deploy/web/Dockerfile) | uid 10001 | The built SPA and Caddy, which serves it and proxies `/api`. Caddy is compiled from source with a current Go toolchain and patched modules |
 | `synapse-postgres` | [deploy/postgres/Dockerfile](../deploy/postgres/Dockerfile) | postgres (999) | PostgreSQL 18 with pgvector and pg_textsearch, Debian security updates applied, gosu removed |
 | `ghcr.io/ggml-org/llama.cpp:server-b11243` and `server-vulkan-b11243` | llama.cpp's own images, pinned by digest | uid 10001 (set by us; the images default to root) | `llama-server` for the three model servers below, on the CPU or on a GPU through Vulkan. Not built here |
@@ -83,7 +83,7 @@ The model servers are in the `models` profile. With the files in `.dev/models` (
 5. Registers a passkey and signs in with it through the web front ([tools/smoke_passkey.py](../tools/smoke_passkey.py), with the backend tests' software authenticator), which also proves `SYNAPSE_PUBLIC_URL` reaches the API.
 6. Uploads a PDF as an editor, lists it and downloads it byte for byte, which proves the blob volume is writable under the read-only container, and checks the web front's access log holds those requests without their CSRF token; then waits for the worker to mark it `parsed` and finds its text in the database.
 7. Uploads a scanned PDF (an image only) and waits for OCR: both engines read it in the read-only worker container, which proves the models are in the image and nothing is downloaded at run time; the page must come back as OCR text with the date and decision number in it.
-8. Verifies the audit chain.
+8. Deletes a parsed document and waits until the scheduler has purged it and recorded `kb.document.purge`, then verifies the audit chain.
 9. With `--with-backup` (CI; needs sudo without a password): backs the installation up and verifies the backup with synapsectl's own code and containers ([tools/smoke_backup.py](../tools/smoke_backup.py)), removes it with its volumes, restores it, starts it again and checks the documents are listed, their files download byte for byte, their pages are in the database, the audit chain verifies, and a new upload is stored and parsed ([design/backup.md](design/backup.md)).
 
 It then removes everything it created. CI runs it, with `--with-backup`, on every push.
@@ -93,7 +93,7 @@ It then removes everything it created. CI runs it, with `--with-backup`, on ever
 ## Not done yet
 
 - The offline bundle and its signed release manifest ([installer.md](installer.md)).
-- The scheduler role (periodic jobs such as audit checkpoints and cleanup), and separate workers per queue on bigger machines.
+- The scheduler's nightly audit checkpoints and consistency checks, and separate workers per queue on bigger machines.
 - Image signing and SBOMs in a release workflow.
 - Scanning the llama.cpp images in CI as our own images are, and a second GPU kind (Intel's integrated GPUs) measured before the installer recommends Vulkan for it.
 - TLS configuration and a production memory profile per hardware tier.

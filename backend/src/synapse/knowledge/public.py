@@ -17,6 +17,7 @@ from synapse.knowledge.documents import (
 )
 from synapse.knowledge.filetypes import MediaType, UnsupportedFileError, detect
 from synapse.knowledge.library import Folder, Listed, Overview
+from synapse.knowledge.maintenance import Maintenance
 from synapse.knowledge.ocr import (
     PageReader,
     PageReading,
@@ -45,6 +46,7 @@ __all__ = [
     "LightParser",
     "Listed",
     "LocalBlobStore",
+    "Maintenance",
     "MediaType",
     "NotFoundError",
     "Overview",

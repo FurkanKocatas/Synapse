@@ -2,8 +2,10 @@
 
 import hashlib
 import io
+import os
 import uuid
 import zipfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -130,6 +132,40 @@ def test_blobs_are_stored_once_per_tenant(tmp_path: Path) -> None:
     assert list(store.incoming_dir().iterdir()) == []
     store.delete(tenant, first.sha256)
     assert not store.path(tenant, first.sha256).exists()
+
+
+def test_the_store_lists_its_files_and_removes_old_half_uploads(tmp_path: Path) -> None:
+    store = LocalBlobStore(tmp_path / "blobs")
+    tenant = uuid.uuid4()
+
+    def stored(data: bytes) -> Path:
+        receiver = Receiver(store.incoming_dir(), limit_bytes=100)
+        receiver.write(data)
+        incoming = receiver.finish()
+        store.put(tenant, incoming)
+        return store.path(tenant, incoming.sha256)
+
+    path = stored(b"some bytes")
+    (path.parent / "notes.txt").write_bytes(b"not named as a blob")
+    long_ago = datetime.now(UTC) - timedelta(days=3)
+    os.utime(path, (long_ago.timestamp(), long_ago.timestamp()))
+    sha256 = bytes.fromhex(path.name)
+    assert [blob.sha256 for blob in store.stored(tenant)] == [sha256]
+    before = store.modified(tenant, sha256)
+    assert before is not None and before < datetime.now(UTC) - timedelta(days=2)
+    assert stored(b"some bytes") == path  # the same bytes again: the file's time is renewed
+    renewed = store.modified(tenant, sha256)
+    assert renewed is not None and renewed > datetime.now(UTC) - timedelta(minutes=1)
+    assert list(store.stored(uuid.uuid4())) == []
+    assert store.modified(tenant, bytes(32)) is None
+
+    old, fresh = store.incoming_dir() / "old.part", store.incoming_dir() / "fresh.part"
+    old.write_bytes(b"half")
+    fresh.write_bytes(b"half")
+    os.utime(old, (long_ago.timestamp(), long_ago.timestamp()))
+    assert store.remove_incoming(datetime.now(UTC) - timedelta(days=1)) == 1
+    assert not old.exists()
+    assert fresh.exists()
 
 
 @pytest.mark.parametrize(

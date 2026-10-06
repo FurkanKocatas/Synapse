@@ -6,6 +6,9 @@ Each task is registered through ``register``, which:
 - retries with exponential backoff, and calls the task's ``on_final_failure`` when the last
   attempt fails, so the thing the job was about (a document version) never stays "in progress";
 - never accepts a user identity from anywhere but the job row (ADR 0002, rule 1).
+
+A task with a ``cron`` schedule is also deferred on that schedule, for the tenant the process
+runs for, by whichever process registers it with ``scheduled_for`` (the scheduler).
 """
 
 from collections.abc import Awaitable, Callable, Mapping
@@ -34,6 +37,8 @@ class Task:
     run: Handler
     # Called once when the last attempt has failed, with the error's type name.
     on_final_failure: Callable[[UUID, Args, str], Awaitable[None]] | None = None
+    # Deferred on this schedule (Procrastinate's cron, in UTC) when registered for a tenant.
+    cron: str | None = None
 
 
 class BadJobError(ValueError):
@@ -51,7 +56,7 @@ def build_app(conninfo: str) -> App:
     return App(connector=PsycopgConnector(conninfo=conninfo, min_size=1, max_size=4))
 
 
-def register(app: App, task: Task) -> None:
+def register(app: App, task: Task, *, scheduled_for: UUID | None = None) -> None:
     # Procrastinate counts retries: the first run plus max_attempts more.
     retry = RetryStrategy(
         max_attempts=MAX_ATTEMPTS - 1, exponential_wait=5, retry_exceptions=[Exception]
@@ -77,4 +82,12 @@ def register(app: App, task: Task) -> None:
                 await task.on_final_failure(tenant_id, args, type(error).__name__)
             raise
 
-    app.task(name=task.name, queue=task.queue.value, retry=retry, pass_context=True)(run)
+    registered = app.task(name=task.name, queue=task.queue.value, retry=retry, pass_context=True)(
+        run
+    )
+    if task.cron is not None and scheduled_for is not None:
+        app.periodic(
+            cron=task.cron,
+            periodic_id=str(scheduled_for),
+            task_kwargs={"tenant_id": str(scheduled_for)},
+        )(registered)  # type: ignore[arg-type]  # run takes the timestamp among its **kwargs

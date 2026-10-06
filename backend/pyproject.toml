@@ -145,7 +145,7 @@ name = "Layered architecture"
 type = "layers"
 layers = [
     "synapse.cli",
-    "synapse.accounts_cli | synapse.audit_cli | synapse.worker_cli",
+    "synapse.accounts_cli | synapse.audit_cli | synapse.scheduler_cli | synapse.worker_cli",
     "synapse.api | synapse.migrations",
     "synapse.chat",
     "synapse.knowledge",
@@ -185,7 +185,13 @@ allow_indirect_imports = true
 [[tool.importlinter.contracts]]
 name = "Knowledge is used only through synapse.knowledge.public"
 type = "forbidden"
-source_modules = ["synapse.api", "synapse.chat", "synapse.cli", "synapse.worker_cli"]
+source_modules = [
+    "synapse.api",
+    "synapse.chat",
+    "synapse.cli",
+    "synapse.scheduler_cli",
+    "synapse.worker_cli",
+]
 forbidden_modules = [
     "synapse.knowledge.blobs",
     "synapse.knowledge.chunking",
@@ -195,6 +201,7 @@ forbidden_modules = [
     "synapse.knowledge.filetypes",
     "synapse.knowledge.headings",
     "synapse.knowledge.language",
+    "synapse.knowledge.maintenance",
     "synapse.knowledge.ocr",
     "synapse.knowledge.parsing",
     "synapse.knowledge.pipeline",

@@ -153,6 +153,21 @@ services:
     mem_limit: 2560m
     restart: unless-stopped
 
+  scheduler:
+    <<: *app
+    command: [scheduler]
+    environment:
+      <<: *db-env
+      SYNAPSE_DB_USER: synapse_scheduler
+      SYNAPSE_DB_PASSWORD_FILE: /run/secrets/db_synapse_scheduler
+    secrets: [db_synapse_scheduler]
+    # It removes the files of purged documents.
+    volumes: [blobs:/var/lib/synapse/blobs]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    mem_limit: 384m
+    restart: unless-stopped
+
   web:
     image: synapse-web:dev
     build:

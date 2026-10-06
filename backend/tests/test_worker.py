@@ -93,3 +93,25 @@ async def test_the_last_failed_attempt_calls_the_give_up_hook(monkeypatch) -> No
 def _no_wait_retry(**kwargs: object) -> RetryStrategy:
     kwargs["exponential_wait"] = 0
     return RetryStrategy(**kwargs)  # type: ignore[arg-type]
+
+
+async def test_a_task_with_a_schedule_is_deferred_for_the_tenant_it_runs_for() -> None:
+    app, _ = in_memory_app()
+    tenant = uuid.uuid4()
+    seen: list[tuple[uuid.UUID, Args]] = []
+
+    async def run(tenant_id: uuid.UUID, args: Args) -> None:
+        seen.append((tenant_id, args))
+
+    register(app, Task("t.nightly", Queue.INGEST, run, cron="40 0 * * *"), scheduled_for=tenant)
+    # without a tenant to run for, a scheduled task is only a task
+    register(app, Task("t.unscheduled", Queue.INGEST, run, cron="40 0 * * *"))
+    periodic = app.periodic_registry.periodic_tasks
+    assert list(periodic) == [("t.nightly", str(tenant))]
+    nightly = periodic[("t.nightly", str(tenant))]
+    assert nightly.cron == "40 0 * * *"
+    assert nightly.configure_kwargs["task_kwargs"] == {"tenant_id": str(tenant)}
+    # deferred on schedule, it gets the tenant and the time it was due
+    await app.configure_task("t.nightly").defer_async(tenant_id=str(tenant), timestamp=1791270000)
+    await drain(app)
+    assert seen == [(tenant, {"timestamp": 1791270000})]

@@ -31,6 +31,9 @@ from synapse.models.public import Embedder, Models, models_from
 
 log = structlog.get_logger(__name__)
 
+# The worker's queues; the maintenance queue is the scheduler's (scheduler_cli.py).
+QUEUES = (Queue.INGEST, Queue.OCR, Queue.EMBED)
+
 
 def page_reader(settings: Settings) -> PageReader:
     tesseract = TesseractEngine(tessdata_dir=settings.ocr_tessdata_dir)

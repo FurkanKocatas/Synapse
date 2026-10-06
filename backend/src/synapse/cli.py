@@ -1,7 +1,7 @@
 """Command line entry point.
 
-One image runs in several roles (ADR 0002): ``synapse api`` and ``synapse worker`` start process
-roles, while
+One image runs in several roles (ADR 0002): ``synapse api``, ``synapse worker`` and
+``synapse scheduler`` start process roles, while
 ``synapse db|tenant|user ...`` are administration commands run by the installer and operators.
 Only roles that exist are listed here.
 """
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import uvicorn
 
-from synapse import __version__, accounts_cli, audit_cli, worker_cli
+from synapse import __version__, accounts_cli, audit_cli, scheduler_cli, worker_cli
 from synapse.dbadmin import bootstrap, migrate
 from synapse.identity.public import PasswordPolicyError
 from synapse.jobs.queue import Queue
@@ -33,12 +33,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--queue",
         dest="queues",
         action="append",
-        choices=[q.value for q in Queue],
-        help="A queue to take jobs from (repeatable; default: all)",
+        choices=[q.value for q in worker_cli.QUEUES],
+        help="A queue to take jobs from (repeatable; default: all of them)",
     )
     worker.add_argument("--concurrency", type=int, default=1, help="Jobs run at the same time")
     worker.add_argument(
         "--once", action="store_true", help="Stop when the queues are empty (for tests)"
+    )
+    commands.add_parser(
+        "scheduler", help="Run maintenance: purges of deleted documents and scheduled jobs."
     )
 
     database = commands.add_parser("db", help="Database administration.")
@@ -118,8 +121,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "worker":
         settings = get_settings()
         configure_logging(settings)
-        queues = [Queue(q) for q in args.queues] if args.queues else list(Queue)
+        queues = [Queue(q) for q in args.queues] if args.queues else list(worker_cli.QUEUES)
         return worker_cli.main(settings, queues, concurrency=args.concurrency, once=args.once)
+    if args.command == "scheduler":
+        settings = get_settings()
+        configure_logging(settings)
+        try:
+            return scheduler_cli.main(settings)
+        except scheduler_cli.SchedulerError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
     try:
         return _run_admin_command(args)
     except (

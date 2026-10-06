@@ -114,6 +114,11 @@ def make_world(
 
 @pytest.fixture
 def editor(world: World) -> Iterator[TestClient]:
+    yield from signed_in_editor(world)
+
+
+def signed_in_editor(world: World) -> Iterator[TestClient]:
+    """An API client signed in as the world's editor (other test modules use it too)."""
     with TestClient(create_app(world.api), base_url="https://testserver") as client:
         body = client.post(
             "/api/auth/login",

@@ -1,4 +1,5 @@
-"""The ingestion jobs by name, so the API can enqueue them without importing any parser."""
+"""The ingestion and maintenance jobs by name, so the API can enqueue them without importing
+any parser."""
 
 from uuid import UUID
 
@@ -7,6 +8,9 @@ from synapse.jobs.queue import Job, JsonValue, Queue
 PARSE_TASK = "ingest.parse_version"
 OCR_TASK = "ingest.ocr_version"
 EMBED_TASK = "ingest.embed_version"
+PURGE_TASK = "knowledge.purge_document"
+PURGE_DELETED_TASK = "knowledge.purge_late"
+SWEEP_TASK = "knowledge.sweep_files"
 
 
 def parse_job(document_id: UUID, version_id: UUID) -> Job:
@@ -21,6 +25,12 @@ def ocr_job(document_id: UUID, version_id: UUID) -> Job:
     # parsing.
     args: dict[str, JsonValue] = {"version_id": str(version_id)}
     return Job(OCR_TASK, Queue.OCR, args, lock=f"document:{document_id}")
+
+
+def purge_job(document_id: UUID) -> Job:
+    # The scheduler's queue; the document's lock, so it runs after all of its processing.
+    args: dict[str, JsonValue] = {"document_id": str(document_id)}
+    return Job(PURGE_TASK, Queue.MAINTENANCE, args, lock=f"document:{document_id}")
 
 
 def embed_job(document_id: UUID, version_id: UUID) -> Job:

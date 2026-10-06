@@ -9,7 +9,8 @@ Rules:
   version of a live document in the same collection is refused as a duplicate.
 - A document or version the user may not read answers "not found", the same as a missing one,
   so identifiers cannot be probed.
-- Deleting marks the document; it leaves search at once. Purging the bytes is a background job.
+- Deleting marks the document; it leaves search at once. The delete queues the purge of its
+  content, which the scheduler runs (``maintenance.py``).
 - Reading a page in the viewer is audited (``kb.document.view``), as ADR 0008 asks of every
   document view.
 """
@@ -30,7 +31,8 @@ from synapse.jobs.queue import enqueue
 from synapse.kernel.database import Database
 from synapse.knowledge.blobs import BlobStore, Incoming
 from synapse.knowledge.filetypes import MediaType, detect
-from synapse.knowledge.pipeline import parse_job
+from synapse.knowledge.maintenance import lock_blob
+from synapse.knowledge.pipeline import parse_job, purge_job
 
 VersionStatus = Literal["queued", "parsing", "ocr", "embedding", "ready", "failed"]
 
@@ -394,17 +396,21 @@ class DocumentService:
         async with self._db.tenant_transaction(self._tenant_id) as connection:
             if not await _has_document(connection, uploader.user_id, document_id, "write"):
                 raise NotFoundError
-            await connection.execute(
+            cursor = await connection.execute(
                 "UPDATE documents SET deleted_at = %s WHERE id = %s AND deleted_at IS NULL",
                 (now, document_id),
             )
+            if cursor.rowcount:
+                await enqueue(connection, self._tenant_id, purge_job(document_id))
             await self._audit(connection, "kb.document.delete", uploader, document_id, now, {})
 
     async def _store_blob(
         self, connection: AsyncConnection, incoming: Incoming, media_type: MediaType, now: datetime
     ) -> None:
         # The row is written before the file is moved into place: if the move fails, the
-        # transaction fails with it; a file without a row is swept by maintenance later.
+        # transaction fails with it; a file without a row is swept by maintenance later. The
+        # blob's lock keeps that sweep away until this transaction ends.
+        await lock_blob(connection, incoming.sha256)
         await connection.execute(
             "INSERT INTO blobs (tenant_id, sha256, size_bytes, media_type, created_at) "
             "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",

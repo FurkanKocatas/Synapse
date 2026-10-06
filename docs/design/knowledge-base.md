@@ -13,7 +13,7 @@ erDiagram
 ```
 
 - **Blob:** one row per distinct content per tenant, named by SHA-256. The bytes are in the blob store, not in the database.
-- **Document:** a title in a collection. Deleting sets `deleted_at`; it leaves every list and every permission check at once.
+- **Document:** a title in a collection. Deleting sets `deleted_at`; it leaves every list and every permission check at once, and its content is purged soon after ([Deleting](#deleting)).
 - **Version:** each upload of a document, with the original file name and a processing status (`queued`, `parsing`, `parsed`, `ocr`, `embedding`, `ready`, `failed` with a reason code). Search will use `current_version_id`, which moves to a new version only when that version is `ready`, so re-uploading never leaves a document half indexed.
 
 ## Blob store
@@ -23,7 +23,7 @@ erDiagram
 - **Receiving:** the request body is written to `.incoming/` as it arrives, hashed and counted on the way. Past the limit (`SYNAPSE_UPLOAD_MAX_MB`, default 100) the partial file is deleted and the request answered with 413, so an oversized upload never fills the disk.
 - **Storing:** the incoming file is renamed into place after `fsync`, on the same file system, so no reader ever sees a partial file. If the content is already stored, the new copy is dropped.
 - **Deduplication stays inside a tenant.** Sharing blobs across tenants would let one tenant find out, by timing or by a missing upload, that another holds a given file.
-- **Order of writes:** the blob row is inserted, then the file moved, inside the transaction that creates the document. A failed transaction can leave a file without a row; the maintenance job (step 2) removes those. The reverse, a row without a file, cannot happen.
+- **Order of writes:** the blob row is inserted, then the file moved, inside the transaction that creates the document. A failed transaction can leave a file without a row; the nightly sweep removes those ([Deleting](#deleting)). The reverse, a row without a file, cannot happen; the sweep counts them anyway and logs an error if it finds any.
 
 ## File types
 
@@ -56,7 +56,7 @@ On the evaluation corpus, 97 of 100 files are recognised as the type the manifes
 - Errors: 404 `not_found`, 409 `duplicate_document` (the same content is already the latest version of a document in that collection), 413 `file_too_large`, 415 `unknown_type` or `legacy_office`, 400 `empty_file`.
 - Downloads are always attachments, with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`, so an uploaded HTML or SVG file can never run in the application's origin.
 
-Audit actions: `kb.document.create`, `kb.document.version`, `kb.document.delete`.
+Audit actions: `kb.document.create`, `kb.document.version`, `kb.document.delete`, and `kb.document.purge` from the scheduler (no actor; `versions` and `files_released`).
 
 ### An exception to ADR 0002, rule 3
 
@@ -146,6 +146,16 @@ Phase 4, step 6 ([ADR 0018](../adr/0018-model-defaults.md)); the job in [process
 - **The adapter** ([llama.py](../../backend/src/synapse/models/llama.py)) cuts every text with the server's own tokenizer (`/tokenize`) to 512 tokens, keeping the end token, after collapsing runs of whitespace (llama.cpp's tokenizer does not always, and a table chunk once came out longer than the server's batch). It checks the dimension and makes every vector unit length.
 - **Tests** use a stand-in model in the worker and a stand-in llama-server for the adapter; each rule was broken once on purpose to see a test fail (eight in the job, nine in the adapter).
 
+## Deleting
+
+The scheduler ([knowledge/maintenance.py](../../backend/src/synapse/knowledge/maintenance.py), `synapse scheduler`, its own database role and the only process besides the API that may write the blob volume) removes what a deleted document left:
+
+1. **The rows, minutes after the delete.** The delete queues a purge job in its own transaction, under the document's lock. Procrastinate starts no job while an earlier job with the same lock is waiting or running, even one waiting for a retry, so the purge comes after every parsing, OCR or embedding job of the document. It deletes the versions with their pages, chunks and entities, the document with its grants, and the blob rows no other version names (the same bytes in another live document stay), and records `kb.document.purge` in the audit log, all in one transaction. The audit log keeps the upload, the delete and the purge, with the document's ID; conversations keep the answers they gave and the titles they cited.
+2. **The files, after a day.** The nightly sweep (00:40 UTC) removes files no blob row has named for a day, and half-received uploads in `.incoming/` older than a day. Bytes stored again renew their file's time, and an upload takes the blob's advisory lock before it writes the row, as the sweep does before it removes a file, so a file being stored again is never removed.
+3. **Late purges, every hour.** Deleted documents with no purge job waiting (deleted before purges existed, or whose purge failed five times) get one.
+
+Backups keep deleted documents until their snapshots expire (six months by default, [backup.md](backup.md)). Tested in [tests/db/test_maintenance.py](../../backend/tests/db/test_maintenance.py) against the real queue and roles, and in the full-stack smoke test, where a deleted document must be purged within a minute.
+
 ## Screen
 
 `/library` ("Belgeler", [frontend/src/features/library/](../../frontend/src/features/library/)), for every signed-in user:
@@ -164,5 +174,4 @@ Checked in the browser against the real API and worker: uploading, a refused fil
 
 - Layout analysis (tables kept whole comes with chunking); chunking and indexing (step 5 on). Using `extra_identifiers` in search and `uncertain_identifiers` in answers (steps 7 and 8).
 - Versions and titles on the screen (the API has versions already).
-- Purging deleted documents' bytes, and removing files without a row.
 - Per-document grants through the API, and editing titles and metadata.

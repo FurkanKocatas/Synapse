@@ -95,8 +95,8 @@ stack run --rm --no-deps -T -v "$password_file:/run/password:ro" api \
   user create --email editor@smoke.example --name "Smoke Editor" --role editor \
   --password-file /run/password >/dev/null
 
-step "Start the API, the worker and the web front${with_models:+, and the model servers}"
-stack up -d --wait api worker web "${model_servers[@]}"
+step "Start the API, the worker, the scheduler and the web front${with_models:+, and the model servers}"
+stack up -d --wait api worker scheduler web "${model_servers[@]}"
 
 base="http://127.0.0.1:$port"
 step "Check the web front and the API through it"
@@ -185,6 +185,21 @@ grep -q "^ocr vote-ppocrv6-tr-lm+ppocrv5-latin-lm+tesseract-tur+eng " <<<"$read_
 grep -q "Karar 2026/35 kabul edildi" <<<"$read_back"
 grep -q "15.03.2026" <<<"$read_back"
 
+step "Delete a document and wait for the scheduler to purge it"
+uv run --directory backend python -c   "import sys; from tests.knowledge_samples import pdf; sys.stdout.buffer.write(pdf('Karar 2026/37 kabul edildi.'))"   > "$sample.doomed"
+doomed="$(editor -H 'Content-Type: application/octet-stream' --data-binary "@$sample.doomed"   -X POST "$base/api/collections/$collection/documents?filename=Karar%202026-37.pdf" | json "['id']")"
+rm -f "$sample.doomed"
+wait_parsed "$doomed" 60
+editor -X DELETE "$base/api/documents/$doomed"
+purged=""
+for _ in $(seq 60); do
+  left="$(stack exec -T db psql -U postgres -d synapse -Atc     "SELECT count(*) FROM synapse.documents WHERE id = '$doomed'")"
+  if [ "$left" = "0" ]; then purged=1; break; fi
+  sleep 1
+done
+[ -n "$purged" ] || { echo "the deleted document was not purged within a minute" >&2; exit 1; }
+stack exec -T db psql -U postgres -d synapse -Atc   "SELECT action FROM synapse.audit_events WHERE target_id = '$doomed' ORDER BY seq DESC LIMIT 1"   | grep -qx "kb.document.purge"
+
 if [ -n "$with_models" ]; then
   step "Check the vectors, and the reranker and the chat model through the API's adapters"
   vectors="$(stack exec -T db psql -U postgres -d synapse -Atc \
@@ -238,7 +253,7 @@ if [ -n "$with_backup" ]; then
 
   step "Restore the backup and start the services again"
   as_root restore
-  stack up -d --wait api worker web "${model_servers[@]}"
+  stack up -d --wait api worker scheduler web "${model_servers[@]}"
 
   step "Check the documents, their files and the audit log came back"
   csrf="$(sign_in_editor)"

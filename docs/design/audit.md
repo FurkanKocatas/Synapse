@@ -12,6 +12,8 @@ Status: implemented, 2026-09-28. Decision record: [ADR 0008](../adr/0008-audit-l
 | `identity.logout` | success | The account | |
 | `identity.user.create` | success | The administrator, or none when created from the command line | `role`, `via` (`cli` or `admin`); target is the new user |
 
+Document events (`kb.document.*`, among them the scheduler's `kb.document.purge`) are listed in [knowledge-base.md](knowledge-base.md#api).
+
 Every event also stores the client IP when there is one. For failed logins on unknown accounts only the SHA-256 of the typed address is kept, so a mistyped address never stores someone else's email. Document views, chat questions and permission changes are added to this table as those features land.
 
 ## How tampering is made evident
