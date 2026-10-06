@@ -261,6 +261,29 @@ def sign_in(client: TestClient, email: str, password: str = PASSWORD) -> dict[st
     return body
 
 
+def test_new_accounts_may_not_use_the_organizations_name(admin: TestClient, setup: Setup) -> None:
+    named = "we are the admin tests team"  # the organization is "Admin tests"
+    created = admin.post(
+        "/api/admin/users",
+        json={
+            "email": f"named-{uuid.uuid4().hex[:6]}@example.org",
+            "display_name": "Named",
+            "role": "member",
+            "password": named,
+        },
+    )
+    assert created.json() == {"error": "password_contains_context"}
+    # the operator's command line keeps to the words it is given
+    accounts_cli.create_user(
+        setup.settings,
+        email=f"cli-{uuid.uuid4().hex[:6]}@example.org",
+        display_name="Cli",
+        role="member",
+        locale="en",
+        password=named,
+    )
+
+
 def test_resetting_a_password(admin: TestClient, setup: Setup) -> None:
     email = f"forgot-{uuid.uuid4().hex[:6]}@example.org"
     user = admin.post(

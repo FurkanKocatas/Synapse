@@ -486,8 +486,12 @@ class IdentityService:
         email = normalize_email(account.email)
         password_hash = None
         if account.password is not None:
-            async with self._db.tenant_transaction(self._tenant_id) as connection:
-                organization = await repository.organization_name(connection)
+            # An administrator's account refuses the organization's name too. The command line
+            # is the operator's, on the server; its scripted installs keep to the words given.
+            organization = ""
+            if actor_user_id is not None:
+                async with self._db.tenant_transaction(self._tenant_id) as connection:
+                    organization = await repository.organization_name(connection)
             passwords.validate_password(
                 account.password,
                 mfa_enabled=False,

@@ -60,7 +60,7 @@ All under `/api/auth`. Errors are `{"error": "<code>"}` with a stable code that 
 
 ## Passwords
 
-- Policy: NIST SP 800-63B-4. At least 15 characters (8 when the account has MFA), at most 256, any characters including spaces, no composition rules, no expiry. Passwords containing the account's email name, display name or organization name are rejected.
+- Policy: NIST SP 800-63B-4. At least 15 characters (8 when the account has MFA), at most 256, any characters including spaces, no composition rules, no expiry. Passwords containing the account's email name or display name are rejected, and so are those set in the application (by an administrator, or by the user) containing the organization's name; the command line on the server, which scripted installs use, keeps to the first two.
 - Hashing: Argon2id, `m=19 MiB, t=2, p=1` for now. Parameters live in each hash; when they are raised, hashes are upgraded on the next successful login. Hashing runs in a worker thread, never on the event loop.
 - Not done yet: the breached-password list (ADR 0006). It needs a bundled offline list; choosing and licensing one is an open item.
 
