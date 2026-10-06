@@ -253,8 +253,8 @@ if [ -n "$with_backup" ]; then
   as_root backup
   # both recorded for the operations page
   runs="$(stack exec -T db psql -U postgres -d synapse -Atc     "SELECT kind || ' ' || ok FROM synapse.operation_runs ORDER BY finished_at")"
-  grep -qx "backup t" <<<"$runs"
-  grep -qx "backup_verify t" <<<"$runs"
+  grep -qx "backup true" <<<"$runs"
+  grep -qx "backup_verify true" <<<"$runs"
   stack down -v
 
   step "Restore the backup and start the services again"
