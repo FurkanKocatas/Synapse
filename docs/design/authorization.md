@@ -59,7 +59,8 @@ All under `/api/admin`, each behind a role permission, each change audited in th
 | `POST /groups/{id}/members`, `DELETE /groups/{id}/members/{user}` | `groups.manage` | Adding twice is 409, removing a non-member is 404 |
 | `GET /collections`, `POST /collections` | `collections.create` | A non-admin creator gets `manage` on the new collection; an admin creator gets nothing, because admins need grants to read like anyone else |
 | `GET /collections/{id}/grants`, `POST /collections/{id}/grants` | `permissions.manage` | Principal is a user or group ID, or a role name. An unknown principal or collection is 404 |
-| `DELETE /grants/{id}` | `permissions.manage` | |
+| `GET /documents/{id}/grants`, `POST /documents/{id}/grants` | `permissions.manage` | A grant on that one document, beside those on its collections; the same principals. An unknown or deleted document is 404 |
+| `DELETE /grants/{id}` | `permissions.manage` | A grant on a collection or on a document |
 
 An admin can grant themselves read access to any collection, like any other grant. The audit log records it (`authz.grant.add`, with the actor), so that is visible rather than prevented.
 
@@ -71,5 +72,5 @@ Audit actions: `authz.group.create`, `authz.group.member_add`, `authz.group.memb
 
 ## Not in this step
 
-- Document grants (they come with the document endpoints) and moving or renaming collections.
+- Moving or renaming collections, and a screen for document grants (the API is there).
 - Retrieval using `accessible_documents` (with the knowledge base).

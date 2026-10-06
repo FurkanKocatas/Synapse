@@ -280,6 +280,32 @@ async def add_grant(
     return {"id": grant_id}
 
 
+@router.get("/documents/{document_id}/grants")
+async def list_document_grants(
+    document_id: UUID, session: ManagePermissions, request: Request
+) -> list[authz.DocumentGrant]:
+    async with _changes(request, session) as (connection, _):
+        return await authz.management.list_document_grants(connection, document_id)
+
+
+@router.post("/documents/{document_id}/grants", status_code=status.HTTP_201_CREATED)
+async def add_document_grant(
+    document_id: UUID, body: GrantRequest, session: ManagePermissions, request: Request
+) -> dict[str, UUID]:
+    async with _changes(request, session) as (connection, actor):
+        grant_id = await authz.management.add_grant(
+            connection,
+            actor,
+            document_id,
+            body.principal_type,
+            body.principal,
+            body.permission,
+            target="document",
+        )
+    return {"id": grant_id}
+
+
+# A grant on a collection or on a document.
 @router.delete("/grants/{grant_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_grant(grant_id: UUID, session: ManagePermissions, request: Request) -> None:
     async with _changes(request, session) as (connection, actor):

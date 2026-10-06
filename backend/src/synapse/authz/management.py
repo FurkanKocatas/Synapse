@@ -1,4 +1,5 @@
-"""Managing groups, collections and grants (ADR 0007). Every change is audited (ADR 0008).
+"""Managing groups, collections and grants on collections or single documents (ADR 0007).
+Every change is audited (ADR 0008).
 
 All functions run inside the caller's tenant transaction, so the change and its audit event
 commit or roll back together. Database constraint errors become the typed errors below, which
@@ -26,8 +27,17 @@ _PRINCIPAL_COLUMN = {
 }
 
 
+# What a grant is on: its table and the column naming the collection or document.
+GrantTarget = Literal["collection", "document"]
+_GRANTS: dict[GrantTarget, tuple[str, str]] = {
+    "collection": ("collection_grants", "collection_id"),
+    "document": ("document_grants", "document_id"),
+}
+
+
 class NotFoundError(LookupError):
-    """A referenced group, user, collection or grant does not exist in this tenant."""
+    """A referenced group, user, collection, document or grant does not exist in this tenant
+    (a deleted document neither)."""
 
 
 class ConflictError(ValueError):
@@ -52,6 +62,15 @@ class Collection:
 class Grant:
     id: UUID
     collection_id: UUID
+    principal_type: PrincipalType
+    principal: str
+    permission: DocumentPermission
+
+
+@dataclass(frozen=True)
+class DocumentGrant:
+    id: UUID
+    document_id: UUID
     principal_type: PrincipalType
     principal: str
     permission: DocumentPermission
@@ -216,29 +235,52 @@ async def create_collection(
 # Grants
 
 
+_PRINCIPAL = (
+    "CASE WHEN principal_user_id IS NOT NULL THEN 'user' "
+    "     WHEN principal_group_id IS NOT NULL THEN 'group' ELSE 'role' END AS principal_type, "
+    "coalesce(principal_user_id::text, principal_group_id::text, principal_role) AS principal"
+)
+
+
 async def list_grants(connection: AsyncConnection, collection_id: UUID) -> list[Grant]:
     async with connection.cursor(row_factory=class_row(Grant)) as cursor:
         await cursor.execute(
-            "SELECT id, collection_id, "
-            "CASE WHEN principal_user_id IS NOT NULL THEN 'user' "
-            "     WHEN principal_group_id IS NOT NULL THEN 'group' ELSE 'role' END "
-            "  AS principal_type, "
-            "coalesce(principal_user_id::text, principal_group_id::text, principal_role) "
-            "  AS principal, permission "
+            f"SELECT id, collection_id, {_PRINCIPAL}, permission "  # noqa: S608  (constant)
             "FROM collection_grants WHERE collection_id = %s ORDER BY granted_at",
             (collection_id,),
         )
         return await cursor.fetchall()
 
 
-async def add_grant(
+async def list_document_grants(
+    connection: AsyncConnection, document_id: UUID
+) -> list[DocumentGrant]:
+    """The grants on the document itself; those on its collections are listed with them."""
+    await _live_document(connection, document_id)
+    async with connection.cursor(row_factory=class_row(DocumentGrant)) as cursor:
+        await cursor.execute(
+            f"SELECT id, document_id, {_PRINCIPAL}, permission "  # noqa: S608  (constant)
+            "FROM document_grants WHERE document_id = %s ORDER BY granted_at",
+            (document_id,),
+        )
+        return await cursor.fetchall()
+
+
+async def add_grant(  # noqa: PLR0913  (the grant's parts, as the API takes them)
     connection: AsyncConnection,
     actor: Actor,
-    collection_id: UUID,
+    target_id: UUID,
     principal_type: PrincipalType,
     principal: str,
     permission: DocumentPermission,
+    *,
+    target: GrantTarget = "collection",
 ) -> UUID:
+    """Grant ``permission`` on the collection ``target_id``, everything inside it included,
+    or with ``target="document"`` on that one document."""
+    if target == "document":
+        await _live_document(connection, target_id)
+    table, id_column = _GRANTS[target]
     column = _PRINCIPAL_COLUMN[principal_type]
     try:
         value: object = principal if principal_type == "role" else UUID(principal)
@@ -246,9 +288,9 @@ async def add_grant(
         raise NotFoundError("principal") from error
     grant_id = await _insert_returning_id(
         connection,
-        f"INSERT INTO collection_grants (tenant_id, collection_id, {column}, permission, "  # noqa: S608  (column from a fixed map)
+        f"INSERT INTO {table} (tenant_id, {id_column}, {column}, permission, "  # noqa: S608  (names from fixed maps)
         "granted_by) VALUES (%s, %s, %s, %s, %s)",
-        (actor.tenant_id, collection_id, value, permission, actor.user_id),
+        (actor.tenant_id, target_id, value, permission, actor.user_id),
     )
     await _audit(
         connection,
@@ -256,8 +298,8 @@ async def add_grant(
         _event(
             actor,
             "authz.grant.add",
-            "collection",
-            collection_id,
+            target,
+            target_id,
             grant_id=str(grant_id),
             principal_type=principal_type,
             principal=principal,
@@ -268,22 +310,36 @@ async def add_grant(
 
 
 async def remove_grant(connection: AsyncConnection, actor: Actor, grant_id: UUID) -> None:
-    cursor = await connection.execute(
-        "DELETE FROM collection_grants WHERE id = %s RETURNING collection_id, permission",
-        (grant_id,),
-    )
-    row = await cursor.fetchone()
-    if row is None:
+    """Remove a grant, on a collection or on a document."""
+    removed: tuple[GrantTarget, tuple[object, ...]] | None = None
+    for each, (table, id_column) in _GRANTS.items():
+        cursor = await connection.execute(
+            f"DELETE FROM {table} WHERE id = %s RETURNING {id_column}, permission",  # noqa: S608  (names from a fixed map)
+            (grant_id,),
+        )
+        if (found := await cursor.fetchone()) is not None:
+            removed = (each, found)
+            break
+    if removed is None:
         raise NotFoundError("grant")
+    target, row = removed
     await _audit(
         connection,
         actor,
         _event(
             actor,
             "authz.grant.remove",
-            "collection",
+            target,
             row[0],
             grant_id=str(grant_id),
             permission=str(row[1]),
         ),
     )
+
+
+async def _live_document(connection: AsyncConnection, document_id: UUID) -> None:
+    cursor = await connection.execute(
+        "SELECT 1 FROM documents WHERE id = %s AND deleted_at IS NULL", (document_id,)
+    )
+    if await cursor.fetchone() is None:
+        raise NotFoundError("document")
