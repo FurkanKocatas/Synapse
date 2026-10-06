@@ -75,7 +75,15 @@ from synapse.chat.talk import (
     voice_for,
 )
 from synapse.chat.verification import CITATION, Checked, check, cited, fold, strip_unsupported
-from synapse.knowledge.public import Found, Hit, Search, estimate_tokens, lower
+from synapse.knowledge.public import (
+    EVERYTHING,
+    Found,
+    Hit,
+    Scope,
+    Search,
+    estimate_tokens,
+    lower,
+)
 from synapse.models.public import ChatDelta, ChatMessage, ChatModel, ChatReply, ModelError
 
 log = structlog.get_logger(__name__)
@@ -421,6 +429,8 @@ class _Steps:
     when: str
     slot: _Slot
     user_id: UUID | None = None
+    # The folders and documents the user chose to search; everything they may read by default.
+    scope: Scope = EVERYTHING
     started: float = field(default_factory=time.perf_counter)
     seconds: dict[str, float] = field(default_factory=dict)
 
@@ -450,9 +460,10 @@ class Answerer:
         question: str,
         history: Sequence[Turn] = (),
         now: datetime | None = None,
+        scope: Scope = EVERYTHING,
     ) -> AsyncGenerator[Event]:
         """The turn's events, the ``Answer`` last. Closing the iterator cancels the turn."""
-        steps = _Steps(history, moment(now), _Slot(self._gate), user_id)
+        steps = _Steps(history, moment(now), _Slot(self._gate), user_id, scope)
         try:
             if small_talk(question):
                 turn = self._converse(question, steps)
@@ -529,7 +540,9 @@ class Answerer:
             seconds["rewrite"] = steps.since()
             if standalone != question:
                 yield Rewritten(standalone)
-        found = await self._search.candidates(user_id, standalone, limit=RERANKED)
+        found = await self._search.candidates(
+            user_id, standalone, limit=RERANKED, scope=steps.scope
+        )
         seconds["candidates"] = steps.since()
         if first := assemble(found.hits):
             yield Sources(first, found.warnings, ranked=False)
@@ -627,7 +640,7 @@ class Answerer:
         """The prompt of an answer without documents, with the user's collection in it."""
         library = None
         if kind != "general" and steps.user_id is not None:
-            library = await self._search.library(steps.user_id)
+            library = await self._search.library(steps.user_id, steps.scope)
         return voice_for(kind, library, steps.when)
 
     async def _reply(

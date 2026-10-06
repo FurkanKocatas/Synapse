@@ -21,7 +21,7 @@ from synapse.api.app import create_app
 from synapse.api.deps import CLIENT_HEADER, CSRF_HEADER
 from synapse.jobs.queue import Queue
 from synapse.kernel.database import Database
-from synapse.knowledge.public import Search
+from synapse.knowledge.public import Scope, Search
 from synapse.knowledge.search import RERANK_TOP, fuse, lexical_text
 from synapse.knowledge.turkish import lower
 from synapse.models.public import ModelUnavailableError
@@ -326,3 +326,71 @@ async def test_the_library_is_what_the_user_may_read(
     assert council.pages == 1
     stranger = await search(world, database).library(uuid.uuid4())
     assert (stranger.total, stranger.folders, stranger.newest) == (0, [], [])
+
+
+def folder(editor: Editor, name: str, parent: str | None = None) -> str:
+    response = editor.client.post(
+        "/api/admin/collections", json={"name": name, "parent_id": parent}
+    )
+    assert response.status_code == 201, response.json()
+    collection: str = response.json()["id"]
+    return collection
+
+
+async def test_a_scope_narrows_the_search_to_chosen_folders_and_documents(
+    world: World, editor: Editor, database: Database
+) -> None:
+    parent = folder(editor, f"Meclis {uuid.uuid4().hex[:6]}")
+    inner = folder(editor, "2026", parent)
+    response = editor.client.post(
+        f"/api/collections/{inner}/documents",
+        params={"filename": "meclis.docx"},
+        content=samples.paragraphs(COUNCIL),
+    )
+    assert response.status_code == 201, response.json()
+    council = uuid.UUID(response.json()["id"])
+    (budget_upload,) = await asyncio.to_thread(ingest, world, editor, BUDGET)
+    budget = uuid.UUID(budget_upload["id"])
+    service = search(world, database, embedder=BagOfWords())
+    query = "meclis bütçe raporu"
+
+    async def found(scope: Scope) -> set[uuid.UUID]:
+        hits = (await service.candidates(editor.user_id, query, scope=scope)).hits
+        return {hit.document_id for hit in hits}
+
+    assert await found(Scope()) == {council, budget}
+    # a folder brings the folders inside it
+    assert await found(Scope(collections=(uuid.UUID(parent),))) == {council}
+    assert await found(Scope(documents=(budget,))) == {budget}
+    assert await found(Scope((uuid.UUID(parent),), (budget,))) == {council, budget}
+    assert await found(Scope(collections=(uuid.uuid4(),))) == set()
+
+    # a scope never widens what one may read
+    other = await asyncio.to_thread(
+        accounts_cli.create_user,
+        world.api,
+        email=f"scoped-{uuid.uuid4().hex[:8]}@example.org",
+        display_name="Scoped",
+        role="editor",
+        locale="tr",
+        password=PASSWORD,
+    )
+    stranger = await service.candidates(other, query, scope=Scope((uuid.UUID(parent),), (budget,)))
+    assert stranger.hits == []
+
+    library = await service.library(editor.user_id, Scope(collections=(uuid.UUID(parent),)))
+    assert (library.total, [d.title for d in library.newest]) == (1, ["meclis"])
+    assert [f.documents for f in library.folders] == [1]
+    assert library.folders[0].path.endswith(" / 2026")
+
+
+def test_the_search_endpoint_takes_a_scope(world: World, editor: Editor) -> None:
+    (uploaded,) = ingest(world, editor, COUNCIL)
+    asked = {"query": "meclis kararları", "rerank": False}
+    scoped = {**asked, "scope": {"documents": [uploaded["id"]]}}
+    hits = editor.client.post("/api/search", json=scoped).json()["hits"]
+    assert {hit["document_id"] for hit in hits} == {uploaded["id"]}
+    elsewhere = {**asked, "scope": {"collections": [str(uuid.uuid4())]}}
+    assert editor.client.post("/api/search", json=elsewhere).json()["hits"] == []
+    too_many = {**asked, "scope": {"collections": [str(uuid.uuid4()) for _ in range(51)]}}
+    assert editor.client.post("/api/search", json=too_many).status_code == 422

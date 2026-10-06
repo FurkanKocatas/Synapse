@@ -38,7 +38,7 @@ from synapse.chat.answering import (
 from synapse.chat.numerals import numeric
 from synapse.chat.talk import CLASSIC_TURNS, moment, small_talk
 from synapse.chat.verification import check, cited, claims, sentences, strip_unsupported
-from synapse.knowledge.public import Folder, Found, Hit, Listed, Overview
+from synapse.knowledge.public import EVERYTHING, Folder, Found, Hit, Listed, Overview, Scope
 from synapse.models.public import ChatDelta, ChatMessage, ChatReply, ModelUnavailableError
 
 USER = uuid4()
@@ -97,16 +97,21 @@ class StandInSearch:
         self.hits = hits
         self.reranked = reranked
         self.queries: list[str] = []
+        self.scopes: list[Scope] = []
 
-    async def candidates(self, user_id: UUID, query: str, *, limit: int = 15) -> Found:
+    async def candidates(
+        self, user_id: UUID, query: str, *, limit: int = 15, scope: Scope = EVERYTHING
+    ) -> Found:
         self.queries.append(query)
+        self.scopes.append(scope)
         # The first stage's order: the reranker's, reversed.
         return Found(self.hits[:limit][::-1], reranked=False, warnings=[], milliseconds={})
 
     async def rerank(self, query: str, found: Found, *, limit: int) -> Found:
         return Found(self.hits[:limit], reranked=self.reranked, warnings=[], milliseconds={})
 
-    async def library(self, user_id: UUID) -> Overview:
+    async def library(self, user_id: UUID, scope: Scope = EVERYTHING) -> Overview:
+        self.scopes.append(scope)
         return LIBRARY
 
 

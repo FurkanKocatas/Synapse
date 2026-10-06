@@ -11,15 +11,38 @@ from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
 
 from synapse.api.deps import ApiError, FullSession
-from synapse.knowledge.public import MAX_QUERY, Found, Search
+from synapse.knowledge.public import (
+    MAX_COLLECTIONS,
+    MAX_DOCUMENTS,
+    MAX_QUERY,
+    Found,
+    Scope,
+    Search,
+)
 
 router = APIRouter(tags=["search"])
+
+
+class ScopeModel(BaseModel):
+    """The folders (each with the folders inside it) and the documents to search, within what
+    the user may read; both empty: everything they may read."""
+
+    collections: list[UUID] = Field(default_factory=list, max_length=MAX_COLLECTIONS)
+    documents: list[UUID] = Field(default_factory=list, max_length=MAX_DOCUMENTS)
+
+    def scope(self) -> Scope:
+        return Scope(tuple(dict.fromkeys(self.collections)), tuple(dict.fromkeys(self.documents)))
+
+    @classmethod
+    def of(cls, scope: Scope) -> ScopeModel:
+        return cls(collections=list(scope.collections), documents=list(scope.documents))
 
 
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=MAX_QUERY)
     limit: int = Field(default=10, ge=1, le=50)
     rerank: bool = True
+    scope: ScopeModel = Field(default_factory=ScopeModel)
 
 
 class HitView(BaseModel):
@@ -58,10 +81,11 @@ async def search(body: SearchRequest, session: FullSession, request: Request) ->
         raise ApiError(status.HTTP_422_UNPROCESSABLE_CONTENT, "empty_query")
     service = _search(request)
     found: Found
+    scope = body.scope.scope()
     if body.rerank:
-        found = await service.search(session.user_id, query, limit=body.limit)
+        found = await service.search(session.user_id, query, limit=body.limit, scope=scope)
     else:
-        found = await service.candidates(session.user_id, query, limit=body.limit)
+        found = await service.candidates(session.user_id, query, limit=body.limit, scope=scope)
     return SearchView(
         hits=[
             HitView(

@@ -36,10 +36,14 @@ from synapse.knowledge.processing import (
     retryable,
 )
 from synapse.knowledge.rapid import RapidOcrEngine
+from synapse.knowledge.scope import EVERYTHING, MAX_COLLECTIONS, MAX_DOCUMENTS, Scope
 from synapse.knowledge.search import MAX_QUERY, Found, Hit, Search
 from synapse.knowledge.turkish import lower
 
 __all__ = [
+    "EVERYTHING",
+    "MAX_COLLECTIONS",
+    "MAX_DOCUMENTS",
     "MAX_QUERY",
     "BlobStore",
     "CollectionAccess",
@@ -71,6 +75,7 @@ __all__ = [
     "Receiver",
     "Reindexed",
     "Retried",
+    "Scope",
     "Search",
     "StoredFile",
     "TesseractEngine",

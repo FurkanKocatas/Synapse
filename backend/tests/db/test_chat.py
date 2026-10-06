@@ -30,13 +30,14 @@ from synapse.chat.public import (
     Started,
 )
 from synapse.kernel.database import Database
-from synapse.knowledge.public import Search
+from synapse.knowledge.public import Scope, Search
 from synapse.models.public import ChatDelta, ChatMessage, ChatReply
 from tests.db.conftest import TestDatabase
 from tests.db.test_ingest_pipeline import PASSWORD, World, make_world
 from tests.db.test_search import BagOfWords, Editor, Prefers, ingest
 
 COUNCIL = "Belediye meclisi 7 üyeden oluşur ve 2026/35 sayılı kararı oybirliğiyle kabul etti."
+BUDGET = "Bütçe raporu yıllık harcamaları ve gelirleri gösterir."
 
 
 @dataclass
@@ -479,3 +480,33 @@ def test_the_viewer_reads_a_page_with_its_chunks_and_audits_it(
         (document["id"],),
     ).fetchall()
     assert [row[0] for row in views] == [{"version": 1, "page": 1}]
+
+
+async def test_a_conversation_keeps_the_scope_it_was_given(
+    world: World, editor: Editor, database: Database
+) -> None:
+    council, budget = await asyncio.to_thread(ingest, world, editor, COUNCIL, BUDGET)
+    service = conversations(world, database, ScriptedChat(rewrite="Meclis kaç üyeden oluşur?"))
+    asker = Asker(editor.user_id, "192.0.2.7")
+    scope = Scope(documents=(uuid.UUID(budget["id"]),))
+
+    def searched(events: Sequence[object]) -> set[str]:
+        return {str(h.document_id) for e in events if isinstance(e, Sources) for h in e.hits}
+
+    first = [e async for e in service.ask(asker, "Meclis kaç üyeli?", None, scope=scope)]
+    assert isinstance(first[0], Started)
+    conversation = first[0].conversation_id
+    assert searched(first) <= {budget["id"]}
+    assert turn_row(world, conversation, 1)["details"]["scope"] == scope.as_json()
+    assert (await service.get(editor.user_id, conversation)).scope == scope
+
+    # a follow-up keeps it
+    second = [e async for e in service.ask(asker, "Kaç üyeli?", conversation)]
+    assert searched(second) <= {budget["id"]}
+    assert turn_row(world, conversation, 2)["details"]["scope"] == scope.as_json()
+
+    # an empty scope gives the conversation everything again
+    third = [e async for e in service.ask(asker, "Meclis kaç üyeli?", conversation, scope=Scope())]
+    assert council["id"] in searched(third)
+    assert "scope" not in turn_row(world, conversation, 3)["details"]
+    assert (await service.get(editor.user_id, conversation)).scope == Scope()

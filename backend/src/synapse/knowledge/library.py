@@ -2,7 +2,8 @@
 ("what is in the documents", "how many are there", "what was added last"; docs/design/answers.md):
 the folders the user may read with how many documents each holds, how many are ready, and the
 newest documents with their first words. Access is decided by ``accessible_collections`` and
-``accessible_documents``, as everywhere else.
+``accessible_documents``, as everywhere else; a scope (``scope.py``) narrows it to the folders and
+documents the user chose.
 """
 
 from dataclasses import dataclass
@@ -10,6 +11,8 @@ from datetime import datetime
 from uuid import UUID
 
 from psycopg import AsyncConnection
+
+from synapse.knowledge.scope import CHOSEN, EVERYTHING, IN_SCOPE, Scope
 
 # The newest documents listed for the model: enough to name what the collection is about,
 # few enough to keep the prompt short on a CPU (about 25 tokens each).
@@ -24,10 +27,14 @@ _LATEST = (
     "ORDER BY dv.version DESC LIMIT 1) v ON true "
 )
 _VISIBLE = (
-    "WHERE d.deleted_at IS NULL "
+    "WHERE d.deleted_at IS NULL "  # noqa: S608
     "AND d.id IN (SELECT document_id FROM accessible_documents(%(user)s, 'read')) "
+    "AND " + IN_SCOPE + " "
 )
-_READABLE = "WITH readable AS (SELECT collection_id FROM accessible_collections(%(user)s, 'read')) "
+_READABLE = (
+    CHOSEN  # noqa: S608
+    + ", readable AS (SELECT collection_id FROM accessible_collections(%(user)s, 'read')) "
+)
 _FOLDERS = (
     _READABLE + "SELECT c.id, c.parent_id, c.name, "  # noqa: S608
     "(SELECT count(*) FROM documents d " + _VISIBLE + "AND d.collection_id = c.id) "
@@ -35,13 +42,15 @@ _FOLDERS = (
     "ORDER BY lower(c.name), c.id"
 )
 _STATUSES = (
-    "SELECT v.status, count(*) FROM documents d "  # noqa: S608
+    CHOSEN  # noqa: S608
+    + "SELECT v.status, count(*) FROM documents d "
     + _LATEST
     + _VISIBLE
     + "GROUP BY v.status"
 )
 _NEWEST = (
-    "SELECT d.title, d.collection_id, b.media_type, v.status, v.created_at, "  # noqa: S608
+    CHOSEN  # noqa: S608
+    + "SELECT d.title, d.collection_id, b.media_type, v.status, v.created_at, "
     "coalesce(v.context, ''), (SELECT count(*) FROM document_pages p WHERE p.version_id = v.id) "
     "FROM documents d "
     + _LATEST
@@ -83,9 +92,11 @@ class Overview:
         return self.total - self.ready - self.failed
 
 
-async def overview(connection: AsyncConnection, user_id: UUID, *, listed: int = LISTED) -> Overview:
-    """The collection as ``user_id`` may see it."""
-    parameters = {"user": user_id, "limit": listed}
+async def overview(
+    connection: AsyncConnection, user_id: UUID, *, listed: int = LISTED, scope: Scope = EVERYTHING
+) -> Overview:
+    """The collection as ``user_id`` may see it, within ``scope``."""
+    parameters = {"user": user_id, "limit": listed, **scope.parameters()}
     rows = await (await connection.execute(_FOLDERS, parameters)).fetchall()
     names = {row[0]: (row[1], row[2]) for row in rows}
 
@@ -98,7 +109,9 @@ async def overview(connection: AsyncConnection, user_id: UUID, *, listed: int = 
             current = parent
         return " / ".join(reversed(parts))
 
-    folders = [Folder(path(row[0]), row[3]) for row in rows]
+    # Every readable folder names the path above a folder; within a scope, only the folders
+    # holding something in it are listed.
+    folders = [Folder(path(row[0]), row[3]) for row in rows if scope.everything or row[3] > 0]
     folders.sort(key=lambda folder: folder.path.lower())
     counts: dict[str, int] = dict(
         await (await connection.execute(_STATUSES, parameters)).fetchall()

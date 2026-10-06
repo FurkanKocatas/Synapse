@@ -5,7 +5,8 @@ measured:
 
 1. **Candidates**, each query restricted to the newest searchable version (``parsed``,
    ``embedding`` or ``ready``) of every document ``accessible_documents`` gives the user, so a
-   chunk the user may not read is never a candidate, whatever its score:
+   chunk the user may not read is never a candidate, whatever its score; and, when the user
+   chose a scope (``scope.py``: folders, documents), to the documents in it:
    - lexical: BM25 of pg_textsearch over ``document_chunks.search``, the terms (``lexical_text``)
      of the document's context and the chunk (migration 0016), on the ``simple`` configuration,
      the question turned into terms the same way;
@@ -34,6 +35,7 @@ from psycopg import AsyncConnection
 from synapse.kernel.database import Database
 from synapse.knowledge.chunking import contextual_text
 from synapse.knowledge.library import Overview, overview
+from synapse.knowledge.scope import CHOSEN, EVERYTHING, IN_SCOPE, Scope
 from synapse.knowledge.turkish import lower
 from synapse.models.public import Embedder, ModelError, Reranker
 
@@ -54,16 +56,22 @@ MAX_QUERY = 1000
 # drops rows, in exact distance order.
 _HNSW = ("SET LOCAL hnsw.ef_search = 200", "SET LOCAL hnsw.iterative_scan = strict_order")
 
-_SEARCHABLE = """
-    WITH searchable AS MATERIALIZED (
+_SEARCHABLE = (
+    CHOSEN  # noqa: S608
+    + """, searchable AS MATERIALIZED (
         SELECT v.id FROM accessible_documents(%(user)s, 'read') a
+        JOIN documents d ON d.id = a.document_id
         CROSS JOIN LATERAL (
             SELECT dv.id FROM document_versions dv
             WHERE dv.document_id = a.document_id AND dv.status IN ('parsed', 'embedding', 'ready')
             ORDER BY dv.version DESC LIMIT 1
         ) v
+        WHERE """
+    + IN_SCOPE
+    + """
     )
 """
+)
 # pg_textsearch scores a match below zero (the best first in ascending order) and a chunk that
 # holds none of the question's terms zero. Those are not found by words, so they are left out;
 # a filter on the permission makes PostgreSQL score every row, and it would list them all.
@@ -158,19 +166,22 @@ class Search:
         self._embedder = embedder
         self._reranker = reranker
 
-    async def candidates(self, user_id: UUID, query: str, *, limit: int = RERANK_TOP) -> Found:
-        """The fused first stage: the ``limit`` best chunks by words and by meaning."""
+    async def candidates(
+        self, user_id: UUID, query: str, *, limit: int = RERANK_TOP, scope: Scope = EVERYTHING
+    ) -> Found:
+        """The fused first stage: the ``limit`` best chunks by words and by meaning, within
+        ``scope``."""
         warnings: list[str] = []
         timings: dict[str, float] = {}
         vector = await self._query_vector(query, warnings, timings)
         async with self._db.tenant_transaction(self._tenant_id) as connection:
             started = time.perf_counter()
-            lexical = await self._lexical(connection, user_id, query)
+            lexical = await self._lexical(connection, user_id, query, scope)
             timings["lexical"] = _since(started)
             dense: list[Key] = []
             if vector is not None:
                 started = time.perf_counter()
-                dense = await self._dense(connection, user_id, vector)
+                dense = await self._dense(connection, user_id, vector, scope)
                 timings["dense"] = _since(started)
             fused = fuse(lexical, dense)[:limit]
             hits = await _details(connection, fused, lexical, dense)
@@ -200,14 +211,17 @@ class Search:
             milliseconds={**found.milliseconds, "rerank": _since(started)},
         )
 
-    async def search(self, user_id: UUID, query: str, *, limit: int = 10) -> Found:
-        found = await self.candidates(user_id, query, limit=max(limit, RERANK_TOP))
+    async def search(
+        self, user_id: UUID, query: str, *, limit: int = 10, scope: Scope = EVERYTHING
+    ) -> Found:
+        found = await self.candidates(user_id, query, limit=max(limit, RERANK_TOP), scope=scope)
         return await self.rerank(query, found, limit=limit)
 
-    async def library(self, user_id: UUID) -> Overview:
-        """What the user's documents are, for questions about the collection itself."""
+    async def library(self, user_id: UUID, scope: Scope = EVERYTHING) -> Overview:
+        """What the user's documents are (within ``scope``), for questions about the
+        collection itself."""
         async with self._db.tenant_transaction(self._tenant_id) as connection:
-            return await overview(connection, user_id)
+            return await overview(connection, user_id, scope=scope)
 
     async def _query_vector(
         self, query: str, warnings: list[str], timings: dict[str, float]
@@ -225,20 +239,31 @@ class Search:
         timings["embed"] = _since(started)
         return "[" + ",".join(f"{v:.6g}" for v in values) + "]"
 
-    async def _lexical(self, connection: AsyncConnection, user_id: UUID, query: str) -> list[Key]:
+    async def _lexical(
+        self, connection: AsyncConnection, user_id: UUID, query: str, scope: Scope
+    ) -> list[Key]:
         cursor = await connection.execute(
-            _LEXICAL, {"user": user_id, "limit": CANDIDATES, "query": lexical_text(query)}
+            _LEXICAL,
+            {
+                "user": user_id,
+                "limit": CANDIDATES,
+                "query": lexical_text(query),
+                **scope.parameters(),
+            },
         )
         # Zero: none of the question's terms is in the chunk (see _LEXICAL).
         return [
             (version, ordinal) for version, ordinal, score in await cursor.fetchall() if score < 0
         ]
 
-    async def _dense(self, connection: AsyncConnection, user_id: UUID, vector: str) -> list[Key]:
+    async def _dense(
+        self, connection: AsyncConnection, user_id: UUID, vector: str, scope: Scope
+    ) -> list[Key]:
         for statement in _HNSW:
             await connection.execute(statement)
         cursor = await connection.execute(
-            _DENSE, {"user": user_id, "limit": CANDIDATES, "vector": vector}
+            _DENSE,
+            {"user": user_id, "limit": CANDIDATES, "vector": vector, **scope.parameters()},
         )
         return [(version, ordinal) for version, ordinal in await cursor.fetchall()]
 

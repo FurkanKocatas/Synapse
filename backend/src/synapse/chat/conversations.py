@@ -29,7 +29,7 @@ from synapse.audit import public as audit
 from synapse.audit.public import AuditEvent
 from synapse.chat.answering import Answer, Answerer, Event, Sources, Turn
 from synapse.kernel.database import Database
-from synapse.knowledge.public import Hit
+from synapse.knowledge.public import EVERYTHING, Hit, Scope
 
 MAX_TITLE = 200
 TITLE_CHARS = 80
@@ -52,6 +52,17 @@ class ConversationNotFoundError(LookupError):
 class Asker:
     user_id: UUID
     ip: str | None
+
+
+@dataclass(frozen=True)
+class _Turn:
+    """The turn being answered: who asks, where it is stored, the question and the scope."""
+
+    asker: Asker
+    conversation_id: UUID
+    ordinal: int
+    question: str
+    scope: Scope
 
 
 @dataclass(frozen=True)
@@ -104,6 +115,7 @@ class ConversationView:
     title: str
     turns: list[StoredTurn]
     mode: Mode = "corporate"
+    scope: Scope = EVERYTHING
 
 
 _READABLE_CHUNKS = """
@@ -114,7 +126,7 @@ _READABLE_CHUNKS = """
     WHERE v.document_id IN (SELECT document_id FROM accessible_documents(%(user)s, 'read'))
 """
 
-_OWNED = "SELECT title, mode FROM conversations WHERE id = %s AND user_id = %s"
+_OWNED = "SELECT title, mode, scope FROM conversations WHERE id = %s AND user_id = %s"
 _OWNED_FOR_UPDATE = _OWNED + " FOR UPDATE"
 
 
@@ -142,22 +154,26 @@ class Conversations:
         *,
         mode: Mode = "corporate",
         now: datetime | None = None,
+        scope: Scope | None = None,
     ) -> AsyncGenerator[Started | Event]:
         """Store the turn, answer it, finish it. Closing the iterator cancels the turn.
 
         ``mode`` is a new conversation's; a conversation keeps the one it was started in.
-        ``now`` is the user's clock, for the model to know the day."""
-        conversation_id, ordinal, history, mode = await self._begin(
-            asker, question, conversation_id, mode
+        ``now`` is the user's clock, for the model to know the day. ``scope``, when given,
+        becomes the conversation's (it is kept for the turns after); otherwise the turn
+        searches the conversation's own, everything the user may read for a new one."""
+        conversation_id, ordinal, history, mode, scope = await self._begin(
+            asker, question, conversation_id, mode, scope
         )
         yield Started(conversation_id, ordinal)
+        turn = _Turn(asker, conversation_id, ordinal, question, scope)
         sources: list[Hit] = []
         finished = False
         try:
             answering = (
                 self._answerer.classic(question, history, now)
                 if mode == "classic"
-                else self._answerer.answer(asker.user_id, question, history, now)
+                else self._answerer.answer(asker.user_id, question, history, now, scope)
             )
             async with aclosing(answering) as events:
                 async for event in events:
@@ -165,44 +181,60 @@ class Conversations:
                         sources = event.hits
                     if isinstance(event, Answer):
                         with anyio.CancelScope(shield=True):
-                            await self._finish(
-                                asker, conversation_id, ordinal, question, sources, event
-                            )
+                            await self._finish(turn, sources, event)
                         finished = True
                     yield event
         except Exception:
             failed = Answer("failed", "", [], question, None, error="internal_error")
             with anyio.CancelScope(shield=True):
-                await self._finish(asker, conversation_id, ordinal, question, sources, failed)
+                await self._finish(turn, sources, failed)
             finished = True
             raise
         finally:
             if not finished:
                 with anyio.CancelScope(shield=True):
-                    await self._finish(asker, conversation_id, ordinal, question, sources, None)
+                    await self._finish(turn, sources, None)
 
     async def _begin(
-        self, asker: Asker, question: str, conversation_id: UUID | None, mode: Mode
-    ) -> tuple[UUID, int, list[Turn], Mode]:
+        self,
+        asker: Asker,
+        question: str,
+        conversation_id: UUID | None,
+        mode: Mode,
+        scope: Scope | None,
+    ) -> tuple[UUID, int, list[Turn], Mode, Scope]:
         if mode == "classic" and not self._classic and conversation_id is None:
             raise ClassicChatDisabledError
         now = self._now()
         async with self._db.tenant_transaction(self._tenant_id) as connection:
             if conversation_id is None:
+                scope = scope or EVERYTHING
                 cursor = await connection.execute(
-                    "INSERT INTO conversations (tenant_id, user_id, title, mode, created_at, "
-                    "updated_at) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-                    (self._tenant_id, asker.user_id, _title(question), mode, now, now),
+                    "INSERT INTO conversations (tenant_id, user_id, title, mode, scope, "
+                    "created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                    (
+                        self._tenant_id,
+                        asker.user_id,
+                        _title(question),
+                        mode,
+                        json.dumps(scope.as_json()),
+                        now,
+                        now,
+                    ),
                 )
                 conversation_id = _value(await cursor.fetchone())
                 history: list[Turn] = []
             else:
-                _, mode = await self._owned(connection, asker.user_id, conversation_id, lock=True)
+                _, mode, kept = await self._owned(
+                    connection, asker.user_id, conversation_id, lock=True
+                )
                 if mode == "classic" and not self._classic:
                     raise ClassicChatDisabledError
                 history = await _history(connection, conversation_id)
+                scope = kept if scope is None else scope
                 await connection.execute(
-                    "UPDATE conversations SET updated_at = %s WHERE id = %s", (now, conversation_id)
+                    "UPDATE conversations SET updated_at = %s, scope = %s WHERE id = %s",
+                    (now, json.dumps(scope.as_json()), conversation_id),
                 )
             cursor = await connection.execute(
                 "INSERT INTO conversation_turns (tenant_id, conversation_id, ordinal, question, "
@@ -211,17 +243,16 @@ class Conversations:
                 (self._tenant_id, conversation_id, question, now, conversation_id),
             )
             ordinal: int = _value(await cursor.fetchone())
-        return conversation_id, ordinal, history, mode
+        return conversation_id, ordinal, history, mode, scope
 
-    async def _finish(
-        self,
-        asker: Asker,
-        conversation_id: UUID,
-        ordinal: int,
-        question: str,
-        sources: list[Hit],
-        answer: Answer | None,
-    ) -> None:
+    async def _finish(self, turn: _Turn, sources: list[Hit], answer: Answer | None) -> None:
+        asker, conversation_id, ordinal, question, scope = (
+            turn.asker,
+            turn.conversation_id,
+            turn.ordinal,
+            turn.question,
+            turn.scope,
+        )
         status = answer.status if answer else "cancelled"
         kind = answer.kind if answer else "documents"
         text = answer.text if answer and answer.status == "answered" else None
@@ -239,6 +270,8 @@ class Conversations:
                 "seconds": answer.seconds,
                 "checked": asdict(answer.checked) if answer.checked else None,
             }
+            if not scope.everything:
+                details["scope"] = scope.as_json()
         references = [
             {
                 "document_id": str(h.document_id),
@@ -305,7 +338,7 @@ class Conversations:
 
     async def get(self, user_id: UUID, conversation_id: UUID) -> ConversationView:
         async with self._db.tenant_transaction(self._tenant_id) as connection:
-            title, mode = await self._owned(connection, user_id, conversation_id)
+            title, mode, scope = await self._owned(connection, user_id, conversation_id)
             cursor = await connection.execute(
                 "SELECT ordinal, question, status, answer, sources, citations, feedback, "
                 "created_at, kind FROM conversation_turns WHERE conversation_id = %s "
@@ -355,7 +388,7 @@ class Conversations:
                     kind,
                 )
             )
-        return ConversationView(conversation_id, title, turns, mode)
+        return ConversationView(conversation_id, title, turns, mode, scope)
 
     async def rename(self, user_id: UUID, conversation_id: UUID, title: str) -> None:
         async with self._db.tenant_transaction(self._tenant_id) as connection:
@@ -404,9 +437,9 @@ class Conversations:
         conversation_id: UUID,
         *,
         lock: bool = False,
-    ) -> tuple[str, Mode]:
-        """The conversation's title and mode; ``ConversationNotFoundError`` unless the user
-        owns it."""
+    ) -> tuple[str, Mode, Scope]:
+        """The conversation's title, mode and scope; ``ConversationNotFoundError`` unless the
+        user owns it."""
         cursor = await connection.execute(
             _OWNED_FOR_UPDATE if lock else _OWNED, (conversation_id, user_id)
         )
@@ -415,7 +448,7 @@ class Conversations:
             raise ConversationNotFoundError
         title: str = row[0]
         mode: Mode = row[1]
-        return title, mode
+        return title, mode, Scope.from_json(row[2])
 
 
 async def _history(connection: AsyncConnection, conversation_id: UUID) -> list[Turn]:

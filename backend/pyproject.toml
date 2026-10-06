@@ -208,6 +208,7 @@ forbidden_modules = [
     "synapse.knowledge.processing",
     "synapse.knowledge.quality",
     "synapse.knowledge.rapid",
+    "synapse.knowledge.scope",
     "synapse.knowledge.search",
     "synapse.knowledge.structure",
     "synapse.knowledge.turkish",

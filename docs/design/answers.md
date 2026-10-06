@@ -57,7 +57,7 @@ The chat server runs two slots (`--parallel 2`). Each turn takes one for its rew
 
 ## API
 
-`POST /api/chat` with `{"question" (1 to 1,000 characters), "conversation_id" (optional)}` answers as server-sent events, in order:
+`POST /api/chat` with `{"question" (1 to 1,000 characters), "conversation_id" (optional), "scope" (optional: the folders and documents to search, [search.md](search.md))}` answers as server-sent events, in order:
 
 | event | data | when |
 |---|---|---|
@@ -78,6 +78,7 @@ Conversations: `GET /api/conversations` (the user's, newest first, at most 200),
 ## Storage, permissions and audit
 
 - `conversations` and `conversation_turns` (migration 0017; the turn's `kind` from migration 0018), tenant row-level security like every table. A conversation belongs to the user who started it; every query filters on that user, and another user's conversation is "not found", the same as a missing one.
+- A conversation keeps its scope (migration 0024): a scope sent with a question becomes the conversation's, and the turns after search it too, follow-ups included; an empty scope gives it everything again. Questions about the collection itself ("what is in the documents") are answered from what lies in the scope. Each turn records the scope it searched in its details, and `GET /api/conversations/{id}` gives the conversation's.
 - A turn is written `pending` before anything is searched and finished with its answer, or `cancelled` when the stream closes first; finishing is shielded from the cancellation, so a closed tab leaves no pending turn. A failure inside the turn finishes it `failed`.
 - Sources are kept as references (document, version, chunk, title, pages), never as text. Reading a conversation again fetches each source's text through `accessible_documents`: a source the user may no longer read, or whose document is deleted, comes back without text or title. The answer's own text is the user's history and is kept.
 - Details for evaluation (the best score, the claims checked, retries, removed sentences, timings) are stored with the turn and never shown.
@@ -107,5 +108,5 @@ On the golden set through the product ([answers.md](../benchmarks/answers.md#in-
 - Numbers from OCR'd pages are not yet flagged in the answer (the OCR benchmark's rule), nor identifiers the two OCR engines read differently.
 - Office documents in the viewer show their extracted text only; rendering them as PDF pages (v1 scope) needs a converter in the worker.
 - Context: parent-section expansion and MMR (rule 7); aggregation over extracted tables through a read-only SQL tool (rule 8).
-- Scope selection (collections or documents) and the answer's language set by the user rather than read from the question.
+- Choosing the scope on the chat screen (the API takes it), and the answer's language set by the user rather than read from the question.
 - Per-stage candidate counts and scores logged with an alert (ADR 0010's last gate).

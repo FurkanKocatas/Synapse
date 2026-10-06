@@ -25,6 +25,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import AwareDatetime, BaseModel, Field
 
 from synapse.api.deps import ApiError, FullSession, client_ip
+from synapse.api.search_routes import ScopeModel
 from synapse.chat.public import (
     Answer,
     Asker,
@@ -57,6 +58,9 @@ class AskRequest(BaseModel):
     mode: Mode = "corporate"
     # The user's clock, with its offset, so the model knows the day and the hour.
     now: AwareDatetime | None = None
+    # The folders and documents to search: kept by the conversation for the turns after. Left
+    # out, the conversation's own scope (everything, for a new one).
+    scope: ScopeModel | None = None
 
 
 class SourceView(BaseModel):
@@ -97,6 +101,7 @@ class ConversationDetailView(BaseModel):
     title: str
     turns: list[TurnView]
     mode: Mode
+    scope: ScopeModel
 
 
 class RenameRequest(BaseModel):
@@ -123,6 +128,7 @@ async def ask(body: AskRequest, session: FullSession, request: Request) -> Strea
         body.conversation_id,
         mode=body.mode,
         now=body.now,
+        scope=body.scope.scope() if body.scope is not None else None,
     )
     try:
         first = await anext(events)  # the turn is stored, or the conversation is not the user's
@@ -233,6 +239,7 @@ async def conversation(
         id=found.id,
         title=found.title,
         mode=found.mode,
+        scope=ScopeModel.of(found.scope),
         turns=[
             TurnView(
                 ordinal=t.ordinal,
