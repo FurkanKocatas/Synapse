@@ -93,6 +93,19 @@ It then removes everything it created. CI runs it, with `--with-backup`, on ever
 
 `tools/stack_smoke.sh --with-models [--vulkan]` also starts the model servers from the files in `SYNAPSE_MODELS_DIR` (default `.dev/models`, checked first): both documents must then reach `ready` with a bge-m3 vector for every chunk, and the API container's own adapters must get an answer from the reranker (the relevant passage scored first) and a JSON answer from the chat model. CI has no model files, so this runs on the reference machine: 2 minutes on its GPU on 2026-10-01.
 
+## Outside connections
+
+What an installation reaches beyond its own machine, and when:
+
+| What | When | Who connects |
+|---|---|---|
+| Container registries (`ghcr.io` for llama.cpp, Docker Hub for restic, and where the release's images are published) | Installing and upgrading online; the offline bundle replaces them ([installer.md](installer.md#bundle)) | The host's Docker |
+| Hugging Face, GitHub (llama.cpp's source, to convert the encoders) and PyPI | `synapsectl models fetch` only; the bundle carries the model files instead | synapsectl on the host, and a throwaway container it starts |
+| An ACME certificate authority (Let's Encrypt by default) | Only with `tls.mode = "acme"`: issuing and renewing the certificate | The web front |
+| The backup repository | A directory on the host (a NAS share or a disk mounted there); restic itself runs without a network | The host |
+
+Nothing else: the application talks only to PostgreSQL and the model servers on the internal network, and sends no telemetry. The internal network is not yet marked `internal` in Docker, so this holds because of the code, not because the network forbids more ([asvs.md](security/asvs.md), V13.2.4).
+
 ## Not done yet
 
 - The offline bundle and its signed release manifest ([installer.md](installer.md)).

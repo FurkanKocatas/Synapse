@@ -6,14 +6,14 @@ Status: implemented (model and checks), 2026-09-28. Decision record: [ADR 0007](
 
 | Kind | Question it answers | Where it is decided |
 |---|---|---|
-| Role permissions | May this role do this action? (`users.manage`, `groups.manage`, `collections.create`, `settings.manage`, `audit.read`) | The `role_permissions` table, checked by `require("...")` on the route |
+| Role permissions | May this role do this action? (`users.manage`, `groups.manage`, `collections.create`, `permissions.manage`, `settings.manage`, `operations.view`, `operations.manage`, `audit.read`) | The `role_permissions` table, checked by `require("...")` on the route |
 | Document permissions | May this user `read`, `write` or `manage` this document? | The SQL function `accessible_documents(user, permission)` |
 
 Role permissions per role today:
 
 | Role | Permissions |
 |---|---|
-| admin | users.manage, groups.manage, collections.create, settings.manage |
+| admin | users.manage, groups.manage, collections.create, permissions.manage (grants), settings.manage, operations.view and operations.manage (the System page) |
 | editor | collections.create |
 | member | none beyond the documents granted to them |
 | auditor | audit.read |

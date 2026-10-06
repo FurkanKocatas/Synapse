@@ -6,9 +6,9 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 | Status | Requirements |
 |---|---|
-| met | 114 |
-| partly | 54 |
-| not yet | 12 |
+| met | 117 |
+| partly | 52 |
+| not yet | 11 |
 | not applicable | 73 |
 | **all, levels 1 and 2** | **253** |
 
@@ -167,12 +167,12 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 ## V7 Session Management
 
-8 met, 6 partly, 1 not yet, 3 not applicable.
+9 met, 6 partly, 3 not applicable.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
 | V7.1.1 | 2 | Session Management Documentation | partly | docs/design/identity.md:24; docs/adr/0006-authentication.md:20; backend/src/synapse/kernel/config.py:60-61 | 30-minute idle and 12-hour absolute limits are documented. There is no NIST rationale, and the settings allow up to 24 h idle and 30 days absolute. |
-| V7.1.2 | 2 | Session Management Documentation | not yet | backend/src/synapse/identity/service.py:227-256; docs/design/identity.md | No documented limit on concurrent sessions. Each account can have unlimited sessions, with no defined behaviour. |
+| V7.1.2 | 2 | Session Management Documentation | met | docs/design/identity.md (session levels); backend/src/synapse/identity/service.py:227-256; frontend/src/features/account/AccountPage.tsx:105-145 | Documented: concurrent sessions are not limited; each is listed on the account page and can be ended there, and which events end all of them. |
 | V7.1.3 | 2 | Session Management Documentation | not applicable | docs/adr/0006-authentication.md:26 | No federated identity or SSO. |
 | V7.2.1 | 1 | Fundamental Session Management Security | met | backend/src/synapse/api/deps.py:58-67; backend/src/synapse/identity/service.py:260-287 | On every request the API hashes the cookie token and looks it up in Postgres. |
 | V7.2.2 | 1 | Fundamental Session Management Security | met | backend/src/synapse/identity/tokens.py:15-20; backend/src/synapse/identity/service.py:227-256 | Each sign-in gets a new random reference token. No static API keys are used for user sessions. |
@@ -192,11 +192,11 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 ## V8 Authorization
 
-4 met, 3 partly.
+5 met, 2 partly.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
-| V8.1.1 | 1 | Authorization Documentation | partly | docs/design/authorization.md:5-39,51-67; docs/adr/0007-authorization.md:14-28; docs/design/knowledge-base.md:44-56; docs/design/answers.md:80 | Role permissions, document grants, inheritance, who may create a collection where, and 404 for invisible objects are documented. The summary role table omits permissions.manage and operations.*. |
+| V8.1.1 | 1 | Authorization Documentation | met | docs/design/authorization.md:5-39,51-67; docs/adr/0007-authorization.md:14-28; docs/design/knowledge-base.md:44-56; docs/design/answers.md:80 | Every role permission, document grants, inheritance, who may create a collection where, and 404 for invisible objects are documented. |
 | V8.1.2 | 2 | Authorization Documentation | partly | docs/design/knowledge-base.md:52; docs/design/identity.md:132; backend/src/synapse/chat/conversations.py:12-13 | Some field rules are documented: which metadata fields are editable, and that admins can change only role and status. No systematic field-level read/write rules by permission or state. |
 | V8.2.1 | 1 | General Authorization Design | met | backend/src/synapse/api/deps.py:113-129; backend/src/synapse/authz/checks.py:16-46; backend/src/synapse/migrations/versions/0005_authorization.py:32-44; backend/tests/test_route_inventory.py:47-69 | require() checks the role_permissions table on every request and denies by default. A CI test fails any route without a session guard or an explicit public marker. |
 | V8.2.2 | 1 | General Authorization Design | met | backend/src/synapse/knowledge/documents.py:340-368,520-539; backend/src/synapse/chat/conversations.py:133,443-461; backend/src/synapse/identity/profile.py:144-148; backend/src/synapse/authz/management.py (list_collections, create_collection); backend/tests/db/test_api_admin.py | Documents, conversations, sessions and passkeys are checked per object. Non-admins list only the collections they manage and create collections only inside those (another parent is 404), with a test. |
@@ -293,11 +293,11 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 ## V13 Configuration
 
-7 met, 6 partly.
+8 met, 5 partly.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
-| V13.1.1 | 2 | Configuration Documentation | partly | docs/adr/0013-secrets-and-network-security.md:28-34; docs/adr/0002-process-topology.md:27-32; docs/deployment.md:20-56; docs/installer.md:25 | Internal flows (database, model servers, Caddy) are documented. There is no single list of external services (ACME, Hugging Face, registries, NAS), and no statement about user-supplied locations. |
+| V13.1.1 | 2 | Configuration Documentation | met | docs/deployment.md#outside-connections; docs/adr/0013-secrets-and-network-security.md:28-34; docs/adr/0002-process-topology.md:27-32; docs/installer.md:25 | Internal flows (database, model servers, web front) and every outside connection (registries, model sources, ACME, the backup directory) are listed with when they happen and who makes them. |
 | V13.2.1 | 2 | Backend Communication Configuration | partly | synapsectl/src/synapsectl/secrets.py:29-42; backend/src/synapse/dbadmin/bootstrap.py:90-97; synapsectl/src/synapsectl/render.py:312-326,350-356; backend/src/synapse/models/llama.py:67-71 | Each process has its own database role and each model server its own key. All are static passwords or API keys rotated by hand. No short-lived tokens or certificates. |
 | V13.2.2 | 2 | Backend Communication Configuration | partly | backend/src/synapse/dbadmin/bootstrap.py:104-109,149-152; backend/src/synapse/dbadmin/roles.py:17-21; synapsectl/src/synapsectl/render.py:104-111,205-222 | Roles are NOSUPERUSER/NOBYPASSRLS and containers are non-root and hardened. But api, worker and scheduler all get synapse_runtime's full table rights, contrary to ADR 0013. |
 | V13.2.3 | 2 | Backend Communication Configuration | met | synapsectl/src/synapsectl/secrets.py:54-92; backend/src/synapse/kernel/secrets.py:150-162; docs/adr/0013-secrets-and-network-security.md:16-18; synapsectl/src/synapsectl/doctor.py:107-120 | Every service credential is random and generated per install. A missing or empty secret stops startup. There are no default passwords. |

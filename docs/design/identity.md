@@ -23,6 +23,8 @@ Every step up to `full` **replaces the session token**. A token captured before 
 | `enroll_mfa` | 15 minutes | Only TOTP enrollment, passkey registration, `/session`, `/logout` |
 | `full` | Idle 30 minutes, absolute 12 hours (both configurable) | Everything its role allows |
 
+Concurrent sessions are not limited: each browser or device signed in is a session of its own. The account page lists them (device, last use) and ends any one of them. Signing in again in the same browser ends the session that browser had. Disabling an account, changing its role, an administrator's password reset and the user's own password change end all of its other sessions.
+
 ## Endpoints
 
 All under `/api/auth`. Errors are `{"error": "<code>"}` with a stable code that the frontend translates.
