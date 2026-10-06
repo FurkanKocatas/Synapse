@@ -41,10 +41,14 @@ REQUIRED = (
     *(SecretFile(name, APP_UID) for name in MODEL_KEYS),
 )
 TLS_FILES = (SecretFile("tls_certificate", APP_UID), SecretFile("tls_private_key", APP_UID))
+# The key restic encrypts the backup repository with; restic runs as root.
+BACKUP_FILES = (SecretFile("backup_password", 0),)
 
 
 def required_files(config: SynapseConfig) -> tuple[SecretFile, ...]:
-    return REQUIRED + (TLS_FILES if config.tls.mode is TlsMode.PROVIDED else ())
+    tls = TLS_FILES if config.tls.mode is TlsMode.PROVIDED else ()
+    backup = BACKUP_FILES if config.backup.repository is not None else ()
+    return REQUIRED + tls + backup
 
 
 def _random_text() -> str:
@@ -80,6 +84,10 @@ def generate(config: SynapseConfig) -> list[str]:
         created.append("admin_conninfo")
     if config.tls.mode is TlsMode.PROVIDED:
         created += _copy_certificate(config, directory)
+    if config.backup.repository is not None and _write_once(
+        directory / "backup_password", _random_text()
+    ):
+        created.append("backup_password")
     _set_owners(config, directory)
     return created
 

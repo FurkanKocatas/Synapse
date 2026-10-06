@@ -115,6 +115,28 @@ class Modules(Strict):
         return value
 
 
+class Backup(Strict):
+    # Where restic keeps the snapshots: a directory, usually a mounted NAS or disk. Unset, no
+    # backups are taken (doctor warns).
+    repository: Path | None = None
+    # The dump and the copy of the configuration on their way to the repository, and the status.
+    staging_dir: Path = Path("/var/lib/synapse/backup")
+    # When the nightly backup runs (local time).
+    time: str = Field(default="02:30", pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
+    keep_daily: int = Field(default=7, ge=1, le=366)
+    keep_weekly: int = Field(default=4, ge=0, le=520)
+    keep_monthly: int = Field(default=6, ge=0, le=240)
+
+    @model_validator(mode="after")
+    def _apart(self) -> Self:
+        if self.repository is not None:
+            if not self.repository.is_absolute():
+                raise ValueError("backup.repository must be an absolute path")
+            if self.repository.resolve().is_relative_to(self.staging_dir.resolve()):
+                raise ValueError("backup.repository must not be inside backup.staging_dir")
+        return self
+
+
 class SynapseConfig(Strict):
     instance: Instance
     hardware: Tier = Tier.CPU_16
@@ -124,6 +146,7 @@ class SynapseConfig(Strict):
     images: Images = Images()
     models: Models = Models()
     modules: Modules = Modules()
+    backup: Backup = Backup()
 
 
 def load(path: Path) -> SynapseConfig:

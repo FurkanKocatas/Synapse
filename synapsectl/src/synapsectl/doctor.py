@@ -13,6 +13,7 @@ import stat
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 
@@ -192,6 +193,36 @@ def check_gpu(config: SynapseConfig, dri: Path = Path("/dev/dri")) -> Check:
     return Check("gpu", Status.OK, found_gpu)
 
 
+# A nightly backup older than this is reported.
+BACKUP_MAX_AGE = timedelta(days=2)
+
+
+def check_backup(config: SynapseConfig, now: datetime | None = None) -> Check:
+    """Backups are set up, the repository is there and the last good one is recent. Only
+    warnings: a missing backup must not stop apply from repairing the installation."""
+    from synapsectl import backup  # noqa: PLC0415  (backup imports apply, which imports doctor)
+
+    if config.backup.repository is None:
+        return Check("backup", Status.WARN, "no backups are taken: set [backup] repository")
+    if not (config.backup.repository / "config").exists():
+        return Check(
+            "backup",
+            Status.WARN,
+            f"{config.backup.repository} holds no repository (disk not mounted? run: "
+            "synapsectl backup init)",
+        )
+    good = backup.last_good(config)
+    if good is None:
+        return Check("backup", Status.WARN, "no backup has succeeded yet (run: synapsectl backup)")
+    latest = backup.read_status(config).get("backup", {})
+    if not latest.get("ok", True):
+        return Check("backup", Status.WARN, f"the last backup failed: {latest.get('detail')}")
+    age = (now or datetime.now(UTC)) - good
+    if age > BACKUP_MAX_AGE:
+        return Check("backup", Status.WARN, f"the last good backup is {age.days} days old")
+    return Check("backup", Status.OK, f"last good backup {good:%Y-%m-%d %H:%M}")
+
+
 def run_checks(config: SynapseConfig, *, stack_running: bool = False) -> list[Check]:
     checks: list[Callable[[], Check]] = [
         check_docker,
@@ -204,5 +235,6 @@ def run_checks(config: SynapseConfig, *, stack_running: bool = False) -> list[Ch
         lambda: check_rendered(config),
         lambda: check_models(config),
         lambda: check_gpu(config),
+        lambda: check_backup(config),
     ]
     return [check() for check in checks]

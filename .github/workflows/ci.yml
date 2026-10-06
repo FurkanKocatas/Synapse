@@ -170,8 +170,8 @@ jobs:
           enable-cache: false
       - name: Install the backend environment
         run: uv sync --locked --directory backend
-      - name: Full stack smoke test (builds the images)
-        run: tools/stack_smoke.sh
+      - name: Full stack smoke test (builds the images), with a backup and a restore
+        run: tools/stack_smoke.sh --with-backup
       - name: Image scan
         # Fails on any HIGH or CRITICAL vulnerability that already has a fix.
         run: |

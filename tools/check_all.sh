@@ -24,7 +24,7 @@ step "Installer"
   cd synapsectl
   uv run ruff check .
   uv run ruff format --check .
-  uv run mypy src tests
+  uv run mypy src tests ../tools/smoke_backup.py
   uv run pytest --cov -q
 )
 

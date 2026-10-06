@@ -84,14 +84,15 @@ The model servers are in the `models` profile. With the files in `.dev/models` (
 6. Uploads a PDF as an editor, lists it and downloads it byte for byte, which proves the blob volume is writable under the read-only container; then waits for the worker to mark it `parsed` and finds its text in the database.
 7. Uploads a scanned PDF (an image only) and waits for OCR: both engines read it in the read-only worker container, which proves the models are in the image and nothing is downloaded at run time; the page must come back as OCR text with the date and decision number in it.
 8. Verifies the audit chain.
+9. With `--with-backup` (CI; needs sudo without a password): backs the installation up and verifies the backup with synapsectl's own code and containers ([tools/smoke_backup.py](../tools/smoke_backup.py)), removes it with its volumes, restores it, starts it again and checks the documents are listed, their files download byte for byte, their pages are in the database, the audit chain verifies, and a new upload is stored and parsed ([design/backup.md](design/backup.md)).
 
-It then removes everything it created. CI runs it on every push.
+It then removes everything it created. CI runs it, with `--with-backup`, on every push.
 
 `tools/stack_smoke.sh --with-models [--vulkan]` also starts the model servers from the files in `SYNAPSE_MODELS_DIR` (default `.dev/models`, checked first): both documents must then reach `ready` with a bge-m3 vector for every chunk, and the API container's own adapters must get an answer from the reranker (the relevant passage scored first) and a JSON answer from the chat model. CI has no model files, so this runs on the reference machine: 2 minutes on its GPU on 2026-10-01.
 
 ## Not done yet
 
-- Backups, upgrades and the offline bundle ([installer.md](installer.md)).
+- Upgrades and the offline bundle ([installer.md](installer.md)).
 - The scheduler role (periodic jobs such as audit checkpoints and cleanup), and separate workers per queue on bigger machines.
 - Image signing and SBOMs in a release workflow.
 - Scanning the llama.cpp images in CI as our own images are, and a second GPU kind (Intel's integrated GPUs) measured before the installer recommends Vulkan for it.

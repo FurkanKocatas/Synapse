@@ -62,6 +62,10 @@ pypdfium2 is Apache-2.0 or BSD-3-Clause. Its wheel bundles a PDFium build and li
 1. Keep the notices: the licence files stay in the installed package inside the image, and the offline bundle's third-party notices file will include them.
 2. **FreeType credit:** the product documentation must say "Portions of this software are copyright © The FreeType Project (www.freetype.org). All rights reserved." It goes into the about page and the notices file when those exist; until then this entry is the reminder.
 
+### restic in the backup containers, reviewed 2026-10-06
+
+Backups run restic's own image (`restic/restic` 0.19.1, pinned by digest; [ADR 0021](adr/0021-backups.md)), unmodified. restic is BSD-2-Clause, allowed without review; the operating system packages in the image carry their own licences, as in the llama.cpp images. The offline bundle's third-party notices will list the image with the others.
+
 ### psycopg (LGPL-3.0), reviewed 2026-09-28
 
 psycopg is the PostgreSQL driver for the backend ([ADR 0017](adr/0017-data-access.md)), and Procrastinate ([ADR 0004](adr/0004-job-queue.md)) requires it, so there is no practical permissive alternative. The LGPL allows use by proprietary software that links to the library, provided the library itself stays replaceable. Conditions we follow:

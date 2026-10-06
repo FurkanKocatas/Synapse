@@ -5,9 +5,9 @@
 | [product/](product/) | What we are building and for whom: [vision.md](product/vision.md), [v1-scope.md](product/v1-scope.md), [modules.md](product/modules.md) |
 | [adr/](adr/) | Architecture decision records: one decision per file, with context and rejected alternatives |
 | [deployment.md](deployment.md) | Images, container hardening, the full stack and its smoke test |
-| [installer.md](installer.md) | synapsectl: synapse.toml, secrets, rendering and doctor |
+| [installer.md](installer.md) | synapsectl: synapse.toml, secrets, rendering, doctor, backups and restores |
 | [plan/](plan/) | Work plans per phase: [phase-4.md](plan/phase-4.md) (knowledge base and RAG) |
-| [design/](design/) | How implemented parts work: [identity.md](design/identity.md), [audit.md](design/audit.md), [authorization.md](design/authorization.md), [knowledge-base.md](design/knowledge-base.md), [search.md](design/search.md), [answers.md](design/answers.md), [evaluation.md](design/evaluation.md) |
+| [design/](design/) | How implemented parts work: [identity.md](design/identity.md), [audit.md](design/audit.md), [authorization.md](design/authorization.md), [knowledge-base.md](design/knowledge-base.md), [search.md](design/search.md), [answers.md](design/answers.md), [evaluation.md](design/evaluation.md), [backup.md](design/backup.md) |
 | [benchmarks/](benchmarks/) | Measurements behind defaults: [page-quality.md](benchmarks/page-quality.md), [ocr.md](benchmarks/ocr.md), [parsing.md](benchmarks/parsing.md), [embeddings.md](benchmarks/embeddings.md) (retrieval, encoders, reranking), [answers.md](benchmarks/answers.md) (chat models, and answers in the product), [refusal.md](benchmarks/refusal.md) (refusal before generation) |
 | [research/](research/) | The evidence behind the decisions: market, hardware, RAG, architecture. Start with [00-summary.md](research/00-summary.md) |
 
@@ -35,3 +35,4 @@
 | [0018](adr/0018-model-defaults.md) | Model defaults: bge-m3, bge-reranker-v2-m3 and Qwen3.5-4B on llama.cpp |
 | [0019](adr/0019-page-ocr.md) | Page OCR: PP-OCRv6 with a Turkish language model |
 | [0020](adr/0020-ocr-vote.md) | Page OCR: a vote of three readings |
+| [0021](adr/0021-backups.md) | Backups are taken from the host, into a restic repository |

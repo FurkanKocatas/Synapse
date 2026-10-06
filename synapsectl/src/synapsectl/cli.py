@@ -1,6 +1,7 @@
-"""``synapsectl``: init, render, doctor and apply (ADR 0012)."""
+"""``synapsectl``: init, render, doctor, apply, backup and restore (ADR 0012)."""
 
 import argparse
+import os
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
@@ -8,7 +9,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from synapsectl import __version__, config, doctor, models, render, secrets, wizard
+from synapsectl import __version__, backup, config, doctor, models, render, secrets, wizard
 from synapsectl.apply import ApplyError, FirstAdmin, apply
 
 DEFAULT_CONFIG = Path("/etc/synapse/synapse.toml")
@@ -53,6 +54,30 @@ def build_parser() -> argparse.ArgumentParser:
     files.add_argument(
         "--verify", action="store_true", help="check: also compare every file's SHA-256 (slow)"
     )
+    saving = commands.add_parser(
+        "backup", help="Take a backup (run), or set up, list or verify the backups."
+    )
+    saving.add_argument(
+        "action", nargs="?", default="run", choices=["run", "init", "list", "verify"]
+    )
+    saving.add_argument("--snapshot", default="latest", help="verify: this snapshot")
+    back = commands.add_parser(
+        "restore", help="Replace this installation's data with a backup's (then run apply)."
+    )
+    back.add_argument("--snapshot", default="latest", help="default: the latest")
+    back.add_argument(
+        "--replace", action="store_true", help="Restore over a database that holds data"
+    )
+    back.add_argument("--yes", action="store_true", help="Do not ask for confirmation")
+    back.add_argument(
+        "--configuration-from",
+        type=Path,
+        metavar="REPOSITORY",
+        help="On a new machine: first restore synapse.toml and the secrets from this repository",
+    )
+    back.add_argument(
+        "--password-file", type=Path, help="With --configuration-from: the backup password"
+    )
     return parser
 
 
@@ -61,6 +86,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "init":
             return _init(args.config, args.source)
+        if args.command == "restore" and args.configuration_from:
+            return _restore_configuration(args)
         if args.command == "models" and args.dir and args.accelerator:
             accelerator = models.Accelerator(args.accelerator)
             return _models(args.action, args.dir, accelerator, verify=args.verify)
@@ -81,6 +108,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         "render": lambda: _render(loaded),
         "doctor": lambda: _doctor(loaded, running=args.running),
+        "backup": lambda: _backup(loaded, args),
+        "restore": lambda: _restore(loaded, args),
     }
     return commands[args.command]()
 
@@ -140,7 +169,76 @@ def _apply(loaded: config.SynapseConfig, args: argparse.Namespace) -> int:
     )
     try:
         apply(loaded, admin=admin)
-    except ApplyError as error:
+        if loaded.backup.repository is not None:
+            _schedule_backups(loaded, args.config)
+    except (ApplyError, backup.BackupError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+# Present when systemd runs the machine.
+SYSTEMD_RUNTIME = Path("/run/systemd/system")
+
+
+def _schedule_backups(loaded: config.SynapseConfig, config_file: Path) -> None:
+    if os.geteuid() == 0 and SYSTEMD_RUNTIME.is_dir():
+        backup.install_schedule(loaded, config_file.resolve())
+    else:
+        print(
+            "== Backups are not scheduled (needs root and systemd): run "
+            "synapsectl backup every night and synapsectl backup verify every quarter"
+        )
+
+
+def _backup(loaded: config.SynapseConfig, args: argparse.Namespace) -> int:
+    try:
+        if args.action == "init":
+            # [backup] added to an installation: its password, and the files with the containers
+            if "backup_password" in secrets.generate(loaded):
+                print(f"== Created {loaded.paths.secrets_dir / 'backup_password'}")
+            render.write(loaded, render.render(loaded))
+            backup.init_repository(loaded)
+        elif args.action == "list":
+            for snapshot in backup.snapshots(loaded):
+                print(f"{snapshot['short_id']}  {snapshot['time'][:19]}")
+        elif args.action == "verify":
+            backup.verify(loaded, snapshot=args.snapshot)
+        else:
+            backup.backup(loaded, args.config.resolve())
+    except (backup.BackupError, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _restore(loaded: config.SynapseConfig, args: argparse.Namespace) -> int:
+    if not args.yes:
+        print(
+            f"This replaces the database and the uploaded files of {loaded.instance.organization} "
+            f"with the backup's ({args.snapshot})."
+        )
+        answer = input(f"Type the installation's slug ({loaded.instance.slug}) to go on: ")
+        if answer.strip() != loaded.instance.slug:
+            print("error: not confirmed; nothing was changed", file=sys.stderr)
+            return 1
+    try:
+        backup.restore(loaded, snapshot=args.snapshot, replace=args.replace)
+    except (backup.BackupError, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _restore_configuration(args: argparse.Namespace) -> int:
+    if args.password_file is None:
+        print("error: --configuration-from needs --password-file", file=sys.stderr)
+        return 1
+    try:
+        backup.restore_configuration(
+            args.configuration_from, args.password_file, args.config, snapshot=args.snapshot
+        )
+    except (backup.BackupError, OSError, ValidationError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     return 0

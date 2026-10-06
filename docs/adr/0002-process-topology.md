@@ -1,6 +1,6 @@
 # 0002. Process topology: modular monolith with separate worker processes
 
-- Status: accepted
+- Status: accepted (backups: taken from the host, [ADR 0021](0021-backups.md))
 - Date: 2026-09-28
 
 ## Context

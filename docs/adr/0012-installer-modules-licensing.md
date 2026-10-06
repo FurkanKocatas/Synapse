@@ -1,6 +1,6 @@
 # 0012. Installer, module registry and offline licensing
 
-- Status: accepted
+- Status: accepted (backups: refined by [ADR 0021](0021-backups.md))
 - Date: 2026-09-28
 
 ## Context

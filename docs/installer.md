@@ -1,6 +1,6 @@
 # Installer: synapsectl
 
-Status: init, render, doctor and apply, 2026-09-28. Decision record: [ADR 0012](adr/0012-installer-modules-licensing.md). Code: [synapsectl/](../synapsectl/).
+Status: init, render, doctor and apply, 2026-09-28; backup and restore, 2026-10-06. Decision records: [ADR 0012](adr/0012-installer-modules-licensing.md), [ADR 0021](adr/0021-backups.md) (backups). Code: [synapsectl/](../synapsectl/).
 
 `synapsectl` runs on the customer's machine, operated by the vendor's installer. One file, `/etc/synapse/synapse.toml`, describes the installation; everything else is produced from it.
 
@@ -27,6 +27,7 @@ sudo synapsectl apply --admin-email admin@example.org --admin-name "Admin"
 | `[images]` | `version` | The release to run |
 | `[models]` | `dir`, `accelerator`, `gpu_groups` | Where the model files are (default `/var/lib/synapse/models`); `cpu` or `vulkan` (a GPU, integrated ones included); for `vulkan`, the host groups that own `/dev/dri`'s devices. The wizard proposes `vulkan` with those groups when it finds a GPU |
 | `[modules]` | `enabled` | Optional modules; see below |
+| `[backup]` | `repository`, `staging_dir`, `time`, `keep_daily`, `keep_weekly`, `keep_monthly` | Where restic keeps the snapshots (an absolute path: a mounted NAS share or disk; unset, no backups are taken), where the dump waits on its way there (default `/var/lib/synapse/backup`), when the nightly backup runs (default 02:30) and how many snapshots are kept (7, 4, 6). See [Backups](#backups) |
 
 Unknown keys, unknown modules and incomplete TLS settings are rejected, so a typo never falls back to a default silently.
 
@@ -39,6 +40,7 @@ Unknown keys, unknown modules and incomplete TLS settings are rejected, so a typ
 3. Creates the tenant with the ID from `synapse.toml` (`synapse tenant create --if-missing`; an existing tenant with another slug is an error).
 4. Creates the first administrator only if the tenant has no active one. The first run therefore needs `--admin-email` and `--admin-name`; later runs do not. The password is prompted in the terminal, or read from `--admin-password-file` for scripted installs (the file is mounted read-only into the one container that reads it, so it must be readable by uid 10001).
 5. Starts every service, waits until each is healthy, and runs the checks again.
+6. With `[backup] repository` set, installs the systemd timers of the nightly backup and the quarterly verification (as root on a systemd machine; otherwise it prints the commands to schedule).
 
 A failed step stops `apply` with the step's name and its output; running it again continues from wherever the installation is. Tested by [tests/test_apply.py](../synapsectl/tests/test_apply.py) with a scripted Docker, and by hand on a fresh install: install, then a second run with nothing to do.
 
@@ -54,9 +56,21 @@ The model servers ([deployment.md](deployment.md#model-servers), [ADR 0018](adr/
 - `synapsectl models check [--verify]` reports missing files and wrong sizes; with `--verify` it also reads every file for its SHA-256 (4 to 5 GB).
 - Offline installs get the files in the bundle and only check them.
 
+## Backups
+
+```bash
+sudo synapsectl backup init     # the backup password, the backup containers, the repository
+sudo synapsectl backup          # a backup now (the timer runs one every night)
+sudo synapsectl backup list
+sudo synapsectl backup verify   # restore the latest dump into a scratch database and count it
+sudo synapsectl restore [--snapshot ID] [--replace]   # then: synapsectl apply
+```
+
+A backup is one encrypted restic snapshot of the database dump, the uploaded files, `synapse.toml` and the secrets, with a manifest of every table's rows. A restore checks the dump, the rows and the image version, and replaces the database and the files; on a new machine `restore --configuration-from REPOSITORY --password-file FILE` first brings back `synapse.toml` and the secrets. How it works, what is checked and the steps on a new machine: [design/backup.md](design/backup.md).
+
 ## Secrets
 
-`init` creates every secret with a cryptographic random generator: database role passwords, the superuser connection for bootstrap, the CSRF key, the TOTP encryption key, the audit signing key, and one API key per model server (`embed_key`, `rerank_key`, `chat_key`), read by the server and by the processes that call it. Existing files are never overwritten, so running `init` again on the same secrets directory is harmless.
+`init` creates every secret with a cryptographic random generator: database role passwords, the superuser connection for bootstrap, the CSRF key, the TOTP encryption key, the audit signing key, one API key per model server (`embed_key`, `rerank_key`, `chat_key`), read by the server and by the processes that call it, and with backups set up the key of the backup repository (`backup_password`; `backup init` creates it on an installation that had no backups). Existing files are never overwritten, so running `init` again on the same secrets directory is harmless.
 
 Files are mode 0400 in a 0700 directory. When run as root, each file is also handed to the container user that reads it (uid 999 for the database, 10001 for the application and web front), because Compose mounts secret files with their host ownership.
 
@@ -88,10 +102,12 @@ Two details that matter for non-standard ports:
 | rendered files | Not rendered, edited by hand, or different from what the current configuration and synapsectl version produce | |
 | models | A model file the accelerator needs is missing or has the wrong size (`synapsectl models check --verify` compares digests) | |
 | gpu | `vulkan` without a GPU, `models.gpu_groups` missing a group that owns `/dev/dri`'s devices, or the Vulkan server image, run as the servers run, not seeing the GPU | A GPU is present but the models run on the CPU (the detail gives the settings to change) |
+| backup | | Backups are not set up, the repository is missing (disk not mounted?), the last backup failed, or the last good one is more than 2 days old |
 
 `doctor --running` accepts the ports being in use, for checks on a running installation. The exit code is 1 if any check fails.
 
 ## Not done yet
 
-- `backup`, `restore`, `upgrade`, `support-bundle`, the offline bundle, licence files.
+- `upgrade` (with its mandatory backup), `support-bundle`, the offline bundle, licence files.
+- Backups to S3-compatible storage (a NAS share or disk mounted on the host until then), and the backup status on the Operations page.
 - A web-based setup screen for the same steps, served on localhost during installation.

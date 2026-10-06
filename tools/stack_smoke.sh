@@ -3,21 +3,25 @@
 # migrations, a tenant and an account created with the CLI, then a sign-in through the web
 # front. Runs in its own compose project and removes everything it created when it exits.
 #
-# Usage: tools/stack_smoke.sh                      (needs Docker; used by CI)
+# Usage: tools/stack_smoke.sh [--with-backup]      (needs Docker; used by CI)
 #        tools/stack_smoke.sh --with-models [--vulkan]
 #
 # --with-models also starts the model servers (ADR 0018) from the files in SYNAPSE_MODELS_DIR
 # (default .dev/models; synapsectl models fetch): documents must reach "ready" with their
 # vectors, and the API's own adapters must get answers from the reranker and the chat model.
 # --vulkan runs them on the GPU (deploy/compose.vulkan.yml). CI has no model files.
+# --with-backup (needs sudo without a password; CI) then backs the installation up with
+# synapsectl's code, removes it with its volumes, restores it from the backup and checks the
+# documents, their files and the audit log came back, and that it takes new uploads.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-with_models="" vulkan=""
+with_models="" vulkan="" with_backup=""
 for argument in "$@"; do
   case "$argument" in
     --with-models) with_models=1 ;;
+    --with-backup) with_backup=1 ;;
     --vulkan) vulkan=1 ;;
     *) echo "unknown argument: $argument" >&2; exit 2 ;;
   esac
@@ -40,6 +44,11 @@ if [ -n "$with_models" ]; then
   files+=(--profile models)
   model_servers=(llm-embed llm-rerank llm-chat)
 fi
+if [ -n "$with_backup" ]; then
+  # synapsectl runs as root on a customer's machine, and so does its backup here.
+  sudo -n true || { echo "--with-backup needs sudo without a password" >&2; exit 2; }
+  uv sync --locked --quiet --directory synapsectl
+fi
 
 project="synapse-smoke-$$"
 port="${SYNAPSE_SMOKE_PORT:-8481}"
@@ -59,6 +68,8 @@ cleanup() {
   fi
   stack down -v --remove-orphans >/dev/null 2>&1 || true
   rm -f ".dev/$env_name" "$password_file" "$jar"
+  # the backup's repository and staging directory belong to root
+  if [ -n "${backup_work:-}" ]; then sudo rm -rf "$backup_work"; fi
 }
 trap cleanup EXIT
 
@@ -109,9 +120,13 @@ uv run --directory backend python ../tools/smoke_passkey.py \
 step "Upload a document, list it and download it"
 editor_jar="$(mktemp)"
 json() { python3 -c "import json, sys; print(json.load(sys.stdin)$1)"; }
-csrf="$(curl -fsS -c "$editor_jar" -H 'X-Synapse-Client: web' -H 'Content-Type: application/json' \
-  -X POST "$base/api/auth/login" \
-  -d '{"email": "editor@smoke.example", "password": "a long smoke test passphrase"}' | json "['csrf_token']")"
+# Signs the editor in; prints the session's CSRF token.
+sign_in_editor() {
+  curl -fsS -c "$editor_jar" -H 'X-Synapse-Client: web' -H 'Content-Type: application/json' \
+    -X POST "$base/api/auth/login" \
+    -d '{"email": "editor@smoke.example", "password": "a long smoke test passphrase"}' | json "['csrf_token']"
+}
+csrf="$(sign_in_editor)"
 editor() { curl -fsS -b "$editor_jar" -H "X-Synapse-CSRF: $csrf" "$@"; }
 collection="$(editor -H 'Content-Type: application/json' -X POST "$base/api/admin/collections" \
   -d '{"name": "Smoke"}' | json "['id']")"
@@ -165,7 +180,6 @@ echo "$read_back"
 grep -q "^ocr vote-ppocrv6-tr-lm+ppocrv5-latin-lm+tesseract-tur+eng " <<<"$read_back"
 grep -q "Karar 2026/35 kabul edildi" <<<"$read_back"
 grep -q "15.03.2026" <<<"$read_back"
-rm -f "$editor_jar" "$sample" "$sample.back"
 
 if [ -n "$with_models" ]; then
   step "Check the vectors, and the reranker and the chat model through the API's adapters"
@@ -206,5 +220,45 @@ fi
 step "Check the audit log recorded the sign-in and is intact"
 report="$(stack exec -T api synapse audit verify | tail -n 1)"
 grep -q '"ok": true' <<<"$report"
+
+if [ -n "$with_backup" ]; then
+  # $sample.back holds the first document's file as downloaded, $sample the scanned one's.
+  backup_work="$(mktemp -d)"
+  as_root() {
+    sudo -E synapsectl/.venv/bin/python tools/smoke_backup.py \
+      "$backup_work" "$project" "$tenant_id" "$1"
+  }
+  step "Back the installation up, verify the backup, then remove the installation"
+  as_root backup
+  stack down -v
+
+  step "Restore the backup and start the services again"
+  as_root restore
+  stack up -d --wait api worker web "${model_servers[@]}"
+
+  step "Check the documents, their files and the audit log came back"
+  csrf="$(sign_in_editor)"
+  editor "$base/api/collections/$collection/documents" | grep -q '"title":"Karar 2026-35"'
+  editor -o "$sample.restored" "$base/api/documents/$document/versions/1/file"
+  cmp "$sample.back" "$sample.restored"
+  editor -o "$sample.restored" "$base/api/documents/$scanned/versions/1/file"
+  cmp "$sample" "$sample.restored"
+  page_query "$document" text | grep -q "Karar 2026/35 kabul edildi."
+  page_query "$scanned" text | grep -q "15.03.2026"
+  report="$(stack exec -T api synapse audit verify | tail -n 1)"
+  grep -q '"ok": true' <<<"$report"
+
+  step "Upload a document to the restored installation"
+  # The restored files' directory must be the API's again, or no upload could be stored.
+  uv run --directory backend python -c \
+    "import sys; from tests.knowledge_samples import pdf; sys.stdout.buffer.write(pdf('Karar 2026/36 kabul edildi.'))" \
+    > "$sample"
+  after="$(editor -H 'Content-Type: application/octet-stream' --data-binary "@$sample" \
+    -X POST "$base/api/collections/$collection/documents?filename=Karar%202026-36.pdf" | json "['id']")"
+  wait_parsed "$after" 60
+  page_query "$after" text | grep -q "Karar 2026/36 kabul edildi."
+  rm -f "$sample.restored"
+fi
+rm -f "$editor_jar" "$sample" "$sample.back"
 
 step "Smoke test passed"

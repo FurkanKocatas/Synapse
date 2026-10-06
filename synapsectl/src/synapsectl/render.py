@@ -68,6 +68,23 @@ SERVERS = {
 }
 
 
+# The backup containers (backup.py): restic pinned like every other image, and where the
+# staging directory and the uploaded files appear inside them.
+RESTIC_IMAGE = (
+    "restic/restic:0.19.1@sha256:136600b6ff6843d61d355f7f71f460a166429f35de6fd11b568fece3c9a4d510"
+)
+BACKUP_STAGING = "/backup"
+BACKUP_BLOBS = "/data/blobs"
+
+
+class _FullDumper(yaml.SafeDumper):
+    """Writes a value shared by several services out in full each time, never as a YAML anchor
+    and alias, so each service reads on its own."""
+
+    def ignore_aliases(self, data: Any) -> bool:
+        return True
+
+
 @dataclass(frozen=True)
 class Rendered:
     files: dict[str, str]  # relative path -> content
@@ -203,6 +220,7 @@ def compose(config: SynapseConfig) -> dict[str, Any]:
         ),
         "web": _hardened(_web(config, memory["web"])),
         **{name: _model_server(config, name, memory[name]) for name in SERVERS},
+        **backup_services(config),
     }
     # The API answers (search, chat), the worker embeds while ingesting.
     _call_models(services["api"], ("llm-embed", "llm-rerank", "llm-chat"))
@@ -216,6 +234,54 @@ def compose(config: SynapseConfig) -> dict[str, Any]:
             name: {"file": str(config.paths.secrets_dir / name)} for name in sorted(secret_names)
         },
         "volumes": {"db-data": {}, "blobs": {}, "caddy-data": {}},
+    }
+
+
+def backup_services(config: SynapseConfig) -> dict[str, Any]:
+    """The containers ``synapsectl backup`` and ``restore`` run, in the ``backup`` profile so
+    ``up`` never starts them: PostgreSQL's client tools as the superuser, and restic without a
+    network, its repository a directory on the host. Both run as root without dropping
+    capabilities: they read secrets and files owned by the containers' users, and a restore
+    gives the files back their owners."""
+    if config.backup.repository is None:
+        return {}
+    staging = f"{config.backup.staging_dir}:{BACKUP_STAGING}"
+    repository = f"{config.backup.repository}:/repository"
+    restic = {
+        "image": RESTIC_IMAGE,
+        "profiles": ["backup"],
+        "network_mode": "none",
+        "environment": {
+            "RESTIC_REPOSITORY": "/repository",
+            "RESTIC_PASSWORD_FILE": "/run/secrets/backup_password",
+            "RESTIC_CACHE_DIR": f"{BACKUP_STAGING}/cache",
+        },
+        "secrets": ["backup_password"],
+        "security_opt": ["no-new-privileges:true"],
+        "restart": "no",
+    }
+    return {
+        "pgtools": {
+            "image": f"synapse-postgres:{config.images.version}",
+            "profiles": ["backup"],
+            "user": "0:0",
+            # The superuser's password from its secret; "$$" is a literal "$" to Compose.
+            "entrypoint": [
+                "sh",
+                "-c",
+                'PGPASSWORD="$$(cat /run/secrets/postgres_superuser)" exec "$$@"',
+                "pgtools",
+            ],
+            "environment": {"PGHOST": "db", "PGUSER": "postgres"},
+            "secrets": ["postgres_superuser"],
+            "volumes": [staging],
+            "networks": ["internal"],
+            "depends_on": {"db": {"condition": "service_healthy"}},
+            "security_opt": ["no-new-privileges:true"],
+            "restart": "no",
+        },
+        "restic": {**restic, "volumes": [repository, staging, f"blobs:{BACKUP_BLOBS}:ro"]},
+        "restic-restore": {**restic, "volumes": [repository, staging, f"blobs:{BACKUP_BLOBS}"]},
     }
 
 
@@ -320,7 +386,9 @@ def tls_snippet(config: SynapseConfig) -> str:
 
 
 def render(config: SynapseConfig) -> Rendered:
-    compose_text = HEADER + yaml.safe_dump(compose(config), sort_keys=False, width=100)
+    compose_text = HEADER + yaml.dump(
+        compose(config), Dumper=_FullDumper, sort_keys=False, width=100
+    )
     return Rendered(files={"compose.yml": compose_text, "caddy/tls.caddy": tls_snippet(config)})
 
 
