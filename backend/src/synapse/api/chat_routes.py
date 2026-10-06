@@ -89,6 +89,8 @@ class TurnView(BaseModel):
     kind: str
     # Identifiers of the answer OCR read uncertainly: to check against the document.
     uncertain: list[str]
+    # Where the turn searched; both lists empty: everything the user could read.
+    scope: ScopeModel
 
 
 class ConversationSummaryView(BaseModel):
@@ -268,6 +270,7 @@ async def conversation(
                 created_at=t.created_at,
                 kind=t.kind,
                 uncertain=list(t.uncertain),
+                scope=ScopeModel.of(t.scope),
             )
             for t in found.turns
         ],

@@ -531,4 +531,7 @@ async def test_a_conversation_keeps_the_scope_it_was_given(
     third = [e async for e in service.ask(asker, "Meclis kaç üyeli?", conversation, scope=Scope())]
     assert council["id"] in searched(third)
     assert "scope" not in turn_row(world, conversation, 3)["details"]
-    assert (await service.get(editor.user_id, conversation)).scope == Scope()
+    stored = await service.get(editor.user_id, conversation)
+    assert stored.scope == Scope()
+    # each turn says where it searched
+    assert [t.scope for t in stored.turns] == [scope, scope, Scope()]

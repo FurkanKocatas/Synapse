@@ -109,6 +109,8 @@ class StoredTurn:
     kind: str = "documents"
     # Identifiers of the answer OCR read uncertainly (Answer.uncertain).
     uncertain: tuple[str, ...] = ()
+    # Where this turn searched: the conversation's scope when it was asked.
+    scope: Scope = EVERYTHING
 
 
 @dataclass(frozen=True)
@@ -344,7 +346,8 @@ class Conversations:
             title, mode, scope = await self._owned(connection, user_id, conversation_id)
             cursor = await connection.execute(
                 "SELECT ordinal, question, status, answer, sources, citations, feedback, "
-                "created_at, kind, details->'uncertain' FROM conversation_turns "
+                "created_at, kind, details->'uncertain', details->'scope' "
+                "FROM conversation_turns "
                 "WHERE conversation_id = %s "
                 "ORDER BY ordinal",
                 (conversation_id,),
@@ -363,7 +366,7 @@ class Conversations:
         turns = []
         for row in rows:
             ordinal, question, status, answer, sources, citations, feedback, created, kind = row[:9]
-            uncertain = tuple(row[9] or ())
+            uncertain, searched = tuple(row[9] or ()), Scope.from_json(row[10])
             stored = []
             for s in sources:
                 text, headings = readable.get((UUID(s["version_id"]), s["ordinal"]), (None, []))
@@ -392,6 +395,7 @@ class Conversations:
                     created,
                     kind,
                     uncertain,
+                    searched,
                 )
             )
         return ConversationView(conversation_id, title, turns, mode, scope)

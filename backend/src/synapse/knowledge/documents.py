@@ -103,6 +103,8 @@ class CollectionAccess:
     parent_id: UUID | None
     name: str
     can_write: bool
+    # The documents directly in it that this user may read (not those of folders inside it).
+    document_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -178,11 +180,16 @@ _PAGE = (
 
 _READABLE_COLLECTIONS = (
     "WITH readable AS (SELECT collection_id FROM accessible_collections(%(user)s, 'read')), "
-    "writable AS (SELECT collection_id FROM accessible_collections(%(user)s, 'write')) "
+    "writable AS (SELECT collection_id FROM accessible_collections(%(user)s, 'write')), "
+    "counted AS (SELECT d.collection_id, count(*) AS n "
+    "  FROM accessible_documents(%(user)s, 'read') a JOIN documents d ON d.id = a.document_id "
+    "  WHERE d.deleted_at IS NULL GROUP BY d.collection_id) "
     "SELECT c.id, CASE WHEN c.parent_id IN (SELECT collection_id FROM readable) "
     "THEN c.parent_id END AS parent_id, c.name, "
-    "c.id IN (SELECT collection_id FROM writable) AS can_write "
-    "FROM collections c WHERE c.id IN (SELECT collection_id FROM readable) "
+    "c.id IN (SELECT collection_id FROM writable) AS can_write, "
+    "coalesce(counted.n, 0)::int AS document_count "
+    "FROM collections c LEFT JOIN counted ON counted.collection_id = c.id "
+    "WHERE c.id IN (SELECT collection_id FROM readable) "
     "ORDER BY lower(c.name), c.id"
 )
 

@@ -43,7 +43,7 @@ On the evaluation corpus, 97 of 100 files are recognised as the type the manifes
 
 | Method and path | Needs | Result |
 |---|---|---|
-| `GET /api/collections` | Session | The collections the user may read, each with `can_write`. A collection whose parent the user cannot see is returned at the top level, so it still has a place in the tree |
+| `GET /api/collections` | Session | The collections the user may read, each with `can_write` and `document_count` (the documents directly in it they may read). A collection whose parent the user cannot see is returned at the top level, so it still has a place in the tree |
 | `POST /api/collections/{id}/documents?filename=...&title=...` (body: the file) | `write` on the collection | 201 `{id, version_id, version, media_type}` |
 | `POST /api/documents/{id}/versions?filename=...` (body: the file) | `write` on the document | 201, the next version number |
 | `GET /api/collections/{id}/documents` | Session | The documents in it the user may read, with the latest version's status and failure reason |

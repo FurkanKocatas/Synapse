@@ -235,8 +235,11 @@ def test_users_see_the_collections_they_can_read_and_where_they_can_write(
     grant_read(world, child, world.reader)  # the child only, not its parent
     reader = sign_in(world, world.reader, clients)
 
+    assert upload(editor, child, PDF + uuid.uuid4().bytes).status_code == 201
     mine = {c["id"]: c for c in editor.get("/api/collections").json()}
     assert mine[parent]["can_write"] and mine[child]["can_write"]
+    # the documents directly in each folder this user may read
+    assert (mine[parent]["document_count"], mine[child]["document_count"]) == (0, 1)
     assert mine[child]["parent_id"] == parent
 
     visible = {c["id"]: c for c in reader.get("/api/collections").json()}

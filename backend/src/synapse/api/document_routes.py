@@ -51,6 +51,7 @@ class CollectionView(BaseModel):
     parent_id: UUID | None
     name: str
     can_write: bool
+    document_count: int
 
 
 class UploadedView(BaseModel):
