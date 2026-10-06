@@ -214,7 +214,11 @@ def _attach_services(app: FastAPI, settings: Settings, database: Database, model
     app.state.accounts = AccountService(database, tenant_id=tenant_id)
     app.state.profile = ProfileService(database, tenant_id=tenant_id)
     app.state.operations = Operations(
-        database, tenant_id=tenant_id, blob_dir=settings.blob_dir, servers=models.servers
+        database,
+        tenant_id=tenant_id,
+        blob_dir=settings.blob_dir,
+        servers=models.servers,
+        embeds=models.embedder is not None,
     )
 
 

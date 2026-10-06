@@ -56,7 +56,14 @@ from synapse.knowledge.ocr import (
     temporary_directory,
 )
 from synapse.knowledge.parsing import Page, Parsed, ParseError, Parser
-from synapse.knowledge.pipeline import EMBED_TASK, OCR_TASK, PARSE_TASK, embed_job, ocr_job
+from synapse.knowledge.pipeline import (
+    EMBED_TASK,
+    OCR_TASK,
+    PARSE_TASK,
+    embed_job,
+    ocr_job,
+    parse_job,
+)
 from synapse.knowledge.search import lexical_text
 from synapse.knowledge.structure import Block
 from synapse.models.public import (
@@ -308,6 +315,75 @@ async def reindex(database: Database, tenant_id: UUID, *, embed: bool) -> Reinde
                 queued += 1
     log.info("ingest.reindexed", terms_written=written, embedding_queued=queued)
     return Reindexed(written, queued)
+
+
+# The newest version of each live document that stopped on an error that may not come again:
+# a crash after every retry (``internal_error``), or the embedding model failing.
+_RETRYABLE = """
+    SELECT latest.id, latest.status FROM documents d
+    JOIN LATERAL (
+        SELECT v.id, v.status, v.failure, v.embedding_failure FROM document_versions v
+        WHERE v.document_id = d.id ORDER BY v.version DESC LIMIT 1
+    ) latest ON true
+    WHERE d.deleted_at IS NULL
+      AND ((latest.status = 'failed' AND latest.failure = 'internal_error')
+           OR (latest.status = 'parsed' AND latest.embedding_failure IS NOT NULL))
+    ORDER BY latest.id
+"""
+
+
+@dataclass(frozen=True)
+class Retried:
+    reprocessing: int
+    embedding: int
+
+
+async def retryable(connection: AsyncConnection) -> list[tuple[UUID, str]]:
+    """The versions ``retry_failed`` would process again, with their status."""
+    cursor = await connection.execute(_RETRYABLE)
+    return [(version_id, status) for version_id, status in await cursor.fetchall()]
+
+
+async def retry_failed(database: Database, tenant_id: UUID, *, embed: bool) -> Retried:
+    """Process again what stopped on an error that may not come again (the operations page).
+
+    A version that failed with ``internal_error`` is parsed again from the start, its pages and
+    chunks removed first; one left without vectors when the embedding model failed gets an
+    embedding job, when a model is configured. A file the parser could not read (``unreadable``,
+    ``encrypted``, ...) would fail the same way, and is left as it is. Each version is locked as
+    the jobs lock it, and only those statuses are touched, so a running job is never raced.
+    """
+    async with database.tenant_transaction(tenant_id) as connection:
+        found = await retryable(connection)
+    reprocessing = embedding = 0
+    for version_id, status in found:
+        async with database.tenant_transaction(tenant_id) as connection:
+            if status == "failed":
+                claimed = await _claim(connection, version_id, "failed")
+                if claimed is None:
+                    continue
+                await connection.execute(
+                    "DELETE FROM document_chunks WHERE version_id = %s", (version_id,)
+                )
+                await connection.execute(
+                    "DELETE FROM document_pages WHERE version_id = %s", (version_id,)
+                )
+                cursor = await connection.execute(
+                    "UPDATE document_versions SET status = 'queued', failure = NULL "
+                    "WHERE id = %s AND failure = 'internal_error'",
+                    (version_id,),
+                )
+                if cursor.rowcount:
+                    await enqueue(connection, tenant_id, parse_job(claimed.document_id, version_id))
+                    reprocessing += 1
+            elif embed:
+                claimed = await _claim(connection, version_id, "parsed")
+                if claimed is None:
+                    continue
+                await enqueue(connection, tenant_id, embed_job(claimed.document_id, version_id))
+                embedding += 1
+    log.info("ingest.retried", reprocessing=reprocessing, embedding=embedding)
+    return Retried(reprocessing, embedding)
 
 
 async def _write_terms(connection: AsyncConnection, version_id: UUID) -> None:

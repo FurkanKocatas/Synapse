@@ -1,4 +1,5 @@
 import {
+  HeartbeatIcon,
   SquaresFourIcon,
   TreeStructureIcon,
   UserListIcon,
@@ -17,11 +18,11 @@ import { m } from "@/paraglide/messages.js";
 import { adminAreas } from "./adminApi";
 
 interface Tab {
-  to: "/admin" | "/admin/users" | "/admin/groups" | "/admin/collections";
+  to: "/admin" | "/admin/users" | "/admin/groups" | "/admin/collections" | "/admin/system";
   label: () => string;
   icon: Icon;
   // The area the role needs for this tab; the overview is there for any area.
-  area: "users" | "groups" | "collections" | null;
+  area: "users" | "groups" | "collections" | "operations" | null;
 }
 
 const TABS: Tab[] = [
@@ -34,6 +35,7 @@ const TABS: Tab[] = [
     icon: TreeStructureIcon,
     area: "collections",
   },
+  { to: "/admin/system", label: m.nav_admin_system, icon: HeartbeatIcon, area: "operations" },
 ];
 
 /** A page of the administration panel: the panel's tabs (those the role may use) under its

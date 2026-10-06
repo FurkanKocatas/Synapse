@@ -81,8 +81,10 @@ def test_the_page_counts_documents_pages_queues_and_storage(
     body = page(admin)
     assert body["documents"] == {"parsed": 1}
     assert body["deleted_waiting"] == 1
+    assert body["retryable"] == 0
     assert body["pages"]["total"] >= 1
     assert body["pages"]["read_by_ocr"] == 0
+    assert body["pages"]["waiting_for_ocr"] == 0
     # the deleted document's parse job and its purge, both waiting
     assert body["queues"] == [
         {"queue": "ingest", "waiting": 1, "running": 0, "failed": 0},
@@ -182,5 +184,45 @@ def test_runs_on_the_host_are_recorded_through_the_command_line(
     assert runs["latest_ok"]["backup"]["details"] == {"snapshot": "4f3c2b1a"}
 
 
+def test_processing_that_stopped_on_an_error_is_done_again(
+    world: World, admin: TestClient, editor: TestClient
+) -> None:
+    crashed = upload(editor, samples.pdf("Karar 2026/52 kabul edildi."), "crashed.pdf")
+    locked = upload(editor, samples.pdf("Karar 2026/53 kabul edildi."), "locked.pdf")
+    run_worker(world)
+    # one as if the worker had crashed on it after every retry, one the parser cannot read
+    for document, failure in ((crashed, "internal_error"), (locked, "encrypted")):
+        world.db.execute(
+            "UPDATE synapse.document_versions SET status = 'failed', failure = %s WHERE id = %s",
+            (failure, document["version_id"]),
+        )
+    assert page(admin)["retryable"] == 1
+    status = (
+        "SELECT status, failure, (SELECT count(*) FROM synapse.document_pages p "
+        "WHERE p.version_id = v.id) FROM synapse.document_versions v WHERE v.id = %s"
+    )
+    locked_before = world.db.execute(status, (locked["version_id"],)).fetchone()
+
+    response = admin.post("/api/admin/operations/retry")
+    assert response.status_code == 200, response.json()
+    assert response.json() == {"reprocessing": 1, "embedding": 0}
+    assert world.db.execute(status, (crashed["version_id"],)).fetchone() == ("queued", None, 0)
+    run_worker(world)
+    done = world.db.execute(status, (crashed["version_id"],)).fetchone()
+    assert done is not None
+    assert done[:2] == ("parsed", None)
+    assert done[2] >= 1
+    # a file that cannot be read would fail the same way again: left as it was
+    assert world.db.execute(status, (locked["version_id"],)).fetchone() == locked_before
+    assert page(admin)["retryable"] == 0
+    event = world.db.execute(
+        "SELECT details FROM synapse.audit_events WHERE tenant_id = %s "
+        "AND action = 'ops.documents.retry' ORDER BY seq DESC LIMIT 1",
+        (world.tenant_id,),
+    ).fetchone()
+    assert event == ({"reprocessing": 1, "embedding": 0},)
+
+
 def test_only_administrators_see_the_page(editor: TestClient) -> None:
     assert editor.get("/api/admin/operations").json() == {"error": "forbidden"}
+    assert editor.post("/api/admin/operations/retry").json() == {"error": "forbidden"}

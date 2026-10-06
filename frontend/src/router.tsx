@@ -15,6 +15,7 @@ import { AdminOverview } from "@/features/admin/AdminOverview";
 import { adminAreas, hasAdministration } from "@/features/admin/adminApi";
 import { CollectionsPage } from "@/features/admin/CollectionsPage";
 import { GroupsPage } from "@/features/admin/GroupsPage";
+import { SystemPage } from "@/features/admin/SystemPage";
 import { UsersPage } from "@/features/admin/UsersPage";
 import { EnrollPage } from "@/features/auth/EnrollPage";
 import { LoginPage } from "@/features/auth/LoginPage";
@@ -112,6 +113,12 @@ const signedIn = [
     path: "/admin/collections",
     beforeLoad: adminGuard("collections"),
     component: CollectionsPage,
+  }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: "/admin/system",
+    beforeLoad: adminGuard("operations"),
+    component: SystemPage,
   }),
 ];
 

@@ -8,8 +8,9 @@ import { greeting } from "@/features/chat/ChatPage";
 import { m } from "@/paraglide/messages.js";
 import { fakeApi } from "@/test/fakeApi";
 
-import { adminAreas, type Collection } from "./adminApi";
+import { adminAreas, type Collection, type Operations } from "./adminApi";
 import { inTreeOrder } from "./CollectionsPage";
+import { issuesOf } from "./system";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -42,6 +43,7 @@ describe("adminAreas", () => {
       collections: true,
       grants: true,
       audit: false,
+      operations: true,
     });
     expect(adminAreas("editor")).toEqual({
       users: false,
@@ -49,6 +51,7 @@ describe("adminAreas", () => {
       collections: true,
       grants: false,
       audit: false,
+      operations: false,
     });
     expect(adminAreas("member")).toEqual({
       users: false,
@@ -56,6 +59,7 @@ describe("adminAreas", () => {
       collections: false,
       grants: false,
       audit: false,
+      operations: false,
     });
     expect(adminAreas("auditor").audit).toBe(true);
   });
@@ -198,7 +202,8 @@ describe("administration panel", () => {
     expect(screen.getByText(m.admin_attention_disabled({ count: "1" }))).toBeInTheDocument();
     expect(screen.getByText(m.admin_attention_empty_groups({ count: "1" }))).toBeInTheDocument();
     const tabs = screen.getByRole("navigation", { name: m.nav_admin() });
-    expect(within(tabs).getAllByRole("link")).toHaveLength(4);
+    // overview, users, groups, collections and the system page
+    expect(within(tabs).getAllByRole("link")).toHaveLength(5);
   });
 
   it("is not in the navigation of a role without administration", async () => {
@@ -215,5 +220,160 @@ describe("administration panel", () => {
       await screen.findByRole("heading", { name: greeting("Admin", new Date().getHours()) }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: m.nav_admin() })).not.toBeInTheDocument();
+  });
+});
+
+const NOW = new Date("2026-10-06T10:42:00+03:00");
+
+function run(kind: string, ok: boolean, finished: string, details: Record<string, unknown> = {}) {
+  return { kind, ok, started_at: finished, finished_at: finished, details };
+}
+
+function healthy(): Operations {
+  return {
+    services: [
+      { name: "database", ok: true, connections: null },
+      { name: "worker", ok: true, connections: 2 },
+      { name: "scheduler", ok: true, connections: 1 },
+      { name: "embedding", ok: true, connections: null },
+      { name: "reranking", ok: true, connections: null },
+      { name: "chat", ok: true, connections: null },
+    ],
+    queues: [],
+    documents: { ready: 1240, failed: 3 },
+    deleted_waiting: 0,
+    retryable: 0,
+    pages: {
+      total: 9000,
+      read_by_ocr: 4820,
+      waiting_for_ocr: 0,
+      not_read: 5,
+      with_uncertain_identifiers: 37,
+    },
+    storage: {
+      files_bytes: 18.4 * 1024 ** 3,
+      database_bytes: 3.9 * 1024 ** 3,
+      disk_free_bytes: 312 * 1024 ** 3,
+      disk_total_bytes: 500 * 1024 ** 3,
+    },
+    runs: {
+      latest: {
+        backup: run("backup", true, "2026-10-06T02:30:00+03:00") as never,
+        backup_verify: run("backup_verify", true, "2026-10-01T05:30:00+03:00") as never,
+        audit_verify: run("audit_verify", true, "2026-10-06T04:20:00+03:00", {
+          events_checked: 12304,
+        }) as never,
+      },
+      latest_ok: {},
+    },
+    problems: {},
+  };
+}
+
+describe("issuesOf", () => {
+  it("finds nothing when all is well", () => {
+    expect(issuesOf(healthy(), NOW)).toEqual([]);
+  });
+
+  it("puts what is broken first and says what each problem means", () => {
+    const operations = healthy();
+    operations.services[5] = { name: "chat", ok: false, connections: null };
+    operations.runs.latest.backup = run("backup", false, "2026-10-06T02:30:00+03:00", {
+      reason: "repository_missing",
+    }) as never;
+    operations.runs.latest.audit_verify = run(
+      "audit_verify",
+      false,
+      "2026-10-06T04:20:00+03:00",
+    ) as never;
+    operations.retryable = 2;
+    operations.storage.disk_free_bytes = 10 * 1024 ** 3;
+    const issues = issuesOf(operations, NOW);
+    expect(issues.map((issue) => issue.key)).toEqual([
+      "audit",
+      "part-chat",
+      "backup-failed",
+      "retryable",
+      "space",
+    ]);
+    const backup = issues.find((issue) => issue.key === "backup-failed");
+    expect(backup?.what).toContain(m.system_reason_repository_missing());
+    expect(backup?.what).toContain(m.system_never());
+  });
+
+  it("reports a backup that is too old, and one never taken", () => {
+    const old = healthy();
+    old.runs.latest.backup = run("backup", true, "2026-10-02T02:30:00+03:00") as never;
+    expect(issuesOf(old, NOW).map((issue) => issue.title)).toEqual([
+      m.system_issue_backup_old({ days: "4" }),
+    ]);
+    const never = healthy();
+    delete never.runs.latest.backup;
+    expect(issuesOf(never, NOW).map((issue) => issue.key)).toEqual(["backup-never"]);
+  });
+});
+
+/** The card of the page under this heading. */
+function card(title: string): HTMLElement {
+  const section = screen.getByRole("heading", { name: title }).closest("section");
+  if (section === null) throw new Error(`no card ${title}`);
+  return section;
+}
+
+describe("system page", () => {
+  function serve(operations: Operations) {
+    return fakeApi((call) => {
+      if (call.path === "/api/auth/session") {
+        return { status: 200, body: { auth_level: "full", csrf_token: "c", user: admin } };
+      }
+      if (call.path === "/api/admin/operations") return { status: 200, body: operations };
+      if (call.path === "/api/admin/operations/retry") {
+        return { status: 200, body: { reprocessing: 2, embedding: 0 } };
+      }
+      return { status: 200, body: [] };
+    });
+  }
+
+  it("says all is well, part by part, in plain words", async () => {
+    window.history.replaceState(null, "", "/admin/system");
+    serve(healthy());
+    render(<App />);
+
+    expect(await screen.findByText(m.system_all_good())).toBeInTheDocument();
+    expect(screen.getByText(m.system_part_worker())).toBeInTheDocument();
+    const parts = card(m.system_parts());
+    expect(within(parts).getAllByText(m.system_running())).toHaveLength(3);
+    expect(within(parts).getAllByText(m.system_ready())).toHaveLength(3);
+    expect(screen.getByText(m.system_backup_taken())).toBeInTheDocument();
+    expect(screen.getByText(m.system_audit_ok())).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: m.system_retry() })).not.toBeInTheDocument();
+  });
+
+  it("lists what needs attention and retries documents that stopped halfway", async () => {
+    window.history.replaceState(null, "", "/admin/system");
+    const operations = healthy();
+    operations.services[5] = { name: "chat", ok: false, connections: null };
+    operations.retryable = 2;
+    const calls = serve(operations);
+    render(<App />);
+
+    expect(await screen.findByText(m.system_attention({ count: "2" }))).toBeInTheDocument();
+    expect(
+      screen.getByText(m.system_issue_part_down({ part: m.system_part_chat() })),
+    ).toBeInTheDocument();
+    expect(screen.getByText(m.system_down())).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: m.system_retry() }));
+    expect(await screen.findByRole("status")).toHaveTextContent(m.system_retried({ count: "2" }));
+    expect(calls.filter((call) => call.method === "POST").map((call) => call.path)).toEqual([
+      "/api/admin/operations/retry",
+    ]);
+  });
+
+  it("is a tab of the panel for administrators only", async () => {
+    window.history.replaceState(null, "", "/admin");
+    serve(healthy());
+    render(<App />);
+    expect(await screen.findByRole("link", { name: m.nav_admin_system() })).toBeInTheDocument();
   });
 });

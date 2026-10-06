@@ -24,6 +24,7 @@ a sample of the repository's data back.
 Docker is called through the same runner as ``apply``, so tests check the exact commands.
 """
 
+import errno
 import hashlib
 import json
 import os
@@ -71,6 +72,26 @@ COUNT_ROWS = (
 
 class BackupError(RuntimeError):
     """A step failed; the message says which, with its output."""
+
+
+# Why a run failed, as a code the operations page puts into words: the first marker found in
+# the error's message (lower-cased) gives the code; none, "other".
+FAILURE_MARKERS = (
+    ("repository_missing", "is not a backup repository"),
+    ("not_configured", "no backup repository is set"),
+    ("database_down", "the database is not running"),
+    ("audit_differs", "the live audit log"),
+    ("rows_differ", "the restored database differs"),
+    ("dump_damaged", "the restored dump differs"),
+    ("disk_full", "no space left on device"),
+)
+
+
+def failure_reason(error: Exception) -> str:
+    if isinstance(error, OSError) and error.errno == errno.ENOSPC:
+        return "disk_full"
+    message = str(error).lower()
+    return next((code for code, marker in FAILURE_MARKERS if marker in message), "other")
 
 
 @dataclass(frozen=True)
@@ -158,7 +179,8 @@ def backup(
         detail = str(error).splitlines()[0]
         with suppress(OSError):
             record(config, "backup", started, ok=False, detail=detail)
-        _record_run(stack, "backup", started, now(), ok=False, details={"error": detail})
+        details: dict[str, Any] = {"reason": failure_reason(error), "error": detail}
+        _record_run(stack, "backup", started, now(), ok=False, details=details)
         raise
     rows = sum(manifest.rows.values())
     detail = f"snapshot {snapshot[:8]}, {rows} rows, {manifest.dump_bytes} bytes of dump"
@@ -287,7 +309,8 @@ def verify(
         detail = str(error).splitlines()[0]
         with suppress(OSError):
             record(config, "verify", started, ok=False, detail=detail)
-        _record_run(stack, "backup_verify", started, now(), ok=False, details={"error": detail})
+        details: dict[str, Any] = {"reason": failure_reason(error), "error": detail}
+        _record_run(stack, "backup_verify", started, now(), ok=False, details=details)
         raise
     rows = sum(manifest.rows.values())
     detail = f"{rows} rows of {manifest.created} restored and counted"

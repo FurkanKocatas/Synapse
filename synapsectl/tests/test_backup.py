@@ -168,7 +168,32 @@ def test_a_failed_backup_is_recorded_for_the_operations_page(
         backup.backup(config, config_file, run=docker, echo=quiet, now=lambda: NOW)
     recorded = docker.commands()[-1]
     assert recorded.startswith("run --rm --no-deps -T api operations record --kind backup --failed")
-    assert '"error": "Dump the database: failed (exit 1)"' in recorded
+    assert '"reason": "other", "error": "Dump the database: failed (exit 1)"' in recorded
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (
+            backup.BackupError("/mnt/nas is not a backup repository (is the disk mounted?)"),
+            "repository_missing",
+        ),
+        (
+            backup.BackupError("the database is not running (run: synapsectl apply)"),
+            "database_down",
+        ),
+        (
+            backup.BackupError("audit event 7 of the backup differs in the live audit log"),
+            "audit_differs",
+        ),
+        (backup.BackupError("the restored database differs from the backup: users"), "rows_differ"),
+        (backup.BackupError("Copy: failed (exit 1)\nFatal: No space left on device"), "disk_full"),
+        (OSError(28, "No space left on device"), "disk_full"),
+        (backup.BackupError("Dump the database: failed (exit 1)"), "other"),
+    ],
+)
+def test_a_failure_has_a_reason_the_operations_page_reads(error: Exception, reason: str) -> None:
+    assert backup.failure_reason(error) == reason
 
 
 def test_a_backup_needs_the_database_running(setup: tuple[SynapseConfig, Path]) -> None:

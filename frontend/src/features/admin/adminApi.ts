@@ -52,6 +52,46 @@ export interface AuditStatus {
   problem: string | null;
 }
 
+export type RunKind = "backup" | "backup_verify" | "files_sweep" | "audit_verify";
+
+export interface Run {
+  kind: RunKind;
+  ok: boolean;
+  started_at: string;
+  finished_at: string;
+  details: Record<string, string | number | boolean | null>;
+}
+
+/** The operations page's figures (docs/design/operations.md). */
+export interface Operations {
+  services: { name: string; ok: boolean; connections: number | null }[];
+  queues: { queue: string; waiting: number; running: number; failed: number }[];
+  // Live documents by the status of their latest version.
+  documents: Record<string, number>;
+  deleted_waiting: number;
+  retryable: number;
+  pages: {
+    total: number;
+    read_by_ocr: number;
+    waiting_for_ocr: number;
+    not_read: number;
+    with_uncertain_identifiers: number;
+  };
+  storage: {
+    files_bytes: number;
+    database_bytes: number;
+    disk_free_bytes: number;
+    disk_total_bytes: number;
+  };
+  runs: { latest: Partial<Record<RunKind, Run>>; latest_ok: Partial<Record<RunKind, Run>> };
+  problems: Record<string, number>;
+}
+
+export interface Retried {
+  reprocessing: number;
+  embedding: number;
+}
+
 interface Created {
   id: string;
 }
@@ -91,6 +131,9 @@ export const adminApi = {
   removeGrant: (grantId: string) => apiRequest<undefined>("DELETE", `/api/admin/grants/${grantId}`),
 
   auditStatus: () => apiRequest<AuditStatus>("GET", "/api/audit/status"),
+
+  operations: () => apiRequest<Operations>("GET", "/api/admin/operations"),
+  retryProcessing: () => apiRequest<Retried>("POST", "/api/admin/operations/retry"),
 };
 
 /** What the signed-in role may see in the administration area (the server enforces it). */
@@ -101,6 +144,7 @@ export function adminAreas(role: Role | undefined) {
     collections: role === "admin" || role === "editor",
     grants: role === "admin",
     audit: role === "auditor",
+    operations: role === "admin",
   };
 }
 

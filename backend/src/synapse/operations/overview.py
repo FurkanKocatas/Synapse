@@ -15,6 +15,7 @@ from uuid import UUID
 
 from psycopg import AsyncConnection
 
+from synapse.knowledge.public import retryable
 from synapse.operations.runs import LatestRuns, latest_runs
 
 # The processes that connect with these names (worker_cli.py, scheduler_cli.py).
@@ -28,15 +29,19 @@ DOCUMENTS = """
     ) latest ON true
     WHERE d.deleted_at IS NULL GROUP BY latest.status
 """
-# The pages of each live document's latest version.
+# The pages of each live document's latest version: read by OCR, waiting for it, needing it
+# but not read (the engines failed on them), with identifiers OCR was unsure of.
 PAGES = """
     SELECT count(p.*),
            count(*) FILTER (WHERE p.text_source = 'ocr'),
-           count(*) FILTER (WHERE p.needs_ocr AND p.text_source = 'layer'),
+           count(*) FILTER (WHERE p.needs_ocr AND p.text_source = 'layer'
+                            AND latest.status IN ('queued', 'parsing', 'ocr')),
+           count(*) FILTER (WHERE p.needs_ocr AND p.text_source = 'layer'
+                            AND latest.status NOT IN ('queued', 'parsing', 'ocr')),
            count(*) FILTER (WHERE cardinality(p.uncertain_identifiers) > 0)
     FROM documents d
     JOIN LATERAL (
-        SELECT v.id FROM document_versions v WHERE v.document_id = d.id
+        SELECT v.id, v.status FROM document_versions v WHERE v.document_id = d.id
         ORDER BY v.version DESC LIMIT 1
     ) latest ON true
     JOIN document_pages p ON p.version_id = latest.id
@@ -95,6 +100,7 @@ class QueueState:
 class Pages:
     total: int
     read_by_ocr: int
+    waiting_for_ocr: int
     not_read: int
     with_uncertain_identifiers: int
 
@@ -114,6 +120,8 @@ class Overview:
     # Live documents by the status of their latest version.
     documents: dict[str, int]
     deleted_waiting: int
+    # Documents whose processing stopped on an error that may not come again (retry_failed).
+    retryable: int
     pages: Pages
     storage: Storage
     runs: LatestRuns
@@ -147,6 +155,7 @@ async def overview(
         deleted_waiting=await _count(
             connection, "SELECT count(*) FROM documents WHERE deleted_at IS NOT NULL"
         ),
+        retryable=len(await retryable(connection)),
         pages=await _pages(connection),
         storage=await _storage(connection, blob_dir),
         runs=await latest_runs(connection),

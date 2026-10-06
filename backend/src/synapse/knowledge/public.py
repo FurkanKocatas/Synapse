@@ -27,7 +27,14 @@ from synapse.knowledge.ocr import (
 )
 from synapse.knowledge.parsing import LightParser, Page, Parsed, ParseError, Parser
 from synapse.knowledge.ppocr import PpOcrEngine
-from synapse.knowledge.processing import Processor, Reindexed, reindex
+from synapse.knowledge.processing import (
+    Processor,
+    Reindexed,
+    Retried,
+    reindex,
+    retry_failed,
+    retryable,
+)
 from synapse.knowledge.rapid import RapidOcrEngine
 from synapse.knowledge.search import MAX_QUERY, Found, Hit, Search
 from synapse.knowledge.turkish import lower
@@ -63,6 +70,7 @@ __all__ = [
     "RapidOcrEngine",
     "Receiver",
     "Reindexed",
+    "Retried",
     "Search",
     "StoredFile",
     "TesseractEngine",
@@ -77,4 +85,6 @@ __all__ = [
     "estimate_tokens",
     "lower",
     "reindex",
+    "retry_failed",
+    "retryable",
 ]
