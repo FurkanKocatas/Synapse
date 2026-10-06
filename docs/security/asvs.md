@@ -12,6 +12,25 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 | not applicable | 73 |
 | **all, levels 1 and 2** | **253** |
 
+## What is open, in the order to take it
+
+Every requirement still "not yet" and the larger "partly" gaps, with what each needs before it can be done.
+
+| # | Gap | Requirements | Needs |
+|---|---|---|---|
+| 1 | Recovery codes carry 80 bits and are stored as unsalted SHA-256 | V6.5.2, V11.5.1 | A decision: longer codes (about 24 characters to type) or Argon2 storage |
+| 2 | Breached and common passwords are not refused | V6.2.4, V6.2.12 | Choosing an offline list and checking its licence |
+| 3 | A password an administrator sets stays the user's password | V6.4.1, V6.4.3 | A step at the first sign-in where users choose their own (a screen to design) |
+| 4 | The internal network allows connections out | V13.2.4, V13.2.5 | `internal: true`, with a network of its own for the web front, tried on a real installation |
+| 5 | No limits per user on chat, search or uploads | V2.4.1, V15.2.2 | The limits, and how the screen says one was reached |
+| 6 | Adding a passkey or TOTP asks for nothing again; no "end all sessions" | V7.5.1, V7.4.3, V7.4.5, V7.5.2 | Screens to design |
+| 7 | The second-factor pages have no sign-out | V7.4.4 | A screen change |
+| 8 | The API, the worker and the scheduler share one role's table rights | V13.2.2 | Separate grants per process |
+| 9 | No time frames for fixing vulnerable dependencies | V15.1.1 | A policy (for example critical in 7 days, high in 30) |
+| 10 | Plain HTTP to /api is redirected, not refused | V4.1.2 | Caddy configuration for the HTTPS installs |
+| 11 | No TLS between the containers | V12.3.3, V12.3.4 | An internal CA; low priority with everything on one host |
+| 12 | Uploads are not scanned for malware | V5.4.3 | ClamAV in the worker, or a decision not to |
+
 ## V1 Encoding and Sanitization
 
 16 met, 11 not applicable.
