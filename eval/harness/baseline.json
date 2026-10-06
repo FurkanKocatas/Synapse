@@ -68,6 +68,27 @@
     "mrr": 0.643
    },
    "seconds_median": 4.46
+  },
+  "scanned": {
+   "factual": {
+    "hit@1": 0.889,
+    "hit@5": 1.0,
+    "hit@10": 1.0,
+    "mrr": 0.944
+   },
+   "identifier": {
+    "hit@1": 0.842,
+    "hit@5": 1.0,
+    "hit@10": 1.0,
+    "mrr": 0.921
+   },
+   "all": {
+    "hit@1": 0.857,
+    "hit@5": 1.0,
+    "hit@10": 1.0,
+    "mrr": 0.929
+   },
+   "seconds_median": 4.54
   }
  },
  "answers": {
@@ -163,5 +184,37 @@
  ],
  "gates": [],
  "verdict": "baseline",
- "fresh_ingestion": true
+ "fresh_ingestion": true,
+ "answers_scanned": {
+  "correct": 0.821,
+  "correct_by_type": {
+   "factual": 0.889,
+   "identifier": 0.789
+  },
+  "cited": 0.821,
+  "answerable_refused": 0.036,
+  "unanswerable_refused": 0.667,
+  "unanswerable_refused_count": 2,
+  "unanswerable": 3,
+  "answerable": 28,
+  "failed": 0,
+  "unsupported_numbers": 0,
+  "retried": 1,
+  "sentences_removed": 0,
+  "seconds": {
+   "sources": {
+    "median": 0.1,
+    "p90": 0.1
+   },
+   "first_token": {
+    "median": 22.8,
+    "p90": 25.9
+   },
+   "answer": {
+    "median": 27.0,
+    "p90": 30.5
+   }
+  }
+ },
+ "scanned_commit": "2514d0e28c9ec954f237e4e917b354a991f02a47"
 }
