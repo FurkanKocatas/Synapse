@@ -1,5 +1,5 @@
 {
-  "comment": "Turkish document conventions read by knowledge/headings.py, chunking.py and entities.py. Words are lower case, as knowledge/turkish.py folds them.",
+  "comment": "Turkish document conventions read by knowledge/headings.py, chunking.py, entities.py and metadata.py. Words are lower case, as knowledge/turkish.py folds them.",
   "ordinals": [
     "birinci", "ikinci", "üçüncü", "dördüncü", "beşinci", "altıncı", "yedinci", "sekizinci",
     "dokuzuncu", "onuncu", "on birinci", "on ikinci", "on üçüncü", "on dördüncü", "on beşinci"
@@ -20,6 +20,15 @@
     "column_names": "Sütunlar",
     "row_labels": "Satırlar"
   },
+  "document_kinds": [
+    ["kararname", "Kararname"], ["karar", "Karar"], ["yönetmelik", "Yönetmelik"],
+    ["yönetmeliğ", "Yönetmelik"], ["yönerge", "Yönerge"], ["genelge", "Genelge"],
+    ["tebliğ", "Tebliğ"], ["kanun", "Kanun"], ["tüzük", "Tüzük"], ["tüzüğ", "Tüzük"],
+    ["rapor", "Rapor"], ["sözleşme", "Sözleşme"], ["tutanak", "Tutanak"],
+    ["tutanağ", "Tutanak"], ["protokol", "Protokol"], ["şartname", "Şartname"],
+    ["kılavuz", "Kılavuz"], ["rehber", "Rehber"], ["dilekçe", "Dilekçe"],
+    ["duyuru", "Duyuru"], ["bülten", "Bülten"], ["yıllık", "Yıllık"], ["yıllığ", "Yıllık"]
+  ],
   "entities": {
     "months": [
       "ocak", "şubat", "mart", "nisan", "mayıs", "haziran", "temmuz", "ağustos", "eylül",

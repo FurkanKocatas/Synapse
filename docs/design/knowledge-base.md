@@ -49,14 +49,16 @@ On the evaluation corpus, 97 of 100 files are recognised as the type the manifes
 | `GET /api/collections/{id}/documents` | Session | The documents in it the user may read, with the latest version's status and failure reason |
 | `GET /api/documents/{id}/versions` | `read` | Every version, newest first |
 | `GET /api/documents/{id}/versions/{n}/file` | `read` | The original file |
+| `PATCH /api/documents/{id}` (body: any of `title`, `kind`, `document_date`, `reference`, `tags`) | `write` | 204; only the fields sent change |
 | `DELETE /api/documents/{id}` | `write` | 204 |
 
 - The permission is checked before the body is received, and again in the transaction that writes.
 - A document the user may not see answers 404, the same as a missing one.
-- Errors: 404 `not_found`, 409 `duplicate_document` (the same content is already the latest version of a document in that collection), 413 `file_too_large`, 415 `unknown_type` or `legacy_office`, 400 `empty_file`.
+- The document list carries each document's `kind`, `document_date`, `reference` and `tags` ([Metadata](#metadata)).
+- Errors: 404 `not_found`, 422 `invalid_metadata`, 409 `duplicate_document` (the same content is already the latest version of a document in that collection), 413 `file_too_large`, 415 `unknown_type` or `legacy_office`, 400 `empty_file`.
 - Downloads are always attachments, with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`, so an uploaded HTML or SVG file can never run in the application's origin.
 
-Audit actions: `kb.document.create`, `kb.document.version`, `kb.document.delete`, and `kb.document.purge` from the scheduler (no actor; `versions` and `files_released`).
+Audit actions: `kb.document.create`, `kb.document.version`, `kb.document.metadata` (the fields changed), `kb.document.delete`, and `kb.document.purge` from the scheduler (no actor; `versions` and `files_released`).
 
 ### An exception to ADR 0002, rule 3
 
@@ -145,6 +147,13 @@ Phase 4, step 6 ([ADR 0018](../adr/0018-model-defaults.md)); the job in [process
 - **Failure:** the model's errors are typed (`ModelUnavailableError`, `ModelTimeoutError`, `ModelResponseError`) and retried like any other; after the last attempt the version goes back to `parsed` with `embedding_failure` (`model_unavailable`, `model_timeout`, `model_response`), not to `failed`: the document is fine and stays readable and searchable by words. `failure` keeps its meaning (the document is unusable; the schema allows it only with `failed`), and a later embedding job clears `embedding_failure`.
 - **The adapter** ([llama.py](../../backend/src/synapse/models/llama.py)) cuts every text with the server's own tokenizer (`/tokenize`) to 512 tokens, keeping the end token, after collapsing runs of whitespace (llama.cpp's tokenizer does not always, and a table chunk once came out longer than the server's batch). It checks the dimension and makes every vector unit length.
 - **Tests** use a stand-in model in the worker and a stand-in llama-server for the adapter; each rule was broken once on purpose to see a test fail (eight in the job, nine in the adapter).
+
+## Metadata
+
+A document has a kind ("Yönetmelik"), a date, a number ("2024/15") and up to 20 tags, besides its title ([metadata.py](../../backend/src/synapse/knowledge/metadata.py), migration 0026).
+
+- **Suggested when it is read.** When a version's chunks are stored, its kind, date and number are suggested from the title and the first 1500 characters of the first page, where a decision or a regulation names, dates and numbers itself. The kind is the earliest of the kind words in [language_tr.json](../../backend/src/synapse/knowledge/data/language_tr.json) (`document_kinds`), the title first, the longer word first at the same place ("kararname" before "karar"). The date and the number are the first `date` and `decision_number` entities there. Only the newest version suggests; an older one finishing late changes nothing.
+- **Set by a person.** `PATCH /api/documents/{id}` sets any of them. A kind, date or number a person set, or cleared, is never replaced by a suggestion again (`metadata_set_by_hand`), so a new version updates only what nobody touched. Texts are trimmed; an empty kind or number is cleared; tags are trimmed, each kept once, at most 50 characters. Tags come only from people.
 
 ## Deleting
 

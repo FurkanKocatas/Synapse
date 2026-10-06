@@ -15,9 +15,9 @@ Rules:
   document view.
 """
 
-from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+from datetime import UTC, date, datetime
 from pathlib import PurePath
 from typing import Literal
 from uuid import UUID
@@ -32,6 +32,7 @@ from synapse.kernel.database import Database
 from synapse.knowledge.blobs import BlobStore, Incoming
 from synapse.knowledge.filetypes import MediaType, detect
 from synapse.knowledge.maintenance import lock_blob
+from synapse.knowledge.metadata import SUGGESTED, checked
 from synapse.knowledge.pipeline import parse_job, purge_job
 
 VersionStatus = Literal["queued", "parsing", "ocr", "embedding", "ready", "failed"]
@@ -75,6 +76,11 @@ class DocumentSummary:
     media_type: str
     size_bytes: int
     updated_at: datetime
+    # Suggested from the document when it is read, or set by a person (metadata.py).
+    kind: str | None = None
+    document_date: date | None = None
+    reference: str | None = None
+    tags: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -182,7 +188,8 @@ _READABLE_COLLECTIONS = (
 
 _LIST_DOCUMENTS = (
     "SELECT d.id, d.collection_id, d.title, v.version AS latest_version, v.status, "
-    "v.failure, b.media_type, b.size_bytes, v.created_at AS updated_at "
+    "v.failure, b.media_type, b.size_bytes, v.created_at AS updated_at, d.kind, "
+    "d.document_date, d.reference, d.tags "
     "FROM documents d "
     "JOIN LATERAL (SELECT * FROM document_versions dv WHERE dv.document_id = d.id "
     "              ORDER BY dv.version DESC LIMIT 1) v ON true "
@@ -390,6 +397,39 @@ class DocumentService:
             media_type,
             chunks,
         )
+
+    async def update_metadata(
+        self, uploader: Uploader, document_id: UUID, changes: Mapping[str, object]
+    ) -> None:
+        """Set the given fields (``metadata.FIELDS``); ``None`` clears a kind, date or number.
+        One set here is never replaced by a suggestion afterwards. Needs ``write``; a wrong
+        field or value raises ``InvalidMetadataError`` (a ``ValueError``)."""
+        values = checked(changes)
+        now = self._now()
+        names = list(values)
+        assignments = ", ".join(f"{name} = %s" for name in names)
+        async with self._db.tenant_transaction(self._tenant_id) as connection:
+            if not await _has_document(connection, uploader.user_id, document_id, "write"):
+                raise NotFoundError
+            await connection.execute(
+                "UPDATE documents SET "  # noqa: S608  (names from metadata.FIELDS)
+                + assignments
+                + ", metadata_set_by_hand = ARRAY(SELECT DISTINCT unnest("
+                "metadata_set_by_hand || %s::text[]) ORDER BY 1) WHERE id = %s",
+                (
+                    *values.values(),
+                    [name for name in names if name in SUGGESTED],
+                    document_id,
+                ),
+            )
+            await self._audit(
+                connection,
+                "kb.document.metadata",
+                uploader,
+                document_id,
+                now,
+                {"fields": ",".join(names)},
+            )
 
     async def delete(self, uploader: Uploader, document_id: UUID) -> None:
         now = self._now()

@@ -202,6 +202,7 @@ forbidden_modules = [
     "synapse.knowledge.headings",
     "synapse.knowledge.language",
     "synapse.knowledge.maintenance",
+    "synapse.knowledge.metadata",
     "synapse.knowledge.ocr",
     "synapse.knowledge.parsing",
     "synapse.knowledge.pipeline",

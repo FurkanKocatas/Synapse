@@ -48,6 +48,8 @@ class Language:
     abbreviations: frozenset[str]
     table_summary: SummaryWords
     entities: EntityWords
+    # The words a document names its kind with, each with the kind's name (metadata.py).
+    document_kinds: tuple[tuple[str, str], ...]
 
 
 @cache
@@ -65,6 +67,7 @@ def language(code: str = "tr") -> Language:
         page_word=data["page_word"],
         abbreviations=frozenset(data["abbreviations"]),
         table_summary=SummaryWords(**data["table_summary"]),
+        document_kinds=tuple((word, label) for word, label in data["document_kinds"]),
         entities=EntityWords(
             months=tuple(entities["months"]),
             numbered_law=entities["numbered_law"],

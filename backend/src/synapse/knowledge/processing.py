@@ -46,6 +46,7 @@ from synapse.knowledge.dedup import content_hash, simhash
 from synapse.knowledge.entities import extract
 from synapse.knowledge.filetypes import MediaType
 from synapse.knowledge.headings import blocks_from_text
+from synapse.knowledge.metadata import apply_suggestions
 from synapse.knowledge.ocr import (
     OcrError,
     PageReader,
@@ -232,8 +233,10 @@ class Processor:
     async def _chunk(
         self, connection: AsyncConnection, tenant_id: UUID, document_id: UUID, version_id: UUID
     ) -> int:
-        """Store the version's chunks and, with a model to embed them, the job that will."""
+        """Store the version's chunks and, with a model to embed them, the job that will; and
+        suggest the document's kind, date and number from it."""
         chunks = await _store_chunks(connection, tenant_id, version_id)
+        await apply_suggestions(connection, document_id, version_id)
         if self._embedder is not None and chunks:
             await enqueue(connection, tenant_id, embed_job(document_id, version_id))
         return chunks

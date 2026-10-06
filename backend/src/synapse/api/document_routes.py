@@ -7,14 +7,14 @@ and only after the permission check, so a user who may not upload cannot fill th
 
 import asyncio
 from collections.abc import AsyncIterator
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated
 from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Request, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from synapse.api.deps import ApiError, FullSession, client_ip
 from synapse.knowledge.public import (
@@ -70,6 +70,22 @@ class DocumentView(BaseModel):
     media_type: str
     size_bytes: int
     updated_at: datetime
+    kind: str | None
+    document_date: date | None
+    reference: str | None
+    tags: list[str]
+
+
+class MetadataChange(BaseModel):
+    """Only the fields sent change; ``null`` clears a kind, date or number."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = None
+    kind: str | None = None
+    document_date: date | None = None
+    reference: str | None = None
+    tags: list[str] | None = None
 
 
 class VersionView(BaseModel):
@@ -266,6 +282,21 @@ async def page(
             for c in found.chunks
         ],
     )
+
+
+@router.patch("/api/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def update_metadata(
+    document_id: UUID, change: MetadataChange, session: FullSession, request: Request
+) -> None:
+    uploader = Uploader(session.user_id, client_ip(request))
+    try:
+        await _documents(request).update_metadata(
+            uploader, document_id, change.model_dump(exclude_unset=True)
+        )
+    except NotFoundError as error:
+        raise ApiError(status.HTTP_404_NOT_FOUND, "not_found") from error
+    except ValueError as error:
+        raise ApiError(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_metadata") from error
 
 
 @router.delete("/api/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
