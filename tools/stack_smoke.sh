@@ -140,6 +140,10 @@ document="$(editor -H 'Content-Type: application/octet-stream' --data-binary "@$
 editor "$base/api/collections/$collection/documents" | grep -q '"title":"Karar 2026-35"'
 editor -o "$sample.back" "$base/api/documents/$document/versions/1/file"
 cmp "$sample" "$sample.back"
+# The web front logs every request with its headers; the CSRF token must not be among them.
+web_log="$(stack logs --no-color web)"
+grep -q '"uri":"/api/collections/' <<<"$web_log"  # the editor's requests are there
+if grep -qF "$csrf" <<<"$web_log"; then echo "the access log holds the CSRF token" >&2; exit 1; fi
 
 # Waits until a document's first version is done (parsed, or ready with the model servers);
 # fails on failed or after $2 seconds.

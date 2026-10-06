@@ -54,6 +54,10 @@ http://:8099 {
 
 	log {
 		output stdout
-		format json
+		# The CSRF token is a credential: left out, as Caddy leaves out cookies and authorization.
+		format filter {
+			wrap json
+			request>headers>X-Synapse-Csrf delete
+		}
 	}
 }

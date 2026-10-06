@@ -81,7 +81,7 @@ The model servers are in the `models` profile. With the files in `.dev/models` (
 3. Creates a tenant and an account with the CLI.
 4. Checks the SPA, the security headers and a sign-in through the web front.
 5. Registers a passkey and signs in with it through the web front ([tools/smoke_passkey.py](../tools/smoke_passkey.py), with the backend tests' software authenticator), which also proves `SYNAPSE_PUBLIC_URL` reaches the API.
-6. Uploads a PDF as an editor, lists it and downloads it byte for byte, which proves the blob volume is writable under the read-only container; then waits for the worker to mark it `parsed` and finds its text in the database.
+6. Uploads a PDF as an editor, lists it and downloads it byte for byte, which proves the blob volume is writable under the read-only container, and checks the web front's access log holds those requests without their CSRF token; then waits for the worker to mark it `parsed` and finds its text in the database.
 7. Uploads a scanned PDF (an image only) and waits for OCR: both engines read it in the read-only worker container, which proves the models are in the image and nothing is downloaded at run time; the page must come back as OCR text with the date and decision number in it.
 8. Verifies the audit chain.
 9. With `--with-backup` (CI; needs sudo without a password): backs the installation up and verifies the backup with synapsectl's own code and containers ([tools/smoke_backup.py](../tools/smoke_backup.py)), removes it with its volumes, restores it, starts it again and checks the documents are listed, their files download byte for byte, their pages are in the database, the audit chain verifies, and a new upload is stored and parsed ([design/backup.md](design/backup.md)).
