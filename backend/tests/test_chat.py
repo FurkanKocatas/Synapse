@@ -306,6 +306,9 @@ def test_replies_are_parsed_leniently() -> None:
     assert parse('{"answer": "Belgelerde bulunamadı.", "sufficient": false}')[1] is False
     assert parse("düz metin") == ("düz metin", True)
     assert parse("[1]") == ("[1]", True)
+    # A repeated sentence is written once, with every citation it was given.
+    looped = says(("Kod EDİT-LST-18'dir.", [1]), ("Kod  edit-lst-18'dir.", [2, 1]), ("Son.", [3]))
+    assert parse(json.dumps(looped)) == ("Kod EDİT-LST-18'dir. [1, 2] Son. [3]", True)
     assert parse('{"sufficient": true}') == ("", True)
 
 

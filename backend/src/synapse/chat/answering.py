@@ -400,7 +400,10 @@ def prompt(question: str, hits: Sequence[Hit]) -> list[ChatMessage]:
 
 
 def parse(content: str) -> tuple[str, bool]:
-    """The reply's answer, written out, and whether the model found the sources sufficient."""
+    """The reply's answer, written out, and whether the model found the sources sufficient. A
+    sentence the model repeats is written once, with the citations of every time it said it
+    (a small model can loop: one answer said the same sentence three times). The streamed text
+    may show the repeat for a moment; the final answer replaces it."""
     try:
         reply = json.loads(content)
     except ValueError:
@@ -411,13 +414,14 @@ def parse(content: str) -> tuple[str, bool]:
     sufficient = reply.get("sufficient") is not False
     if isinstance(answer, str):
         return answer.strip(), sufficient
-    sentences = []
+    sentences: dict[str, tuple[str, list[int]]] = {}
     for sentence in answer if isinstance(answer, list) else []:
         if isinstance(sentence, dict) and isinstance(sentence.get("text"), str):
             numbers = sentence.get("sources")
             cited = [n for n in numbers if isinstance(n, int)] if isinstance(numbers, list) else []
-            sentences.append((sentence["text"], cited))
-    return written(sentences), sufficient
+            text, before = sentences.get(fold(sentence["text"]), (sentence["text"], []))
+            sentences[fold(text)] = (text, [*before, *(n for n in cited if n not in before)])
+    return written(list(sentences.values())), sufficient
 
 
 @dataclass
