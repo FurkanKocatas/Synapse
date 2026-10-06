@@ -1,6 +1,6 @@
 # Installer: synapsectl
 
-Status: init, render, doctor and apply, 2026-09-28; backup, restore and upgrade, 2026-10-06. Decision records: [ADR 0012](adr/0012-installer-modules-licensing.md), [ADR 0021](adr/0021-backups.md) (backups). Code: [synapsectl/](../synapsectl/).
+Status: init, render, doctor and apply, 2026-09-28; backup, restore, upgrade and support-bundle, 2026-10-06. Decision records: [ADR 0012](adr/0012-installer-modules-licensing.md), [ADR 0021](adr/0021-backups.md) (backups). Code: [synapsectl/](../synapsectl/).
 
 `synapsectl` runs on the customer's machine, operated by the vendor's installer. One file, `/etc/synapse/synapse.toml`, describes the installation; everything else is produced from it.
 
@@ -67,6 +67,21 @@ The model servers ([deployment.md](deployment.md#model-servers), [ADR 0018](adr/
 
 If `apply` stops, the new version stays written, so `apply` can run again once the cause is fixed; the error also lists the commands that go back to the old release with the backup just taken. Tested by [tests/test_upgrade.py](../synapsectl/tests/test_upgrade.py) with a scripted Docker.
 
+## support-bundle
+
+`sudo synapsectl support-bundle [--output FILE]` writes what the vendor's support needs into one `.tar.gz` (mode 0600, owned by the user who ran `sudo`), by default `synapse-support-SLUG-TIME.tar.gz` in the current directory. Nothing is sent: the operator reads it, every file in it being text, and passes it on.
+
+| File | Contents |
+|---|---|
+| `versions.txt`, `docker-version.txt` | synapsectl, the image version, the operating system, Docker |
+| `doctor.txt` | Every check, as `synapsectl doctor` prints it |
+| `synapse.toml`, `rendered/` | The configuration and the rendered `compose.yml` and `manifest.json` |
+| `secrets.txt` | Each secret's name, mode, owner and size; never a value |
+| `services.json`, `logs/SERVICE.log` | Every service's state and its last 2000 log lines |
+| `backup-status.json`, `disk.txt`, `docker-df.txt` | The last backups and verifications, free space where Synapse keeps data, Docker's disk use |
+
+Logs leave the organisation, so everything is redacted before it is written ([support.py](../synapsectl/src/synapsectl/support.py)): the values of every secret (the bundle is refused when one cannot be read, so it runs as root), email addresses, IP addresses outside the stack's own subnet (each replaced by a pseudonym that is the same throughout one bundle, so a user's requests can still be followed, and that cannot be reversed: its salt is never stored), query string values (uploads carry file names there), cookie, authorization and CSRF header values, passwords in connection strings, and the values PostgreSQL quotes in its errors. Document contents are never logged. Tested by [tests/test_support.py](../synapsectl/tests/test_support.py), and on the last 3000 lines of each service of the evaluation stack: no client address or CSRF token was left.
+
 ## Backups
 
 ```bash
@@ -119,7 +134,7 @@ Two details that matter for non-standard ports:
 
 ## Not done yet
 
-- `support-bundle`, the offline bundle with a signed release manifest that `upgrade` checks (image digests, migration heads), licence files.
+- The offline bundle with a signed release manifest that `upgrade` checks (image digests, migration heads), licence files.
 - Upgrades across PostgreSQL major versions (through a backup and a restore).
 - Backups to S3-compatible storage (a NAS share or disk mounted on the host until then), and the backup status on the Operations page.
 - A web-based setup screen for the same steps, served on localhost during installation.

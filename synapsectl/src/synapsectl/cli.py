@@ -1,4 +1,5 @@
-"""``synapsectl``: init, render, doctor, apply, backup, restore and upgrade (ADR 0012)."""
+"""``synapsectl``: init, render, doctor, apply, backup, restore, upgrade and support-bundle
+(ADR 0012)."""
 
 import argparse
 import os
@@ -17,6 +18,7 @@ from synapsectl import (
     models,
     render,
     secrets,
+    support,
     upgrade,
     wizard,
 )
@@ -92,6 +94,12 @@ def build_parser() -> argparse.ArgumentParser:
         "upgrade", help="Move to another release: take a backup, then apply the release."
     )
     release.add_argument("--to", required=True, metavar="VERSION", help="The release's version")
+    bundle = commands.add_parser(
+        "support-bundle", help="Write the versions, checks and recent logs, redacted, to one file."
+    )
+    bundle.add_argument(
+        "--output", type=Path, help="default: synapse-support-SLUG-TIME.tar.gz in this directory"
+    )
     return parser
 
 
@@ -125,6 +133,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "backup": lambda: _backup(loaded, args),
         "restore": lambda: _restore(loaded, args),
         "upgrade": lambda: _upgrade(loaded, args),
+        "support-bundle": lambda: _support_bundle(loaded, args),
     }
     return commands[args.command]()
 
@@ -249,6 +258,17 @@ def _upgrade(loaded: config.SynapseConfig, args: argparse.Namespace) -> int:
     try:
         upgrade.upgrade(loaded, args.config.resolve(), args.to)
     except (upgrade.UpgradeError, backup.BackupError, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _support_bundle(loaded: config.SynapseConfig, args: argparse.Namespace) -> int:
+    try:
+        support.write_bundle(
+            loaded, args.config.resolve(), args.output or support.default_output(loaded)
+        )
+    except (support.SupportError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     return 0
