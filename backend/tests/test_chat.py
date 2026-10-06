@@ -29,10 +29,11 @@ from synapse.chat.answering import (
     Sources,
     Turn,
     assemble,
+    prompt,
     source_text,
 )
 from synapse.chat.numerals import numeric
-from synapse.chat.reply import AnswerStream, parse, schema, written
+from synapse.chat.reply import AnswerStream, curly, parse, schema, written
 from synapse.chat.talk import CLASSIC_TURNS, moment, small_talk
 from synapse.chat.verification import check, cited, claims, sentences, strip_unsupported
 from synapse.knowledge.public import EVERYTHING, Folder, Found, Hit, Listed, Overview, Scope
@@ -282,6 +283,13 @@ def says(*sentences: tuple[str, list[int]], sufficient: bool = True) -> dict[str
     }
 
 
+def test_quotes_reach_the_model_typographic() -> None:
+    assert curly('Bir "ad" ve "iki" ile "tek') == "Bir “ad” ve “iki” ile “tek"
+    messages = prompt('"Hayvan Dostu Kent" hedefi?', [hit('Hedef kodu "H2.9" olarak geçer.')])
+    assert '"' not in messages[1].content
+    assert "“Hayvan Dostu Kent”" in messages[1].content
+
+
 def test_the_schema_makes_every_sentence_cite_a_source_shown() -> None:
     answer = schema(4)["properties"]["answer"]  # type: ignore[index]
     sentence = answer["items"]
@@ -311,6 +319,14 @@ def test_replies_are_parsed_leniently() -> None:
     assert parse('{"answer": "Belgelerde bulunamadı.", "sufficient": false}')[1] is False
     assert parse("düz metin") == ("düz metin", True)
     assert parse("[1]") == ("[1]", True)
+    # Cut short by the token limit: the sentences complete so far, never the JSON.
+    cut = '{"answer": [{"text": "A birdir.", "sources": [1]}, {"text": "B iki", "sour'
+    assert parse(cut) == ("A birdir. [1]", True)
+    assert parse('{"answer": [{"text": "Yarım') == ("", True)
+    assert parse('{"answer": [{"text": "A \\"x\\" dir.", "sources": [2]}, {') == (
+        'A "x" dir. [2]',
+        True,
+    )
     # A repeated sentence is written once, with every citation it was given.
     looped = says(("Kod EDİT-LST-18'dir.", [1]), ("Kod  edit-lst-18'dir.", [2, 1]), ("Son.", [3]))
     assert parse(json.dumps(looped)) == ("Kod EDİT-LST-18'dir. [1, 2] Son. [3]", True)

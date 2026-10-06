@@ -6,9 +6,29 @@ what the page shows (answering.py).
 
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
+from contextlib import suppress
 
 from synapse.chat.verification import fold
+
+# A sentence's text, or its list of citations, as far as the reply has come.
+_PARTS = re.compile(
+    r'"text"\s*:\s*"(?P<text>(?:[^"\\]|\\.)*)(?P<closed>")?'
+    r'|"sources"\s*:\s*\[(?P<sources>[^\]]*)(?P<end>\])?'
+)
+
+
+def curly(text: str) -> str:
+    """``text`` with its ASCII double quotes as typographic ones, opening and closing in turn.
+    The reply is JSON under a grammar: a model quoting a name copies the quote it sees, and an
+    ASCII one, unescaped, ends the JSON string there (one answer stopped at "planında" on every
+    harness run, before the name the question had quoted). A typographic quote needs no escape.
+    """
+    parts = text.split('"')
+    quoted = [parts[0]]
+    for n, part in enumerate(parts[1:]):
+        quoted += ["“" if n % 2 == 0 else "”", part]
+    return "".join(quoted)
 
 
 def schema(sources: int) -> dict[str, object]:
@@ -50,11 +70,6 @@ class AnswerStream:
     what is shown is always the start of the whole answer.
     """
 
-    _PARTS = re.compile(
-        r'"text"\s*:\s*"(?P<text>(?:[^"\\]|\\.)*)(?P<closed>")?'
-        r'|"sources"\s*:\s*\[(?P<sources>[^\]]*)(?P<end>\])?'
-    )
-
     def __init__(self) -> None:
         self._raw = ""
         self._shown = ""
@@ -63,7 +78,7 @@ class AnswerStream:
         """The answer's text that ``text`` completes."""
         self._raw += text
         sentences: list[tuple[str, list[int]]] = []
-        for part in self._PARTS.finditer(self._raw):
+        for part in _PARTS.finditer(self._raw):
             if part["text"] is not None:
                 body = part["text"] if part["closed"] else _complete(part["text"])
                 try:
@@ -105,10 +120,13 @@ def parse(content: str) -> tuple[str, bool]:
     """The reply's answer, written out, and whether the model found the sources sufficient. A
     sentence the model repeats is written once, with the citations of every time it said it
     (a small model can loop: one answer said the same sentence three times). The streamed text
-    may show the repeat for a moment; the final answer replaces it."""
+    may show the repeat for a moment; the final answer replaces it. A reply the token limit
+    cut short keeps the sentences it completed, never its JSON."""
     try:
         reply = json.loads(content)
     except ValueError:
+        if content.lstrip().startswith("{"):
+            return written(_distinct(_completed(content))), True
         return content.strip(), True
     if not isinstance(reply, dict):
         return content.strip(), True
@@ -116,11 +134,35 @@ def parse(content: str) -> tuple[str, bool]:
     sufficient = reply.get("sufficient") is not False
     if isinstance(answer, str):
         return answer.strip(), sufficient
-    sentences: dict[str, tuple[str, list[int]]] = {}
+    sentences = []
     for sentence in answer if isinstance(answer, list) else []:
         if isinstance(sentence, dict) and isinstance(sentence.get("text"), str):
             numbers = sentence.get("sources")
             cited = [n for n in numbers if isinstance(n, int)] if isinstance(numbers, list) else []
-            text, before = sentences.get(fold(sentence["text"]), (sentence["text"], []))
-            sentences[fold(text)] = (text, [*before, *(n for n in cited if n not in before)])
-    return written(list(sentences.values())), sufficient
+            sentences.append((sentence["text"], cited))
+    return written(_distinct(sentences)), sufficient
+
+
+def _distinct(sentences: Iterable[tuple[str, list[int]]]) -> list[tuple[str, list[int]]]:
+    """Each sentence once, compared folded, with the citations of every time it came."""
+    merged: dict[str, tuple[str, list[int]]] = {}
+    for text, cited in sentences:
+        first, before = merged.get(fold(text), (text, []))
+        merged[fold(first)] = (first, [*before, *(n for n in cited if n not in before)])
+    return list(merged.values())
+
+
+def _completed(raw: str) -> list[tuple[str, list[int]]]:
+    """The sentences of a reply cut short whose text and citations both closed."""
+    sentences: list[tuple[str, list[int]]] = []
+    text: str | None = None
+    for part in _PARTS.finditer(raw):
+        if part["text"] is not None:
+            text = None
+            if part["closed"]:
+                with suppress(ValueError):
+                    text = json.loads(f'"{part["text"]}"')
+        elif part["end"] and text is not None:
+            sentences.append((text, [int(n) for n in re.findall(r"\d+", part["sources"])]))
+            text = None
+    return sentences

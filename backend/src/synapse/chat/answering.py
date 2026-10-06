@@ -58,7 +58,7 @@ from uuid import UUID
 
 import structlog
 
-from synapse.chat.reply import AnswerStream, parse, schema
+from synapse.chat.reply import AnswerStream, curly, parse, schema
 from synapse.chat.talk import (
     CLASSIC_CHARS,
     CLASSIC_SYSTEM,
@@ -332,7 +332,7 @@ def prompt(question: str, hits: Sequence[Hit]) -> list[ChatMessage]:
     numbered = "\n\n".join(f"[{n}] {source_text(h)}" for n, h in enumerate(hits, start=1))
     return [
         ChatMessage("system", SYSTEM),
-        ChatMessage("user", f"Kaynaklar:\n\n{numbered}\n\nSoru: {question}"),
+        ChatMessage("user", curly(f"Kaynaklar:\n\n{numbered}\n\nSoru: {question}")),
     ]
 
 
@@ -525,7 +525,7 @@ class Answerer:
             lines += [f"Soru: {turn.question}", f"Cevap: {answer}"]
         messages = [
             ChatMessage("system", REWRITE_SYSTEM),
-            ChatMessage("user", "\n".join([*lines, f"Son soru: {question}"])),
+            ChatMessage("user", curly("\n".join([*lines, f"Son soru: {question}"]))),
         ]
         try:
             reply = await self._chat.complete(
