@@ -256,6 +256,16 @@ def test_sentences_with_unsupported_claims_are_removed() -> None:
 # Context and parsing
 
 
+def test_one_documents_hits_fill_the_places_no_other_document_takes() -> None:
+    same, other = uuid4(), uuid4()
+    hits = [hit(f"metin {i} " + "kelime " * i, document=same, n=i) for i in range(5)]
+    alone = assemble(hits)
+    assert alone == hits  # all five, in their order, though the limit is three
+    # Another document's hit takes a place first; the rest go to the first document's.
+    mixed = [*hits[:4], hit("başka belge", document=other, n=9), hits[4]]
+    assert assemble(mixed) == [*hits[:4], mixed[4], hits[4]]
+
+
 def test_the_context_keeps_order_limits_documents_and_drops_duplicates() -> None:
     same = uuid4()
     hits = [hit(f"metin {i} " + "kelime " * i, document=same, n=i) for i in range(4)]

@@ -285,28 +285,43 @@ def source_text(hit: Hit) -> str:
 
 
 def assemble(hits: Sequence[Hit]) -> list[Hit]:
-    """The context: the best hits in order, at most ``SOURCES``, at most ``PER_DOCUMENT`` of one
-    document, no near-duplicate of one already in, within ``SOURCE_TOKENS``."""
-    picked: list[Hit] = []
+    """The context: the best hits in order, at most ``SOURCES``, no near-duplicate of one
+    already in, within ``SOURCE_TOKENS``; at most ``PER_DOCUMENT`` of one document while other
+    documents' hits are there to take the places. Places left free then take the hits passed
+    over for that limit, in order: when all the candidates are one document's, the answer sees
+    more of it (the evidence was on the first-ranked page and three chunks of that document
+    did not hold it, for four questions of the golden set)."""
+    picked: list[tuple[int, Hit]] = []
     words: list[set[str]] = []
     per_document: Counter[object] = Counter()
+    passed: list[tuple[int, Hit]] = []
     tokens = 0
-    for hit in hits:
-        if len(picked) == SOURCES:
-            break
-        if per_document[hit.document_id] == PER_DOCUMENT:
-            continue
+
+    def take(index: int, hit: Hit) -> None:
+        nonlocal tokens
         these = set(lower(hit.text).split())
         if any(_overlap(these, other) >= DUPLICATE for other in words):
-            continue
+            return
         cost = estimate_tokens(source_text(hit))
         if tokens + cost > SOURCE_TOKENS:
-            continue
-        picked.append(hit)
+            return
+        picked.append((index, hit))
         words.append(these)
         per_document[hit.document_id] += 1
         tokens += cost
-    return picked
+
+    for index, hit in enumerate(hits):
+        if len(picked) == SOURCES:
+            break
+        if per_document[hit.document_id] == PER_DOCUMENT:
+            passed.append((index, hit))
+            continue
+        take(index, hit)
+    for index, hit in passed:
+        if len(picked) == SOURCES:
+            break
+        take(index, hit)
+    return [hit for _, hit in sorted(picked, key=lambda pair: pair[0])]
 
 
 def uncertain_in(text: str, sources: Sequence[Hit]) -> tuple[str, ...]:
