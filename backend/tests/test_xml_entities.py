@@ -19,7 +19,7 @@ from synapse.knowledge.filetypes import MediaType
 from synapse.knowledge.parsing import LightParser, ParseError
 from tests import knowledge_samples as samples
 
-SECRET = "GIZLI-DOSYA-ICERIGI-4711"
+HIDDEN_TEXT = "GIZLI-DOSYA-ICERIGI-4711"
 LAUGHS = (
     '<!ENTITY lol "lol">'
     + "".join(f'<!ENTITY lol{n} "{f"&lol{n - 1};" * 10}">' for n in range(2, 7))
@@ -92,15 +92,15 @@ def parsed_text(path: Path, media_type: MediaType) -> str:
 def test_an_external_entity_is_never_read(
     tmp_path: Path, build: Callable[[], bytes], part: str, marker: str, media_type: MediaType
 ) -> None:
-    secret = tmp_path / "secret.txt"
-    secret.write_text(SECRET, encoding="utf-8")
+    hidden = tmp_path / "hidden.txt"
+    hidden.write_text(HIDDEN_TEXT, encoding="utf-8")
     package = with_entity(
-        build(), part, marker, f'<!ENTITY xxe SYSTEM "{secret.as_uri()}">', "&xxe;"
+        build(), part, marker, f'<!ENTITY xxe SYSTEM "{hidden.as_uri()}">', "&xxe;"
     )
-    assert SECRET in text_as_entities_resolve(package, part)
+    assert HIDDEN_TEXT in text_as_entities_resolve(package, part)
     path = tmp_path / "evil"
     path.write_bytes(package)
-    assert SECRET not in parsed_text(path, media_type)
+    assert HIDDEN_TEXT not in parsed_text(path, media_type)
 
 
 @pytest.mark.parametrize(("build", "part", "marker", "media_type"), CASES)

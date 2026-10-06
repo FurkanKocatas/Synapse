@@ -1,0 +1,3 @@
+# Findings that are not secrets, by gitleaks fingerprint (commit:file:rule:line).
+# The XXE test's marker text, once named SECRET (renamed since).
+70406dd43ae3788167dc14da5cc41d70170f2033:backend/tests/test_xml_entities.py:generic-api-key:22
