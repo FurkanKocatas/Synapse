@@ -6,8 +6,8 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 | Status | Requirements |
 |---|---|
-| met | 112 |
-| partly | 56 |
+| met | 113 |
+| partly | 55 |
 | not yet | 12 |
 | not applicable | 73 |
 | **all, levels 1 and 2** | **253** |
@@ -313,17 +313,17 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 ## V14 Data Protection
 
-5 met, 2 partly, 2 not yet.
+6 met, 1 partly, 2 not yet.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
 | V14.1.1 | 2 | Data Protection Documentation | not yet | docs/ (no classification document); docs/adr/0014-observability.md:14 | Sensitive data (documents, chats, audit events, credentials, personal data) is not listed or classified into protection levels. KVKK appears only in research docs. |
 | V14.1.2 | 2 | Data Protection Documentation | not yet | docs/design/audit.md:63; docs/adr/0021-backups.md:65-66; docs/adr/0014-observability.md:14 | No protection requirements per level. Only scattered decisions exist: log content rules, backup encryption and retention, and audit retention still pending. |
-| V14.2.1 | 1 | General Data Protection | met | backend/src/synapse/api/deps.py:17-18; backend/src/synapse/api/auth_routes.py:69-79; backend/src/synapse/api/document_routes.py:35,138; deploy/web/Caddyfile (log filter); tools/stack_smoke.sh | Tokens travel in the cookie or a header, credentials and questions in bodies. An upload's file name and title go in the query string, and the access log drops both (checked against a live Caddy and in the stack smoke test). |
+| V14.2.1 | 1 | General Data Protection | met | backend/src/synapse/api/deps.py:17-18; backend/src/synapse/api/auth_routes.py:69-79; backend/src/synapse/api/document_routes.py:35,138; deploy/web/Caddyfile (log filter); tools/stack_smoke.sh | Tokens travel in the cookie or a header, credentials and questions in bodies. An upload's file name and title go in the query string; the access log drops both, and a download's Content-Disposition (checked against a live Caddy and in the stack smoke test). |
 | V14.2.2 | 2 | General Data Protection | met | deploy/web/Caddyfile (handle /api/*); backend/src/synapse/api/document_routes.py:233; synapsectl/src/synapsectl/render.py | No caching proxy or application cache, and partial uploads are deleted. The web front marks every API answer no-store unless the route set its own header. |
 | V14.2.3 | 2 | General Data Protection | met | deploy/web/Caddyfile:27; frontend/index.html; frontend/package.json; docs/research/04-architecture.md:272 | No analytics, trackers or third-party scripts. CSP limits scripts, connections and images to self, fonts are bundled, and there is no telemetry. |
 | V14.2.4 | 2 | General Data Protection | partly | backend/src/synapse/identity/totp.py:1-39; docs/design/identity.md:47; deploy/web/Caddyfile:55-62; synapsectl/src/synapsectl/support.py:1-13 | Individual controls exist: encrypted TOTP secrets, hashed session tokens, log redaction, encrypted backups. None can be checked against protection levels, because none are defined. |
-| V14.3.1 | 1 | Client-side Data Protection | partly | frontend/src/components/AccountMenu.tsx:34-38; frontend/src/features/auth/authApi.ts:63-66; frontend/src/App.tsx:15-23; backend/src/synapse/api/auth_routes.py:131-136 | Logout drops the in-memory CSRF token and the cookie. The React Query cache (conversations, documents) is not cleared, there is no Clear-Site-Data, and a failed logout clears nothing. |
+| V14.3.1 | 1 | Client-side Data Protection | met | frontend/src/components/AccountMenu.tsx (signOut); frontend/src/features/auth/AuthFlow.test.tsx; frontend/src/features/auth/authApi.ts:63-66; backend/src/synapse/api/auth_routes.py:131-136 | Signing out ends the session on the server, drops the in-memory CSRF token and clears every cached API answer, so nothing shows to whoever signs in next (tested). Browser storage holds only theme, locale and a history index. |
 | V14.3.2 | 2 | Client-side Data Protection | met | deploy/web/Caddyfile (handle /api/*); backend/src/synapse/api/document_routes.py:233; backend/src/synapse/api/chat_routes.py:166 | Every API response carries Cache-Control: no-store (Caddy sets it where the API did not; checked against a live Caddy). Built assets are cacheable, index.html is no-cache. |
 | V14.3.3 | 2 | Client-side Data Protection | met | frontend/src/lib/api.ts:3-14; frontend/src/lib/theme.ts:6-33; frontend/src/components/HistoryButtons.tsx:11,48; frontend/paraglide.options.js:11; backend/src/synapse/api/auth_routes.py:69-79 | Browser storage holds only theme, locale and a history index. The session is an HttpOnly cookie and the CSRF token stays in memory. |
 

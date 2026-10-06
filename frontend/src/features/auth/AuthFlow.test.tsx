@@ -54,6 +54,47 @@ describe("sign-in flow", () => {
     expect(login?.body).toEqual({ email: user.email, password: "a long passphrase here" });
   });
 
+  it("forgets what was shown before signing out", async () => {
+    let phase: "in" | "out" | "again" = "in";
+    fakeApi((call) => {
+      if (call.path === "/api/auth/session") {
+        return phase === "out"
+          ? { status: 401, body: { error: "not_authenticated" } }
+          : { status: 200, body: { auth_level: "full", csrf_token: "c1", user } };
+      }
+      if (call.path === "/api/auth/logout") {
+        phase = "out";
+        return { status: 204 };
+      }
+      if (call.path === "/api/auth/login") {
+        phase = "again";
+        return { status: 200, body: { auth_level: "full", csrf_token: "c2", user: null } };
+      }
+      if (call.path === "/api/conversations?mode=corporate") {
+        // Signed in again, the list cannot be read: only a remembered one could show.
+        return phase === "in"
+          ? { status: 200, body: [{ id: "k1", title: "Gizli toplantı", updated_at: "2026-10-01" }] }
+          : { status: 403, body: { error: "forbidden" } };
+      }
+      return { status: 200, body: [] };
+    });
+    render(<App />);
+    expect(await screen.findAllByText("Gizli toplantı")).not.toHaveLength(0);
+
+    await userEvent.click(screen.getByRole("button", { name: m.account_menu() }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: m.auth_logout() }));
+    await userEvent.type(await screen.findByLabelText(m.auth_email_label()), user.email);
+    await userEvent.type(screen.getByLabelText(m.auth_password_label()), "a long passphrase here");
+    await userEvent.click(screen.getByRole("button", { name: m.auth_login_submit() }));
+
+    expect(
+      await screen.findByRole("heading", {
+        name: greeting(user.display_name, new Date().getHours()),
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryAllByText("Gizli toplantı")).toHaveLength(0);
+  });
+
   it("shows the server's reason when signing in fails", async () => {
     fakeApi((call) =>
       call.path === "/api/auth/session"

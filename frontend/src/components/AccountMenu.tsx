@@ -35,6 +35,10 @@ export function AccountMenu() {
     await logout();
     queryClient.setQueryData(sessionQuery.queryKey, null);
     await navigate({ to: "/login" });
+    // Conversations, documents and the rest stay in memory otherwise, and would show to whoever
+    // signs in next in this tab until their own answers arrive.
+    queryClient.clear();
+    queryClient.setQueryData(sessionQuery.queryKey, null);
   }
 
   return (
