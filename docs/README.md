@@ -8,7 +8,7 @@
 | [installer.md](installer.md) | synapsectl: synapse.toml, secrets, rendering, doctor, backups, restores and upgrades |
 | [plan/](plan/) | Work plans per phase: [phase-4.md](plan/phase-4.md) (knowledge base and RAG) |
 | [design/](design/) | How implemented parts work: [identity.md](design/identity.md), [audit.md](design/audit.md), [authorization.md](design/authorization.md), [knowledge-base.md](design/knowledge-base.md), [search.md](design/search.md), [answers.md](design/answers.md), [evaluation.md](design/evaluation.md), [backup.md](design/backup.md), [operations.md](design/operations.md) |
-| [security/](security/) | Security review: [asvs.md](security/asvs.md), OWASP ASVS 5.0 levels 1 and 2 requirement by requirement, with the evidence and what is still open |
+| [security/](security/) | Security review: [asvs.md](security/asvs.md), OWASP ASVS 5.0 levels 1 and 2 requirement by requirement, with the evidence and what is still open; [data.md](security/data.md), the data kept, its protection and how long it stays |
 | [benchmarks/](benchmarks/) | Measurements behind defaults: [page-quality.md](benchmarks/page-quality.md), [ocr.md](benchmarks/ocr.md), [parsing.md](benchmarks/parsing.md), [embeddings.md](benchmarks/embeddings.md) (retrieval, encoders, reranking), [answers.md](benchmarks/answers.md) (chat models, and answers in the product), [refusal.md](benchmarks/refusal.md) (refusal before generation) |
 | [research/](research/) | The evidence behind the decisions: market, hardware, RAG, architecture. Start with [00-summary.md](research/00-summary.md) |
 
