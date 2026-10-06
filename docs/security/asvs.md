@@ -6,15 +6,15 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 | Status | Requirements |
 |---|---|
-| met | 121 |
-| partly | 50 |
+| met | 123 |
+| partly | 48 |
 | not yet | 9 |
 | not applicable | 73 |
 | **all, levels 1 and 2** | **253** |
 
 ## V1 Encoding and Sanitization
 
-15 met, 1 partly, 11 not applicable.
+16 met, 11 not applicable.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
@@ -43,7 +43,7 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 | V1.4.1 | 2 | Memory, String, and Unmanaged Code | not applicable | backend/pyproject.toml; frontend/package.json | Written in memory-safe Python and TypeScript. Native parsers are third-party and run isolated in worker processes. |
 | V1.4.2 | 2 | Memory, String, and Unmanaged Code | not applicable | backend/pyproject.toml | No in-house unmanaged code. Python integers cannot overflow. |
 | V1.4.3 | 2 | Memory, String, and Unmanaged Code | not applicable | backend/pyproject.toml | No in-house unmanaged code or manual memory management. |
-| V1.5.1 | 1 | Safe Deserialization | partly | backend/src/synapse/knowledge/filetypes.py:79-83; backend/tests/test_knowledge_files.py:84 | The API parses [Content_Types].xml with defusedxml, with a test. Worker DOCX/PPTX/XLSX parsing relies on library defaults, not configured or tested here. |
+| V1.5.1 | 1 | Safe Deserialization | met | backend/src/synapse/knowledge/filetypes.py:79-83; backend/tests/test_xml_entities.py; backend/tests/test_knowledge_files.py:84 | The API reads [Content_Types].xml with defusedxml. Word, Excel and PowerPoint parsing is tested with an external entity naming a local file and with nested entities: neither the file nor the expansion reaches the text (the test proves each payload works with a parser that follows entities). |
 | V1.5.2 | 2 | Safe Deserialization | met | backend/src/synapse/jobs/worker.py:48-52; backend/src/synapse/api/chat_routes.py:54-63 | Only JSON is deserialised, into pydantic models or typed checks. No pickle or yaml in product code; pickle appears only in eval tooling. |
 
 ## V2 Validation and Business Logic
@@ -109,11 +109,11 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 ## V5 File Handling
 
-7 met, 1 partly, 1 not yet.
+8 met, 1 not yet.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
-| V5.1.1 | 2 | File Handling Documentation | partly | docs/design/knowledge-base.md:23,28-38,59,102 | Permitted types, size limit, unpacked limits and safe download are documented. Expected extensions and behaviour when a malicious file is detected are not. |
+| V5.1.1 | 2 | File Handling Documentation | met | docs/design/knowledge-base.md#file-types; docs/design/knowledge-base.md:23,102 | Permitted types and the extensions they keep, the size limit, package limits, safe download, and what happens to a refused or suspicious file (a reason code, never parsed further; no malware scanning, V5.4.3) are documented. |
 | V5.2.1 | 1 | File Upload and Content | met | backend/src/synapse/knowledge/blobs.py:134-153; backend/src/synapse/kernel/config.py:64; backend/src/synapse/knowledge/parsing.py:52-55 | The body streams to disk with a 100 MB cap (413) after the permission check. Pages, sheet cells and expansion are limited; parsing runs in memory-limited workers. |
 | V5.2.2 | 1 | File Upload and Content | met | backend/src/synapse/knowledge/filetypes.py:50-88 (SUFFIXES); backend/src/synapse/knowledge/documents.py (named_for); backend/tests/test_knowledge_files.py; docs/design/knowledge-base.md#file-types | The type comes from magic bytes and Office content types, never the name. A stored name whose extension does not fit its content gets the content's extension added, so downloads open in the right program. |
 | V5.2.3 | 2 | File Upload and Content | met | backend/src/synapse/knowledge/parsing.py (_check_package); backend/tests/test_parsing.py; backend/src/synapse/knowledge/filetypes.py:74 | Office zips are refused before parsing above 1 GiB expanded, a 200x ratio or 10,000 members, with tests. Images rely on Pillow's decompression bomb limit. |

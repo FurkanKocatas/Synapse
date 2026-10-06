@@ -35,7 +35,9 @@ Detected from the bytes ([filetypes.py](../../backend/src/synapse/knowledge/file
 | PNG, JPEG, TIFF | Magic numbers |
 | DOCX, XLSX, PPTX | A zip whose `[Content_Types].xml` declares the Word, Excel or PowerPoint main part. Parsed with `defusedxml`, size-capped |
 
-The stored file name keeps the uploader's extension only when it fits the detected type; otherwise the type's own is added (`karar.html` holding a PDF is kept as `karar.html.pdf`), so a download opens in the program its content is for. The default title comes from the name as uploaded.
+The stored file name keeps the uploader's extension only when it fits the detected type; otherwise the type's own is added (`karar.html` holding a PDF is kept as `karar.html.pdf`), so a download opens in the program its content is for. The extensions kept: `.pdf`, `.docx`, `.xlsx`, `.pptx`, `.png`, `.jpg` (also `.jpeg`, `.jfif`), `.tif` (also `.tiff`). The default title comes from the name as uploaded.
+
+A file of a refused type, an unreadable one or a suspicious package fails with its reason code and is never parsed further; nothing scans uploads for malware. XML inside Office files never brings in another file or expands nested entities ([test_xml_entities.py](../../backend/tests/test_xml_entities.py)).
 
 Refused, with a reason code the interface translates: legacy Office (`.doc`, `.xls`, `.ppt`, and password-protected Office files, which share the old container format) as `legacy_office`; macro-enabled Office files and anything else as `unknown_type`.
 
