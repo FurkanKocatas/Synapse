@@ -2,6 +2,7 @@
 
 import uuid
 
+import structlog
 from procrastinate import App, RetryStrategy
 from procrastinate.testing import InMemoryConnector
 
@@ -36,6 +37,23 @@ async def test_the_task_gets_the_tenant_and_its_own_arguments() -> None:
     await app.configure_task("t.ok").defer_async(tenant_id=str(tenant), version_id="v1")
     await drain(app)
     assert seen == [(tenant, {"version_id": "v1"})]
+
+
+async def test_what_a_job_logs_names_the_job_its_task_and_its_tenant() -> None:
+    app, connector = in_memory_app()
+    seen: list[dict[str, object]] = []
+
+    async def run(tenant_id: uuid.UUID, args: Args) -> None:
+        seen.append(structlog.contextvars.get_contextvars())
+
+    register(app, Task("t.logged", Queue.INGEST, run))
+    tenant = uuid.uuid4()
+    await app.configure_task("t.logged").defer_async(tenant_id=str(tenant))
+    await drain(app)
+    [job_id] = connector.jobs
+    [bound] = seen
+    assert (bound["job_id"], bound["task"], bound["tenant_id"]) == (job_id, "t.logged", str(tenant))
+    assert "job_id" not in structlog.contextvars.get_contextvars()
 
 
 async def test_a_job_without_a_tenant_is_dropped_not_retried() -> None:

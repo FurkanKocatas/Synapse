@@ -6,8 +6,8 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 | Status | Requirements |
 |---|---|
-| met | 123 |
-| partly | 48 |
+| met | 124 |
+| partly | 47 |
 | not yet | 9 |
 | not applicable | 73 |
 | **all, levels 1 and 2** | **253** |
@@ -349,12 +349,12 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 ## V16 Security Logging and Error Handling
 
-8 met, 8 partly.
+9 met, 7 partly.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
 | V16.1.1 | 2 | Security Logging Documentation | partly | docs/adr/0014-observability.md:14-16; docs/design/audit.md:5-17,46-63; docs/installer.md; docs/deployment.md (Container hardening); synapsectl/src/synapsectl/render.py (LOGGING) | Spread across ADR 0014, audit.md, installer.md and deployment.md; no single inventory. Container logs rotate (json-file, five files of 10 MB); their access control is the host's. |
-| V16.2.1 | 2 | General Logging | partly | backend/src/synapse/audit/chain.py:26-36,59-84; backend/src/synapse/kernel/logging.py:18-25; backend/src/synapse/api/app.py:117-129; backend/src/synapse/api/deps.py (_current_session) | Audit events carry UTC time, actor, IP, action, target and outcome. Application lines carry request_id and, once signed in, user_id; not the job or trace IDs ADR 0014 promises. |
+| V16.2.1 | 2 | General Logging | met | backend/src/synapse/audit/chain.py:26-36,59-84; backend/src/synapse/kernel/logging.py:18-25; backend/src/synapse/api/app.py:117-129; backend/src/synapse/api/deps.py (_current_session); backend/src/synapse/jobs/worker.py (run); backend/tests/test_worker.py | Audit events carry UTC time, actor, IP, action, target and outcome. Application lines carry a UTC time and the logger, and request_id with user_id once signed in, or job_id, task and tenant_id in a job. Trace IDs wait for OpenTelemetry. |
 | V16.2.2 | 2 | General Logging | met | backend/src/synapse/kernel/logging.py:22; backend/src/synapse/audit/chain.py:55-56,107; synapsectl/src/synapsectl/doctor.py (check_clock); docs/installer.md#doctor | Timestamps are UTC (structlog TimeStamper utc=True, audit rows UTC with microseconds), and doctor warns when NTP does not keep the host's clock. |
 | V16.2.3 | 2 | General Logging | met | backend/src/synapse/kernel/logging.py:39-47; deploy/web/Caddyfile:55-57; docs/adr/0014-observability.md:14-16; docs/design/audit.md | Processes log only to stdout and the audit table, both documented; Caddy logs to stdout; no other sinks exist (OTLP export not implemented). |
 | V16.2.4 | 2 | General Logging | partly | backend/src/synapse/kernel/logging.py:26-30; deploy/web/Caddyfile:55-62; backend/src/synapse/api/app.py:117-129 | API and Caddy emit JSON lines, linked by X-Request-ID; PostgreSQL and llama-server logs are plain text, no trace or job IDs, no log processor shipped. |

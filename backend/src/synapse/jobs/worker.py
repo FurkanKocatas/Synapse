@@ -63,11 +63,17 @@ def register(app: App, task: Task, *, scheduled_for: UUID | None = None) -> None
     )
 
     async def run(context: JobContext, /, **kwargs: JsonValue) -> None:
-        try:
-            tenant_id = tenant_of(kwargs)
-        except BadJobError:
-            log.exception("job.bad_arguments", task=task.name)
-            return  # nothing to retry
+        # Every line written while the job runs names it, and then its tenant (ADR 0014).
+        with structlog.contextvars.bound_contextvars(job_id=context.job.id, task=task.name):
+            try:
+                tenant_id = tenant_of(kwargs)
+            except BadJobError:
+                log.exception("job.bad_arguments", task=task.name)
+                return  # nothing to retry
+            with structlog.contextvars.bound_contextvars(tenant_id=str(tenant_id)):
+                await attempt(context, tenant_id, kwargs)
+
+    async def attempt(context: JobContext, tenant_id: UUID, kwargs: Args) -> None:
         args = {key: value for key, value in kwargs.items() if key != "tenant_id"}
         try:
             await task.run(tenant_id, args)
