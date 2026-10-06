@@ -56,6 +56,11 @@ UPRIGHT = 1.5  # a crop this many times taller than wide is a vertical line, tur
 DARK, INK_SHARE = 128, 0.01  # a page with more than 1% of pixels darker than mid-grey has ink
 FEW_LINES = 3  # fewer lines than this on a page with ink: read it again
 RUNS = 2  # tries for a model output that is not finite
+# A page scanned sideways: at least this share of its lines, and this many, taller than wide.
+# It never held on the 878 ordinary pages of the OCR benchmark.
+SIDEWAYS_SHARE, SIDEWAYS_LINES = 0.6, 5
+# Lines read both ways to tell which way a sideways page is turned.
+SIDEWAYS_SAMPLE = 8
 # The second recogniser's files in the model directory, and the voices' names.
 LATIN_MODEL, LATIN_CHARACTERS = "latin-recognition.onnx", "latin-characters.json"
 NAME, LATIN_NAME = "ppocrv6-tr-lm", "ppocrv5-latin-lm"
@@ -291,7 +296,32 @@ def detected(models: Models, page: NDArray[np.uint8]) -> list[Detected]:
     found = models.detect(page)
     if len(found) < FEW_LINES and inked(page):
         found = models.detect(page)
-    return found
+    return upright(models, page, found)
+
+
+def confidence(probs: NDArray[np.float32]) -> float:
+    """How sure the recogniser is of a line: its likeliest characters' mean probability, blanks
+    left out."""
+    likeliest = probs.argmax(axis=1)
+    read = likeliest != 0
+    return float(probs.max(axis=1)[read].mean()) if read.any() else 0.0
+
+
+def upright(models: Models, page: NDArray[np.uint8], found: list[Detected]) -> list[Detected]:
+    """The lines of a page scanned sideways, found again on the page turned upright. crop_line
+    turns a tall line a quarter counterclockwise, which reads only if the page lies one way; a few
+    of the largest tall lines are read that way and upside down, and the page is turned the way
+    that reads with more confidence. Its lines then come in reading order, not across columns."""
+    tall = [crop for (x0, y0, x1, y1), crop in found if y1 - y0 >= UPRIGHT * (x1 - x0)]
+    if len(tall) < SIDEWAYS_LINES or len(tall) < SIDEWAYS_SHARE * len(found):
+        return found
+    sample = sorted(tall, key=lambda crop: crop.shape[1], reverse=True)[:SIDEWAYS_SAMPLE]
+    as_turned = sum(confidence(models.recognize(crop)) for crop in sample)
+    flipped = sum(
+        confidence(models.recognize(np.ascontiguousarray(np.rot90(crop, 2)))) for crop in sample
+    )
+    page = np.ascontiguousarray(np.rot90(page, 1 if as_turned >= flipped else 3))
+    return models.detect(page)
 
 
 # The child's models, loaded by its first page and kept for the pages after it.

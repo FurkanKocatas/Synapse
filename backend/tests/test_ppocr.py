@@ -257,6 +257,40 @@ def test_a_page_with_ink_and_no_line_is_read_again_and_a_blank_one_is_not() -> N
     assert flaky.calls == 1
 
 
+class Sideways:
+    """A page scanned sideways: its lines are tall until the page is turned, and a line reads
+    well only when its bright edge is on the left."""
+
+    def __init__(self) -> None:
+        self.turned: list[np.ndarray[Any, Any]] = []
+
+    def detect(self, page: np.ndarray[Any, Any]) -> list[ppocr.Detected]:
+        if page.shape[0] > page.shape[1]:  # as scanned: tall lines
+            crop = np.zeros((10, 40, 3), dtype=np.uint8)
+            crop[:, :5] = 255  # bright on the left once crop_line has turned it
+            return [((0, 0, 10, 40), crop)] * 6
+        self.turned.append(page)
+        return [((0, 0, 40, 10), np.zeros((10, 40, 3), dtype=np.uint8))] * 6
+
+    def recognize(self, crop: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
+        sure = 0.9 if crop[:, :5].mean() > crop[:, -5:].mean() else 0.4
+        probs = np.full((4, 3), (1 - sure) / 2, dtype=np.float32)
+        probs[:, 1] = sure
+        return probs
+
+
+def test_a_page_scanned_sideways_is_turned_the_way_it_reads() -> None:
+    page = np.zeros((100, 50, 3), dtype=np.uint8)
+    page[0, 0] = 7  # where the top left corner goes shows which way the page was turned
+    models = Sideways()
+    found = ppocr.detected(cast(ppocr.Models, models), page)
+    assert [box for box, _ in found] == [(0, 0, 40, 10)] * 6
+    [turned] = models.turned
+    assert turned.shape[:2] == (50, 100)
+    # the crops read as crop_line turns them: the page goes the same way, a quarter counterclockwise
+    assert turned[-1, 0, 0] == 7
+
+
 def test_a_page_with_lines_enough_is_read_once() -> None:
     printed = np.zeros((100, 100, 3), dtype=np.uint8)
     steady = Steady()
