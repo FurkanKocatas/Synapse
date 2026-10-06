@@ -141,9 +141,9 @@ def answers(
         seen = ask(client, question["question"])
         answer = seen.get("answer") or {}
         sources = seen.get("sources") or []
+        texts = [_as_shown(s) for s in sources]
         unsupported: tuple[str, ...] = ()
         if answer.get("status") == "answered":
-            texts = [_as_shown(s) for s in sources]
             unsupported = check(answer["text"], texts, list(range(1, len(texts) + 1))).unsupported
         return {
             "id": question["id"],
@@ -158,6 +158,9 @@ def answers(
             "sources_seconds": seen.get("sources_seconds"),
             "first_token_seconds": seen.get("first_token_seconds"),
             "seconds": seen.get("seconds"),
+            # What the model was given, as it saw it: checks on the answers (a guard against
+            # answering from another organisation's document, say) are tried on these offline.
+            "sources": texts,
         }
 
     records = parallel(questions, one, concurrency)
