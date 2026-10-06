@@ -6,8 +6,8 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 | Status | Requirements |
 |---|---|
-| met | 113 |
-| partly | 55 |
+| met | 114 |
+| partly | 54 |
 | not yet | 12 |
 | not applicable | 73 |
 | **all, levels 1 and 2** | **253** |
@@ -349,7 +349,7 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 ## V16 Security Logging and Error Handling
 
-7 met, 9 partly.
+8 met, 8 partly.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
@@ -362,7 +362,7 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 | V16.3.1 | 2 | Security Events | met | backend/src/synapse/identity/service.py:147-207,318-359,448-474; backend/src/synapse/identity/passkeys.py:256-359; backend/src/synapse/identity/profile.py:90-121; docs/design/audit.md:7-13 | Password login, MFA verify (TOTP, recovery, passkey), enrolment, throttling, logout and password changes audited with outcome; TOTP versus recovery-code use not distinguished. |
 | V16.3.2 | 2 | Security Events | partly | backend/src/synapse/api/deps.py (_current_session, require); backend/tests/db/test_api_auth.py; backend/src/synapse/knowledge/documents.py:10-11 | CSRF failures (api.csrf_failed) and missing permissions (api.forbidden) are logged as warnings with the user. A document the user may not read answers 404 like a missing one, unlogged. |
 | V16.3.3 | 2 | Security Events | partly | docs/adr/0008-audit-log.md:14; backend/src/synapse/knowledge/documents.py (stored_file); backend/src/synapse/identity/service.py:147-161; backend/src/synapse/api/deps.py | The events ADR 0008 lists are audited, file downloads included (kb.document.download); CSRF failures are logged. Input validation failures (422) are not. |
-| V16.3.4 | 2 | Security Events | partly | backend/src/synapse/api/chat_routes.py:155-157; backend/src/synapse/api/app.py:150-159; backend/src/synapse/jobs/worker.py:77-83; backend/src/synapse/scheduler_cli.py:105-109; backend/src/synapse/api/audit_routes.py:74-99 | Unhandled, stream, readiness and job errors and audit-chain breaks are logged; unreadable signing key silently skips checkpoint checks; backend links are plain HTTP. |
+| V16.3.4 | 2 | Security Events | met | backend/src/synapse/api/chat_routes.py:155-157; backend/src/synapse/api/app.py:150-159; backend/src/synapse/jobs/worker.py:77-83; backend/src/synapse/scheduler_cli.py:105-109; backend/src/synapse/api/audit_routes.py (_signing_key); backend/tests/test_audit_routes.py | Unhandled, stream, readiness and job errors, audit-chain breaks and an unreadable audit signing key (which leaves the checkpoints unchecked) are logged as errors. There is no backend TLS whose failures could be logged. |
 | V16.4.1 | 2 | Log Protection | met | backend/src/synapse/kernel/logging.py:26-30; backend/src/synapse/api/app.py:121-126; backend/src/synapse/audit/chain.py:118-138; deploy/web/Caddyfile:58-59; backend/src/synapse/audit/browse.py (_cell) | The JSON renderer escapes control characters; request IDs are accepted only as UUIDs; audit rows are parameterised canonical JSON; the CSV export neutralises formulas. The console format is for development only. |
 | V16.4.2 | 2 | Log Protection | partly | backend/src/synapse/migrations/versions/0004_audit.py:42-56; backend/src/synapse/audit/chain.py:155-201; docs/design/audit.md:27-33; backend/src/synapse/api/audit_routes.py:25,81,102 | Audit table: UPDATE/DELETE revoked, immutability triggers, hash chain, signed checkpoints, auditor-only API. Container stdout logs rely on host permissions, no integrity protection. |
 | V16.4.3 | 2 | Log Protection | partly | docs/design/audit.md:33,59-61; docs/adr/0014-observability.md:16; docs/adr/0008-audit-log.md:21 | Only nightly encrypted backups carry the audit chain off-box; application logs stay local; OTLP, syslog and checkpoint export are not implemented. |

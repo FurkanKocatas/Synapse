@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
+import structlog
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from pydantic import AwareDatetime, BaseModel
@@ -21,6 +22,7 @@ from synapse.kernel.database import Database
 from synapse.kernel.secrets import SecretError
 
 router = APIRouter(prefix="/api/audit", tags=["audit"])
+log = structlog.get_logger(__name__)
 
 AuditReader = Annotated[CurrentSession, require("audit.read")]
 # An action, or a family of actions ending in a dot: "identity.login", "identity.".
@@ -75,6 +77,8 @@ def _signing_key(request: Request) -> Ed25519PrivateKey | None:
     try:
         return audit.load_signing_key(request.app.state.audit_signing_key_file)
     except SecretError, OSError:
+        # The chain is still checked, the signed checkpoints not: an installation fault to fix.
+        log.exception("audit.signing_key_unreadable")
         return None
 
 
