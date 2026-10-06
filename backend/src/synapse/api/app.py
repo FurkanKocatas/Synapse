@@ -170,6 +170,8 @@ def _attach_services(app: FastAPI, settings: Settings, database: Database, model
         raise StartupError("SYNAPSE_TENANT_ID is not set")
     app.state.database = database
     app.state.tenant_id = tenant_id
+    # Read when a signed export or a checkpoint check needs it (api/audit_routes.py).
+    app.state.audit_signing_key_file = settings.audit_signing_key_file
     identity = IdentityService(
         database,
         tenant_id=tenant_id,

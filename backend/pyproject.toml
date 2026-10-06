@@ -250,5 +250,10 @@ source_modules = [
     "synapse.cli",
     "synapse.identity",
 ]
-forbidden_modules = ["synapse.audit.anchor", "synapse.audit.canonical", "synapse.audit.chain"]
+forbidden_modules = [
+    "synapse.audit.anchor",
+    "synapse.audit.browse",
+    "synapse.audit.canonical",
+    "synapse.audit.chain",
+]
 allow_indirect_imports = true
