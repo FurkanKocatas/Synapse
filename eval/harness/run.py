@@ -15,7 +15,10 @@ corpus's):
    as numbers), cited, refused, failed; for the unanswerable questions, refused. Every number
    and identifier of every final answer is checked again against the sources it was given
    (synapse.chat.verification): a claim in none of them is an unsupported number.
-3. **Speed**: the median and 90th percentile of the time to the sources, to the first token and
+3. **Metadata**: the kind, date and number suggested for each corpus document when it was read
+   (knowledge/metadata.py), and whether the kind is the one its manifest title names. Reported,
+   not gated: written to metadata.jsonl.
+4. **Speed**: the median and 90th percentile of the time to the sources, to the first token and
    to the whole answer, as the client sees them. One question at a time by default: on the
    reference machine's integrated GPU two at a time made each answer 2.5 times slower (the
    first token after 49.8 s against 18.4), so the whole run took longer, not shorter.
@@ -43,6 +46,7 @@ number or failed answer fails at once.
 """
 
 import argparse
+import csv
 import json
 import statistics
 import sys
@@ -66,8 +70,10 @@ from product import signed_in, wait  # noqa: E402
 from score import QUESTIONS, TYPES, Golden, metrics  # noqa: E402
 from synapse.chat.answering import source_text  # noqa: E402
 from synapse.chat.verification import check  # noqa: E402
+from synapse.knowledge.metadata import suggest  # noqa: E402
 from synapse.knowledge.public import Hit  # noqa: E402
 
+MANIFEST = EVAL / "corpus" / "manifest.csv"
 PARAPHRASED = QUESTIONS.parent / "paraphrased.jsonl"
 SCANNED = QUESTIONS.parent / "scanned.jsonl"
 RETRIEVAL_DROP = 0.01
@@ -204,6 +210,37 @@ def answers(
     return report, records
 
 
+def metadata(
+    client: Any, collection_id: str, documents: dict[str, str]
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """What was suggested for each document, and the kind its manifest title names (the same
+    rule on a title a person wrote: the uploaded name is the file's, "10092026_eylul2026_...")."""
+    with MANIFEST.open(encoding="utf-8") as handle:
+        titles = {row["id"]: row["title"] for row in csv.DictReader(handle)}
+    records = [
+        {
+            "doc": documents[d["id"]],
+            "title": d["title"],
+            "kind": d.get("kind"),
+            "named_kind": suggest(titles.get(documents[d["id"]], ""), "").kind,
+            "document_date": d.get("document_date"),
+            "reference": d.get("reference"),
+        }
+        for d in client.get(f"/api/collections/{collection_id}/documents").json()
+        if d["id"] in documents
+    ]
+    named = [r for r in records if r["named_kind"]]
+    report = {
+        "documents": len(records),
+        "kind": sum(r["kind"] is not None for r in records),
+        "date": sum(r["document_date"] is not None for r in records),
+        "reference": sum(r["reference"] is not None for r in records),
+        "kind_named_by_title": len(named),
+        "kind_as_named": sum(r["kind"] == r["named_kind"] for r in named),
+    }
+    return report, sorted(records, key=lambda r: r["doc"])
+
+
 def shown(question: dict[str, Any], sources: list[dict[str, Any]]) -> dict[str, bool]:
     """Whether the evidence was in the chunks themselves, not only on their pages (``found``):
     ``quoted`` when its quote stands in one of them (each part's, for a multi-document question),
@@ -320,6 +357,7 @@ def markdown(report: dict[str, Any]) -> str:
         f"refused {a['unanswerable_refused_count']} of {a['unanswerable']}, retried "
         f"{a['retried']}, sentences removed {a['sentences_removed']}.",
         *_scanned_line(report),
+        *_metadata_line(report),
         f"Seconds (median / 90th percentile, {report['concurrency']} at a time): sources "
         f"{a['seconds']['sources']['median']} / {a['seconds']['sources']['p90']}, first token "
         f"{a['seconds']['first_token']['median']} / {a['seconds']['first_token']['p90']}, answer "
@@ -338,6 +376,17 @@ def _scanned_line(report: dict[str, Any]) -> list[str]:
         f"Hit@1 / Hit@10 {r['hit@1']:.2f}/{r['hit@10']:.2f}, correct {a['correct']}, cited "
         f"{a['cited']}, answerable refused {a['answerable_refused']}, unanswerable refused "
         f"{a['unanswerable_refused_count']}."
+    ]
+
+
+def _metadata_line(report: dict[str, Any]) -> list[str]:
+    if "metadata" not in report:
+        return []
+    m = report["metadata"]
+    return [
+        f"Metadata suggested ({m['documents']} documents): a kind for {m['kind']}, a date for "
+        f"{m['date']}, a number for {m['reference']}; the kind its manifest title names for "
+        f"{m['kind_as_named']} of the {m['kind_named_by_title']} whose title names one."
     ]
 
 
@@ -389,7 +438,8 @@ def main() -> int:
     )
     args = options.parse_args()
     started = time.monotonic()
-    documents = json.loads(args.documents.read_text(encoding="utf-8"))["documents"]
+    corpus = json.loads(args.documents.read_text(encoding="utf-8"))
+    documents = corpus["documents"]
     written, paraphrased = load(QUESTIONS), load(PARAPHRASED)
     scanned = load(SCANNED) if SCANNED.exists() else []
     if args.limit:
@@ -399,7 +449,6 @@ def main() -> int:
     client = signed_in(args.base, args.email, password)
     try:
         if args.wait_ready:
-            corpus = json.loads(args.documents.read_text(encoding="utf-8"))
             wait(client, corpus["collection"], len(corpus["documents"]))
         report: dict[str, Any] = {
             "commit": args.commit,
@@ -411,6 +460,7 @@ def main() -> int:
             },
         }
         report["answers"], records = answers(client, written, documents, args.concurrency)
+        report["metadata"], metadata_records = metadata(client, corpus["collection"], documents)
         scanned_records: list[dict[str, Any]] = []
         if scanned:
             report["retrieval"]["scanned"] = retrieval(client, scanned, documents, args.concurrency)
@@ -428,7 +478,15 @@ def main() -> int:
     report["fresh_ingestion"] = args.fresh_ingestion
     failed = [g for g in report["gates"] if not g["ok"]]
     report["verdict"] = "no baseline" if not args.baseline else ("fail" if failed else "pass")
-    write(args.out, report, {"answers": records, "answers-scanned": scanned_records})
+    write(
+        args.out,
+        report,
+        {
+            "answers": records,
+            "answers-scanned": scanned_records,
+            "metadata": metadata_records,
+        },
+    )
     print(markdown(report))
     return 1 if failed else 0
 
