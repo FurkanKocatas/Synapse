@@ -83,7 +83,10 @@ export function DocumentTable({
   const rows = documents.data.filter(
     (document) =>
       (shown === "all" || groupOf(document.status) === shown) &&
-      (wanted === "" || document.title.toLocaleLowerCase(locale).includes(wanted)),
+      (wanted === "" ||
+        [document.title, document.kind, document.reference, ...(document.tags ?? [])].some(
+          (text) => text != null && text.toLocaleLowerCase(locale).includes(wanted),
+        )),
   );
 
   const counts: Record<Shown, number> = {

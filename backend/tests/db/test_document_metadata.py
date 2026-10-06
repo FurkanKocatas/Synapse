@@ -27,7 +27,7 @@ from tests.db.test_ingest_pipeline import (
 
 FIRST = "MECLIS KARARI\nKarar 2026/35 kabul edildi ve 15.03.2026 tarihinde sunuldu."
 SECOND = "GENELGE\nGenelge 2026/40, 01.04.2026 tarihinde yayimlandi."
-FIELDS = ("title", "kind", "document_date", "reference", "tags")
+FIELDS = ("title", "kind", "document_date", "reference", "tags", "set_by_hand")
 
 
 @pytest.fixture(scope="module")
@@ -65,6 +65,7 @@ def test_suggestions_never_replace_what_a_person_set(world: World, editor: TestC
         "document_date": None,
         "reference": None,
         "tags": [],
+        "set_by_hand": [],
     }
     run_worker(world)
     assert metadata(editor, uploaded) == {
@@ -73,6 +74,7 @@ def test_suggestions_never_replace_what_a_person_set(world: World, editor: TestC
         "document_date": "2026-03-15",
         "reference": "2026/35",
         "tags": [],
+        "set_by_hand": [],
     }
 
     changed = editor.patch(
@@ -86,6 +88,7 @@ def test_suggestions_never_replace_what_a_person_set(world: World, editor: TestC
         "document_date": "2026-03-15",
         "reference": None,
         "tags": ["imar", "bütçe"],
+        "set_by_hand": ["reference"],
     }
     editor.patch(f"/api/documents/{uploaded['id']}", json={"kind": "Meclis kararı"})
 
@@ -99,6 +102,7 @@ def test_suggestions_never_replace_what_a_person_set(world: World, editor: TestC
         "document_date": "2026-04-01",
         "reference": None,
         "tags": ["imar", "bütçe"],
+        "set_by_hand": ["kind", "reference"],
     }
     events = world.db.execute(
         "SELECT details FROM synapse.audit_events WHERE tenant_id = %s "

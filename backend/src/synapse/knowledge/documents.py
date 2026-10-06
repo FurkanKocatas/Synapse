@@ -81,6 +81,8 @@ class DocumentSummary:
     document_date: date | None = None
     reference: str | None = None
     tags: list[str] = field(default_factory=list)
+    # Which of kind, document_date and reference a person set; the others were suggested.
+    set_by_hand: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -196,7 +198,7 @@ _READABLE_COLLECTIONS = (
 _LIST_DOCUMENTS = (
     "SELECT d.id, d.collection_id, d.title, v.version AS latest_version, v.status, "
     "v.failure, b.media_type, b.size_bytes, v.created_at AS updated_at, d.kind, "
-    "d.document_date, d.reference, d.tags "
+    "d.document_date, d.reference, d.tags, d.metadata_set_by_hand AS set_by_hand "
     "FROM documents d "
     "JOIN LATERAL (SELECT * FROM document_versions dv WHERE dv.document_id = d.id "
     "              ORDER BY dv.version DESC LIMIT 1) v ON true "

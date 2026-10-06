@@ -75,6 +75,8 @@ class DocumentView(BaseModel):
     document_date: date | None
     reference: str | None
     tags: list[str]
+    # Which of kind, document_date and reference a person set; the others were suggested.
+    set_by_hand: list[str]
 
 
 class MetadataChange(BaseModel):

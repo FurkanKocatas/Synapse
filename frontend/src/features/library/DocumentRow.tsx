@@ -1,9 +1,13 @@
 import { AlertDialog } from "@base-ui/react/alert-dialog";
 import {
+  CalendarBlankIcon,
   CheckCircleIcon,
   CircleNotchIcon,
   DownloadSimpleIcon,
   EyeIcon,
+  HashIcon,
+  PencilSimpleIcon,
+  StackIcon,
   TrashIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
@@ -21,6 +25,7 @@ import { getLocale } from "@/paraglide/runtime.js";
 
 import { failureText, formatSize, statusLabel } from "./labels";
 import { IN_PROGRESS, libraryApi, type LibraryDocument } from "./libraryApi";
+import { MetadataDialog } from "./MetadataDialog";
 
 // By the width of the list itself (container queries), not the window: beside the
 // navigation and the folders the list can be narrow on a wide screen.
@@ -47,6 +52,7 @@ export function DocumentRow({
   onOpen: (document: LibraryDocument) => void;
 }) {
   const [deleting, setDeleting] = useState(false);
+  const [editing, setEditing] = useState(false);
   const locale = getLocale();
   const dates = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" });
   const openable = OPENABLE.has(document.status);
@@ -94,6 +100,7 @@ export function DocumentRow({
               {note}
             </p>
           )}
+          {openable && <Facts document={document} />}
           <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground @2xl:hidden">
             <StatusPill status={document.status} />
             {formatSize(document.size_bytes, locale)}
@@ -130,6 +137,16 @@ export function DocumentRow({
         </a>
         {canWrite && (
           <IconButton
+            label={`${m.library_edit_info()}: ${document.title}`}
+            onClick={() => {
+              setEditing(true);
+            }}
+          >
+            <PencilSimpleIcon aria-hidden="true" />
+          </IconButton>
+        )}
+        {canWrite && (
+          <IconButton
             className="hover:text-destructive"
             label={`${m.library_delete()}: ${document.title}`}
             onClick={() => {
@@ -141,6 +158,16 @@ export function DocumentRow({
         )}
       </div>
       {canWrite && (
+        <MetadataDialog
+          document={document}
+          open={editing}
+          listKey={listKey}
+          onClose={() => {
+            setEditing(false);
+          }}
+        />
+      )}
+      {canWrite && (
         <DeleteDialog
           open={deleting}
           document={document}
@@ -151,6 +178,52 @@ export function DocumentRow({
         />
       )}
     </li>
+  );
+}
+
+/** A document's kind, date, number and tags under its name; that none was found, once it
+ * has been read. */
+function Facts({ document }: { document: LibraryDocument }) {
+  const locale = getLocale();
+  const date =
+    document.document_date != null
+      ? new Intl.DateTimeFormat(locale, { dateStyle: "long", timeZone: "UTC" }).format(
+          new Date(`${document.document_date}T00:00:00Z`),
+        )
+      : null;
+  const tags = document.tags ?? [];
+  if (document.kind == null && date === null && document.reference == null && tags.length === 0) {
+    return <p className="mt-0.5 text-xs text-muted-foreground italic">{m.library_no_facts()}</p>;
+  }
+  return (
+    <p className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-subtle-foreground">
+      {document.kind != null && (
+        <span className="inline-flex items-center gap-1">
+          <StackIcon className="size-3.5 text-muted-foreground" aria-hidden="true" />
+          {document.kind}
+        </span>
+      )}
+      {date !== null && (
+        <span className="inline-flex items-center gap-1">
+          <CalendarBlankIcon className="size-3.5 text-muted-foreground" aria-hidden="true" />
+          {date}
+        </span>
+      )}
+      {document.reference != null && (
+        <span className="inline-flex items-center gap-1">
+          <HashIcon className="size-3.5 text-muted-foreground" aria-hidden="true" />
+          {document.reference}
+        </span>
+      )}
+      {tags.map((tag) => (
+        <span
+          key={tag}
+          className="rounded-full bg-secondary px-2 py-px text-[11.5px] font-medium text-secondary-foreground"
+        >
+          {tag}
+        </span>
+      ))}
+    </p>
   );
 }
 

@@ -24,6 +24,22 @@ export interface LibraryDocument {
   media_type: string;
   size_bytes: number;
   updated_at: string;
+  // Suggested from the document when it was read, or set by a person.
+  kind?: string | null;
+  document_date?: string | null;
+  reference?: string | null;
+  tags?: string[];
+  // Which of kind, document_date and reference a person set; the others were suggested.
+  set_by_hand?: string[];
+}
+
+/** What a person changes of a document's details; null clears a kind, date or number. */
+export interface MetadataChange {
+  title?: string;
+  kind?: string | null;
+  document_date?: string | null;
+  reference?: string | null;
+  tags?: string[];
 }
 
 export interface DocumentVersion {
@@ -54,6 +70,8 @@ export const libraryApi = {
       file,
     ),
   remove: (documentId: string) => apiRequest<undefined>("DELETE", `/api/documents/${documentId}`),
+  updateMetadata: (documentId: string, changes: MetadataChange) =>
+    apiRequest<undefined>("PATCH", `/api/documents/${documentId}`, changes),
   fileUrl: (documentId: string, version: number) =>
     `/api/documents/${documentId}/versions/${String(version)}/file`,
 };

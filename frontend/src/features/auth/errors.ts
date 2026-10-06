@@ -31,6 +31,8 @@ export function errorMessage(error: unknown): string {
       return m.error_password_too_long();
     case "password_contains_context":
       return m.error_password_contains_context();
+    case "invalid_metadata":
+      return m.error_invalid_metadata();
     case "file_too_large":
       return m.error_file_too_large();
     case "unknown_type":
