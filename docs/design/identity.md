@@ -7,9 +7,9 @@ Status: implemented, 2026-09-28. Decision record: [ADR 0006](../adr/0006-authent
 ```mermaid
 stateDiagram-v2
     [*] --> Password: POST /api/auth/login
-    Password --> full: member, editor, auditor without a second factor
+    Password --> full: a role not asked for a second factor, without one
     Password --> pending_mfa: account has TOTP or a passkey
-    Password --> enroll_mfa: admin without a second factor
+    Password --> enroll_mfa: admin, or a role the organisation asks, without a second factor
     pending_mfa --> full: POST /api/auth/mfa/verify (TOTP or recovery code) or /mfa/passkey
     enroll_mfa --> full: TOTP enroll and confirm, or register a passkey
     full --> [*]: POST /api/auth/logout, idle or absolute expiry
@@ -136,6 +136,10 @@ Audit actions: `identity.password.change` (success and failure) and `identity.se
 - Neither reset works on the administrator's own account (409 `own_account`): there the current password is required, so a stolen administrator session alone cannot take the account over. The web page does not offer them on one's own row.
 
 Audit actions: `identity.user.create` (with `via: admin` or `cli`), `identity.user.update` (with the old and new values), `identity.password.reset` and `identity.mfa.reset`.
+
+## The organisation's second-factor policy
+
+Administrators always sign in with a second factor. An administrator may ask it of other roles too: `PUT /api/admin/settings` with `{"mfa_required_roles": ["editor", "member", "auditor"]}` (any of them; permission `settings.manage`). An account of such a role without a second factor then gets `enroll_mfa` at its next sign-in, as an administrator does; one with a second factor is asked for it as before. A session already open stays as it is until it ends. The settings are one row per tenant (`tenant_settings`, migration 0025), validated by [organization/settings.py](../../backend/src/synapse/organization/settings.py): an unknown key, or `admin` in the list, is refused (422), and every change is audited (`org.settings.change`, with the keys changed and their new values). Tested by [tests/db/test_organization.py](../../backend/tests/db/test_organization.py).
 
 ## Audit
 

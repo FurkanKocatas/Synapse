@@ -22,6 +22,7 @@ from synapse.api import (
     operations_routes,
     passkey_routes,
     search_routes,
+    settings_routes,
 )
 from synapse.api.deps import ApiError, public_endpoint
 from synapse.chat.public import Answerer, Conversations
@@ -42,6 +43,7 @@ from synapse.kernel.secrets import read_key
 from synapse.knowledge.public import DocumentService, LocalBlobStore, Search
 from synapse.models.public import Models, models_from
 from synapse.operations.public import Operations
+from synapse.organization.public import SettingsService
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
@@ -104,6 +106,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(search_routes.router)
     app.include_router(chat_routes.router)
     app.include_router(operations_routes.router)
+    app.include_router(settings_routes.router)
 
     @app.exception_handler(ApiError)
     async def api_error(_: Request, error: ApiError) -> JSONResponse:
@@ -215,6 +218,7 @@ def _attach_services(app: FastAPI, settings: Settings, database: Database, model
     app.state.classic_chat = settings.chat_classic
     app.state.accounts = AccountService(database, tenant_id=tenant_id)
     app.state.profile = ProfileService(database, tenant_id=tenant_id)
+    app.state.organization = SettingsService(database, tenant_id=tenant_id)
     app.state.operations = Operations(
         database,
         tenant_id=tenant_id,

@@ -3,8 +3,9 @@
 Flow:
 
 1. ``login`` checks the password. On success it creates a session whose level depends on the
-   account: ``pending_mfa`` if a second factor is set up, ``enroll_mfa`` if the account is an
-   admin without one (admins must have MFA), otherwise ``full``.
+   account: ``pending_mfa`` if a second factor is set up, ``enroll_mfa`` if the account's role
+   must use one and it has none (administrators always; other roles when the organisation's
+   settings ask it), otherwise ``full``.
 2. ``complete_mfa`` or ``confirm_totp_enrollment`` raise the session to ``full``. The session
    token is replaced at that moment, so a token captured before the second factor is useless.
 3. ``authenticate`` resolves the cookie token on every request and enforces expiry.
@@ -184,7 +185,7 @@ class IdentityService:
             level: AuthLevel
             if await repository.has_second_factor(connection, user.id):
                 level, lifetime = "pending_mfa", PENDING_MFA_LIFETIME
-            elif user.role == "admin":
+            elif user.role in await repository.mfa_roles(connection):
                 level, lifetime = "enroll_mfa", ENROLL_MFA_LIFETIME
             else:
                 level, lifetime = "full", self._policy.absolute_lifetime

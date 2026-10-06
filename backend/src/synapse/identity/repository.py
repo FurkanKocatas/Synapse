@@ -238,6 +238,19 @@ async def revoke_user_sessions(
 # Second factors: TOTP, passkeys and recovery codes
 
 
+# Administrators always sign in with a second factor (ADR 0006); the organisation may ask it
+# of other roles too (``mfa_required_roles`` in tenant_settings, synapse.organization).
+ALWAYS_MFA: frozenset[str] = frozenset({"admin"})
+
+
+async def mfa_roles(connection: AsyncConnection) -> frozenset[str]:
+    """The roles that must sign in with a second factor."""
+    cursor = await connection.execute("SELECT settings->'mfa_required_roles' FROM tenant_settings")
+    row = await cursor.fetchone()
+    chosen = row[0] if row is not None and isinstance(row[0], list) else []
+    return ALWAYS_MFA | frozenset(str(role) for role in chosen)
+
+
 async def has_second_factor(connection: AsyncConnection, user_id: UUID) -> bool:
     """A confirmed TOTP authenticator or a passkey (migration 0007)."""
     cursor = await connection.execute("SELECT user_has_second_factor(%s)", (user_id,))
