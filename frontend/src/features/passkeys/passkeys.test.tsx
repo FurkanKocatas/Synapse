@@ -61,6 +61,7 @@ describe("passkeys", () => {
         return { status: 200, body: { challenge: "abc", rpId: "synapse.test" } };
       }
       if (call.path === "/api/conversations?mode=corporate") return { status: 200, body: [] };
+      if (call.path === "/api/collections") return { status: 200, body: [] };
       level = "full";
       return { status: 200, body: { auth_level: "full", csrf_token: "c2", user: null } };
     });

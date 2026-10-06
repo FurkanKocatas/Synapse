@@ -21,6 +21,7 @@ import { getLocale } from "@/paraglide/runtime.js";
 
 import { CHAT_PATH, chatApi, conversationsKey, type ChatMode } from "./chatApi";
 import { Composer } from "./Composer";
+import type { ChatScope } from "./scope";
 
 const EXAMPLES: Record<ChatMode, [() => string, Icon][]> = {
   corporate: [
@@ -64,6 +65,8 @@ export function Welcome({
   focusKey,
   onAsk,
   onStop,
+  scope,
+  onScope,
 }: {
   mode: ChatMode;
   name: string;
@@ -71,6 +74,8 @@ export function Welcome({
   focusKey: unknown;
   onAsk: (question: string) => void;
   onStop: () => void;
+  scope?: ChatScope;
+  onScope?: (scope: ChatScope) => void;
 }) {
   // The hour is read once, when the page opens; the greeting does not change under the user.
   const [now] = useState(() => Date.now());
@@ -96,6 +101,8 @@ export function Welcome({
             focusKey={focusKey}
             onAsk={onAsk}
             onStop={onStop}
+            scope={scope}
+            onScope={onScope}
           />
         </div>
 

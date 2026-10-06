@@ -10,6 +10,8 @@ export interface LibraryCollection {
   parent_id: string | null;
   name: string;
   can_write: boolean;
+  // The documents directly in it the user may read.
+  document_count?: number;
 }
 
 export interface LibraryDocument {

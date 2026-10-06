@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { errorMessage } from "@/features/auth/errors";
 
 import { chatApi, type ChatEvent, type ChatMode, type FinalAnswer, type Source } from "./chatApi";
+import type { ChatScope } from "./scope";
 
 export interface LiveTurn {
   question: string;
@@ -24,12 +25,19 @@ export interface LiveTurn {
   // A sentence for the user when the request itself failed.
   error: string | null;
   cancelled: boolean;
+  // Where it searches; null: everything the user may read.
+  scope: ChatScope | null;
 }
 
-export function started(question: string, conversationId: string | null): LiveTurn {
+export function started(
+  question: string,
+  conversationId: string | null,
+  scope: ChatScope | null = null,
+): LiveTurn {
   return {
     question,
     conversationId,
+    scope,
     ordinal: null,
     rewritten: null,
     sources: null,
@@ -88,13 +96,22 @@ export function useLiveTurn(callbacks: {
   const [turn, setTurn] = useState<LiveTurn | null>(null);
   const controller = useRef<AbortController | null>(null);
 
-  async function ask(question: string, conversationId: string | null, mode: ChatMode) {
+  /** ``scope`` is where the question is searched; ``send`` whether to tell the server (a
+   * choice made on this page), or let the conversation keep its own. */
+  async function ask(
+    question: string,
+    conversationId: string | null,
+    mode: ChatMode,
+    scope: ChatScope | null = null,
+    send = false,
+  ) {
     const abort = new AbortController();
     controller.current = abort;
-    let current = started(question, conversationId);
+    let current = started(question, conversationId, scope);
     setTurn(current);
+    const told = send && scope !== null ? scope : undefined;
     try {
-      for await (const event of chatApi.ask(question, conversationId, mode, abort.signal)) {
+      for await (const event of chatApi.ask(question, conversationId, mode, abort.signal, told)) {
         current = advance(current, event);
         setTurn(current);
         if (event.event === "turn") callbacks.onTurn(event.data.conversation_id);

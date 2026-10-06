@@ -2,6 +2,7 @@
 
 import { apiRequest, apiStream } from "@/lib/api";
 
+import type { ChatScope } from "./scope";
 import { serverEvents } from "./sse";
 
 export interface Source {
@@ -66,6 +67,8 @@ export interface StoredTurn {
   feedback: Feedback | null;
   created_at: string;
   kind: AnswerKind;
+  // Where the turn searched; absent or empty: everything the user could read.
+  scope?: ChatScope;
 }
 
 export interface ConversationSummary {
@@ -80,6 +83,8 @@ export interface Conversation {
   title: string;
   turns: StoredTurn[];
   mode: ChatMode;
+  // Where its next questions are searched.
+  scope?: ChatScope;
 }
 
 /** What the chat endpoint streams, in order (backend/src/synapse/api/chat_routes.py). */
@@ -116,12 +121,15 @@ export const chatApi = {
     apiRequest<undefined>("PUT", `/api/conversations/${id}/turns/${String(ordinal)}/feedback`, {
       kind,
     }),
-  /** The events of one question; aborting ``signal`` cancels the answer on the server too. */
+  /** The events of one question; aborting ``signal`` cancels the answer on the server too.
+   * ``scope``, when given, is where this question and the conversation's next ones are
+   * searched; without it the conversation keeps its own. */
   async *ask(
     question: string,
     conversationId: string | null,
     mode: ChatMode,
     signal: AbortSignal,
+    scope?: ChatScope,
   ): AsyncGenerator<ChatEvent, void, undefined> {
     const body = await apiStream(
       "/api/chat",
@@ -130,6 +138,7 @@ export const chatApi = {
         mode,
         now: localNow(),
         ...(conversationId === null ? {} : { conversation_id: conversationId }),
+        ...(scope === undefined ? {} : { scope }),
       },
       signal,
     );

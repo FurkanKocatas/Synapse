@@ -5,24 +5,31 @@ import { Label } from "@/components/ui/label";
 import { m } from "@/paraglide/messages.js";
 
 import type { ChatMode } from "./chatApi";
+import type { ChatScope } from "./scope";
+import { ScopePicker } from "./ScopePicker";
 
 const MAX_QUESTION = 1000;
 const MAX_HEIGHT = 200;
 
 /** The box to ask in. Enter sends, Shift and Enter makes a new line; while an answer is
- * being written the send button stops it. ``focusKey`` puts the cursor back when it changes. */
+ * being written the send button stops it. ``focusKey`` puts the cursor back when it changes.
+ * Under it, where the question is searched: with ``onScope``, a button to choose it. */
 export function Composer({
   mode = "corporate",
   running,
   onAsk,
   onStop,
   focusKey,
+  scope,
+  onScope,
 }: {
   mode?: ChatMode;
   running: boolean;
   onAsk: (question: string) => void;
   onStop: () => void;
   focusKey?: unknown;
+  scope?: ChatScope | undefined;
+  onScope?: ((scope: ChatScope) => void) | undefined;
 }) {
   const [question, setQuestion] = useState("");
   const box = useRef<HTMLTextAreaElement>(null);
@@ -75,19 +82,23 @@ export function Composer({
           className="block max-h-[200px] min-h-14 w-full resize-none bg-transparent px-5 pt-4 pb-1.5 text-base leading-normal outline-none placeholder:text-muted-foreground"
         />
         <div className="flex items-center gap-2 px-2 pb-2 pl-2.5">
-          <span
-            title={mode === "classic" ? m.chat_classic_scope_hint() : m.chat_scope_hint()}
-            className="inline-flex h-7 min-w-0 items-center gap-1.5 rounded-lg px-1.5 text-xs text-subtle-foreground"
-          >
-            {mode === "classic" ? (
-              <ChatCircleDotsIcon className="size-3.5 shrink-0" aria-hidden="true" />
-            ) : (
-              <LockSimpleIcon className="size-3.5 shrink-0" aria-hidden="true" />
-            )}
-            <span className="truncate">
-              {mode === "classic" ? m.chat_classic_scope() : m.chat_scope()}
+          {mode === "corporate" && scope !== undefined && onScope !== undefined ? (
+            <ScopePicker value={scope} onChange={onScope} />
+          ) : (
+            <span
+              title={mode === "classic" ? m.chat_classic_scope_hint() : m.chat_scope_hint()}
+              className="inline-flex h-7 min-w-0 items-center gap-1.5 rounded-lg px-1.5 text-xs text-subtle-foreground"
+            >
+              {mode === "classic" ? (
+                <ChatCircleDotsIcon className="size-3.5 shrink-0" aria-hidden="true" />
+              ) : (
+                <LockSimpleIcon className="size-3.5 shrink-0" aria-hidden="true" />
+              )}
+              <span className="truncate">
+                {mode === "classic" ? m.chat_classic_scope() : m.chat_scope()}
+              </span>
             </span>
-          </span>
+          )}
           <span className="flex-1" />
           {running ? (
             <button

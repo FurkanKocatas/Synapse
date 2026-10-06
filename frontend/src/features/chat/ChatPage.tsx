@@ -16,6 +16,7 @@ import {
   type Source,
 } from "./chatApi";
 import { Composer } from "./Composer";
+import { EVERYTHING, type ChatScope } from "./scope";
 import { ConversationActions } from "./ConversationActions";
 import { DocumentViewer } from "./DocumentViewer";
 import { fromLive, fromStored, TurnView } from "./TurnView";
@@ -60,6 +61,10 @@ export function ChatPage({ mode = "corporate" }: { mode?: ChatMode }) {
     },
   });
   const [viewing, setViewing] = useState<Source | null>(null);
+  // Where the next question is searched, when chosen on this page; otherwise the
+  // conversation's own scope, everything for a new one.
+  const [chosenScope, setChosenScope] = useState<ChatScope | null>(null);
+  const scope = chosenScope ?? conversation.data?.scope ?? EVERYTHING;
   const running = isRunning(live.turn);
   const scroller = useRef<HTMLDivElement>(null);
   // Whether the reader is at the end of the conversation, so a growing answer keeps in view.
@@ -72,6 +77,10 @@ export function ChatPage({ mode = "corporate" }: { mode?: ChatMode }) {
   if (shownPlace !== place) {
     setShownPlace(place);
     setViewing(null);
+    // A conversation opened from the navigation keeps its own scope; a new one starts with
+    // everything. Asking in a new conversation only gives it an id: the choice stays.
+    const asked = live.turn !== null && live.turn.conversationId === (conversationId ?? null);
+    if (!asked) setChosenScope(null);
   }
   const leave = useEffectEvent((startOver: boolean) => {
     const turn = live.turn;
@@ -93,7 +102,7 @@ export function ChatPage({ mode = "corporate" }: { mode?: ChatMode }) {
 
   function ask(question: string) {
     pinned.current = true;
-    void live.ask(question, conversationId ?? null, mode);
+    void live.ask(question, conversationId ?? null, mode, scope, chosenScope !== null);
   }
 
   const stored = conversation.data?.turns ?? [];
@@ -140,6 +149,8 @@ export function ChatPage({ mode = "corporate" }: { mode?: ChatMode }) {
           focusKey={fresh}
           onAsk={ask}
           onStop={live.stop}
+          scope={scope}
+          onScope={setChosenScope}
         />
       ) : (
         <>
@@ -179,6 +190,8 @@ export function ChatPage({ mode = "corporate" }: { mode?: ChatMode }) {
               focusKey={conversationId}
               onAsk={ask}
               onStop={live.stop}
+              scope={scope}
+              onScope={setChosenScope}
             />
           </div>
         </>

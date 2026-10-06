@@ -3,6 +3,7 @@ import {
   CheckCircleIcon,
   CircleIcon,
   CircleNotchIcon,
+  FunnelSimpleIcon,
   InfoIcon,
   MagnifyingGlassIcon,
   StopCircleIcon,
@@ -21,6 +22,7 @@ import { m } from "@/paraglide/messages.js";
 import type { AnswerKind, ChatMode, Feedback, Source, StoredTurn, TurnStatus } from "./chatApi";
 import { AnswerActions } from "./Feedback";
 import { Markdown } from "./Markdown";
+import { isEverything, scopeLabel, useScopeNames, type ChatScope } from "./scope";
 import { AnswerText, SourceRow } from "./Sources";
 import { isRunning, type LiveTurn } from "./useLiveTurn";
 
@@ -47,6 +49,8 @@ export interface ShownTurn {
   error: string | null;
   live: boolean;
   kind: AnswerKind;
+  // Where it searched; null: everything the user could read.
+  scope: ChatScope | null;
 }
 
 export function fromStored(turn: StoredTurn): ShownTurn {
@@ -65,6 +69,7 @@ export function fromStored(turn: StoredTurn): ShownTurn {
     error: null,
     live: false,
     kind: turn.kind,
+    scope: turn.scope ?? null,
   };
 }
 
@@ -105,7 +110,19 @@ export function fromLive(turn: LiveTurn, mode: ChatMode = "corporate"): ShownTur
     error: turn.error,
     live: true,
     kind: turn.answer?.kind ?? "documents",
+    scope: mode === "classic" ? null : turn.scope,
   };
+}
+
+/** Where a question was searched, when it was not everything the user could read. */
+function Searched({ scope }: { scope: ChatScope }) {
+  const { names, titles } = useScopeNames();
+  return (
+    <p className="mt-1.5 flex items-center gap-1.5 text-[13px] text-muted-foreground">
+      <FunnelSimpleIcon className="size-3.5 shrink-0" aria-hidden="true" />
+      {m.chat_scope_searched({ scope: scopeLabel(scope, names, titles) })}
+    </p>
+  );
 }
 
 const WARNINGS: Record<string, () => string> = {
@@ -143,6 +160,7 @@ export function TurnView({
       >
         {turn.question}
       </h2>
+      {!isEverything(turn.scope) && turn.scope !== null && <Searched scope={turn.scope} />}
       {turn.rewritten !== null && (
         <p className="mt-1.5 flex animate-arrive items-center gap-1.5 text-[13px] text-muted-foreground">
           <MagnifyingGlassIcon className="size-3.5 shrink-0" aria-hidden="true" />
