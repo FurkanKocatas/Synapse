@@ -44,6 +44,7 @@ describe("adminAreas", () => {
       grants: true,
       audit: false,
       operations: true,
+      settings: true,
     });
     expect(adminAreas("editor")).toEqual({
       users: false,
@@ -52,6 +53,7 @@ describe("adminAreas", () => {
       grants: false,
       audit: false,
       operations: false,
+      settings: false,
     });
     expect(adminAreas("member")).toEqual({
       users: false,
@@ -60,6 +62,7 @@ describe("adminAreas", () => {
       grants: false,
       audit: false,
       operations: false,
+      settings: false,
     });
     expect(adminAreas("auditor").audit).toBe(true);
   });
@@ -202,8 +205,8 @@ describe("administration panel", () => {
     expect(screen.getByText(m.admin_attention_disabled({ count: "1" }))).toBeInTheDocument();
     expect(screen.getByText(m.admin_attention_empty_groups({ count: "1" }))).toBeInTheDocument();
     const tabs = screen.getByRole("navigation", { name: m.nav_admin() });
-    // overview, users, groups, collections and the system page
-    expect(within(tabs).getAllByRole("link")).toHaveLength(5);
+    // overview, users, groups, collections, the system page and the settings
+    expect(within(tabs).getAllByRole("link")).toHaveLength(6);
   });
 
   it("is not in the navigation of a role without administration", async () => {

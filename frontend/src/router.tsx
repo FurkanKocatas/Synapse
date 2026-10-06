@@ -15,6 +15,7 @@ import { AdminOverview } from "@/features/admin/AdminOverview";
 import { adminAreas, hasAdministration } from "@/features/admin/adminApi";
 import { CollectionsPage } from "@/features/admin/CollectionsPage";
 import { GroupsPage } from "@/features/admin/GroupsPage";
+import { SettingsPage } from "@/features/admin/SettingsPage";
 import { SystemPage } from "@/features/admin/SystemPage";
 import { UsersPage } from "@/features/admin/UsersPage";
 import { EnrollPage } from "@/features/auth/EnrollPage";
@@ -119,6 +120,12 @@ const signedIn = [
     path: "/admin/system",
     beforeLoad: adminGuard("operations"),
     component: SystemPage,
+  }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: "/admin/settings",
+    beforeLoad: adminGuard("settings"),
+    component: SettingsPage,
   }),
 ];
 

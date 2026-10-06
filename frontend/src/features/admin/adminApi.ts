@@ -87,6 +87,19 @@ export interface Operations {
   problems: Record<string, number>;
 }
 
+// Roles an administrator may ask to sign in with a second step; administrators always must.
+export type MfaRole = "editor" | "member" | "auditor";
+export const MFA_ROLES: readonly MfaRole[] = ["editor", "member", "auditor"];
+
+/** The organisation's settings (backend/src/synapse/organization/settings.py). */
+export interface OrganizationSettings {
+  mfa_required_roles: MfaRole[];
+  // Groups of words that mean the same, searched for together.
+  synonyms: string[][];
+}
+
+export const SETTINGS_KEY = ["admin", "settings"];
+
 export interface Retried {
   reprocessing: number;
   embedding: number;
@@ -133,6 +146,10 @@ export const adminApi = {
   auditStatus: () => apiRequest<AuditStatus>("GET", "/api/audit/status"),
 
   operations: () => apiRequest<Operations>("GET", "/api/admin/operations"),
+  settings: () => apiRequest<OrganizationSettings>("GET", "/api/admin/settings"),
+  // Only the settings sent change.
+  changeSettings: (changes: Partial<OrganizationSettings>) =>
+    apiRequest<OrganizationSettings>("PATCH", "/api/admin/settings", changes),
   retryProcessing: () => apiRequest<Retried>("POST", "/api/admin/operations/retry"),
 };
 
@@ -145,6 +162,7 @@ export function adminAreas(role: Role | undefined) {
     grants: role === "admin",
     audit: role === "auditor",
     operations: role === "admin",
+    settings: role === "admin",
   };
 }
 
