@@ -160,7 +160,9 @@ services:
       <<: *db-env
       SYNAPSE_DB_USER: synapse_scheduler
       SYNAPSE_DB_PASSWORD_FILE: /run/secrets/db_synapse_scheduler
-    secrets: [db_synapse_scheduler]
+      SYNAPSE_AUDIT_SIGNING_KEY_FILE: /run/secrets/audit_signing_key
+    # It signs the audit checkpoints.
+    secrets: [db_synapse_scheduler, audit_signing_key]
     # It removes the files of purged documents.
     volumes: [blobs:/var/lib/synapse/blobs]
     depends_on:

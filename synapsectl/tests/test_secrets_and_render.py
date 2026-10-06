@@ -74,7 +74,7 @@ def test_the_tenant_and_tier_are_applied(config: SynapseConfig) -> None:
     # besides the API, only the scheduler writes them: it removes purged documents' files
     assert services["scheduler"]["volumes"] == ["blobs:/var/lib/synapse/blobs"]
     assert services["scheduler"]["environment"]["SYNAPSE_DB_USER"] == "synapse_scheduler"
-    assert services["scheduler"]["secrets"] == ["db_synapse_scheduler"]
+    assert services["scheduler"]["secrets"] == ["db_synapse_scheduler", "audit_signing_key"]
     assert services["db"]["mem_limit"] == "2560m"
     big = render.compose(config.model_copy(update={"hardware": Tier.CPU_32}))["services"]
     assert big["db"]["mem_limit"] == "6g"

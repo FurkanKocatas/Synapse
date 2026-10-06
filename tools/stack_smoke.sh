@@ -186,6 +186,8 @@ grep -q "Karar 2026/35 kabul edildi" <<<"$read_back"
 grep -q "15.03.2026" <<<"$read_back"
 
 step "Delete a document and wait for the scheduler to purge it"
+# The scheduler started with its schedules, the audit checkpoints among them.
+stack logs --no-color scheduler | grep '"scheduler.started"' | grep -q '"audit.checkpoint"'
 uv run --directory backend python -c   "import sys; from tests.knowledge_samples import pdf; sys.stdout.buffer.write(pdf('Karar 2026/37 kabul edildi.'))"   > "$sample.doomed"
 doomed="$(editor -H 'Content-Type: application/octet-stream' --data-binary "@$sample.doomed"   -X POST "$base/api/collections/$collection/documents?filename=Karar%202026-37.pdf" | json "['id']")"
 rm -f "$sample.doomed"

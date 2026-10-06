@@ -30,7 +30,7 @@ Keep a copy of `/etc/synapse/secrets/backup_password` away from the machine (a p
 | `synapsectl backup init` | Creates the backup password if it is missing, renders the files again with the backup containers, and sets up the repository unless it exists |
 | `synapsectl backup` | Dumps the database, writes the manifest, copies the dump, the configuration and the uploaded files into a snapshot, then forgets and prunes what the retention no longer keeps |
 | `synapsectl backup list` | This installation's snapshots |
-| `synapsectl backup verify [--snapshot ID]` | Restores the dump into the scratch database `synapse_drill`, compares every table's rows with the manifest, drops it, and has restic read 5% of the data back |
+| `synapsectl backup verify [--snapshot ID]` | Restores the dump into the scratch database `synapse_drill`, compares every table's rows with the manifest, checks that the live audit log still holds the backup's last audit event with the same hash ([audit.md](audit.md)), drops it, and has restic read 5% of the data back |
 | `synapsectl restore [--snapshot ID] [--replace] [--yes]` | Replaces the database and the uploaded files with a snapshot's; asks for the installation's slug unless `--yes` |
 | `synapsectl restore --configuration-from REPO --password-file F` | On a new machine: writes `synapse.toml` and the secrets from the latest snapshot; never overwrites |
 

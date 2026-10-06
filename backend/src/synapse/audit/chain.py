@@ -48,6 +48,8 @@ class VerificationResult:
     ok: bool
     events_checked: int
     problem: str | None = None
+    # Signed checkpoints compared with the chain (synapse audit verify, with the signing key).
+    checkpoints_checked: int = 0
 
 
 def _timestamp(moment: datetime) -> str:

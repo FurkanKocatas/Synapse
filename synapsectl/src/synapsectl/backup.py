@@ -16,7 +16,10 @@ they come with the release.
 Restoring needs the same image version that took the backup (upgrade afterwards), and replaces
 the database and the files; ``synapsectl apply`` then starts the services. A verification
 restores the latest dump into a scratch database, compares every table's rows with the
-manifest, drops it, and has restic read a sample of the repository's data back.
+manifest, checks that the live audit log still holds the backup's last event unchanged (each
+event's hash covers the one before it, so this one comparison covers the whole chain up to the
+backup: a rewrite since is found with the backup as the witness), drops it, and has restic read
+a sample of the repository's data back.
 
 Docker is called through the same runner as ``apply``, so tests check the exact commands.
 """
@@ -262,6 +265,7 @@ def verify(
                 *("--single-transaction", "--exit-on-error", f"{DATA}/{DUMP}"),
             )
             _compare_rows(manifest, _rows(stack, DRILL_DATABASE))
+            _compare_audit(stack, config, manifest)
         finally:
             stack.psql(
                 "Drop the scratch database",
@@ -603,6 +607,32 @@ def _compare_rows(manifest: Manifest, restored: dict[str, int]) -> None:
     if differences:
         raise BackupError(
             "the restored database differs from the backup: " + "; ".join(differences)
+        )
+
+
+def _compare_audit(stack: Stack, config: SynapseConfig, manifest: Manifest) -> None:
+    """The backup's last audit event must still be in the live chain, with the same hash."""
+    tenant = config.instance.tenant_id  # a UUID: safe in the statement
+    last = stack.psql(
+        "Read the backup's last audit event",
+        DRILL_DATABASE,
+        "SELECT seq || '|' || encode(hash, 'hex') FROM synapse.audit_events "  # noqa: S608
+        f"WHERE tenant_id = '{tenant}' ORDER BY seq DESC LIMIT 1",
+    ).strip()
+    if not last:
+        return
+    seq, digest = last.split("|")
+    live = stack.psql(
+        "Find it in the live audit log",
+        DATABASE,
+        "SELECT encode(hash, 'hex') FROM synapse.audit_events "  # noqa: S608
+        f"WHERE tenant_id = '{tenant}' AND seq = {int(seq)}",
+    ).strip()
+    if live != digest:
+        change = "is missing from" if not live else "differs in"
+        raise BackupError(
+            f"audit event {seq} of the backup of {manifest.created} {change} the live audit "
+            "log: the log was rewritten since, or an older backup was restored"
         )
 
 

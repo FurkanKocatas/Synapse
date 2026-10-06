@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from synapse import scheduler_cli
+from synapse.audit import public as audit
 from synapse.jobs.queue import enqueue
 from synapse.kernel.config import Settings
 from synapse.kernel.database import Database
@@ -44,7 +45,11 @@ def editor(world: World) -> Iterator[TestClient]:
 def scheduler(world: World, test_database: TestDatabase) -> Settings:
     role = test_database.settings("synapse_scheduler")
     return world.worker.model_copy(
-        update={"db_user": role.user, "db_password_file": role.password_file}
+        update={
+            "db_user": role.user,
+            "db_password_file": role.password_file,
+            "audit_signing_key_file": test_database.secrets_dir / "audit_signing_key",
+        }
     )
 
 
@@ -252,9 +257,46 @@ def test_bytes_stored_again_after_a_purge_keep_their_file(
     assert response.content == data
 
 
-def test_the_scheduler_needs_its_tenant(scheduler: Settings) -> None:
+def test_the_scheduler_needs_its_tenant_and_its_signing_key(
+    scheduler: Settings, tmp_path: Path
+) -> None:
     with pytest.raises(scheduler_cli.SchedulerError, match="SYNAPSE_TENANT_ID"):
         asyncio.run(scheduler_cli.run(scheduler.model_copy(update={"tenant_id": None}), once=True))
+    without_key = scheduler.model_copy(update={"audit_signing_key_file": tmp_path / "missing"})
+    with pytest.raises(scheduler_cli.SchedulerError, match="audit signing key"):
+        asyncio.run(scheduler_cli.run(without_key, once=True))
+
+
+def test_the_scheduler_signs_the_audit_head_once_it_has_moved(
+    world: World, scheduler: Settings, editor: TestClient
+) -> None:
+    upload(editor, samples.word(), "signed.docx")  # an audited action moves the head
+
+    async def checkpoint() -> None:
+        database = Database(scheduler.database(application_name="synapse-tests"), max_size=1)
+        await database.open()
+        try:
+            key = audit.load_signing_key(scheduler.audit_signing_key_file)
+            assert scheduler.tenant_id is not None
+            task = scheduler_cli.checkpoint_task(database, key)
+            assert task.cron == scheduler_cli.CHECKPOINT_CRON
+            await task.run(scheduler.tenant_id, {})
+            await task.run(scheduler.tenant_id, {})  # the head has not moved since
+        finally:
+            await database.close()
+
+    asyncio.run(checkpoint())
+    rows = world.db.execute(
+        "SELECT c.seq, e.seq FROM synapse.audit_checkpoints c "
+        "LEFT JOIN synapse.audit_events e ON e.tenant_id = c.tenant_id AND e.seq = c.seq "
+        "WHERE c.tenant_id = %s",
+        (world.tenant_id,),
+    ).fetchall()
+    head = world.db.execute(
+        "SELECT max(seq) FROM synapse.audit_events WHERE tenant_id = %s", (world.tenant_id,)
+    ).fetchone()
+    assert head is not None
+    assert rows == [(head[0], head[0])]
 
 
 def test_a_purge_of_a_document_that_is_gone_succeeds(world: World, scheduler: Settings) -> None:

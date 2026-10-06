@@ -2,15 +2,17 @@
 
 import asyncio
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
+from uuid import UUID
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from psycopg import AsyncConnection
 
 from synapse.audit import public as audit
 from synapse.kernel.config import Settings
 from synapse.kernel.database import Database
-from synapse.kernel.secrets import read_key
+from synapse.kernel.secrets import SecretError
 
 
 class AuditCommandError(RuntimeError):
@@ -27,15 +29,37 @@ async def _with_tenant_connection(settings: Settings, action: str) -> str:
         async with database.tenant_transaction(tenant_id) as connection:
             if action == "verify":
                 result = await audit.verify(connection, tenant_id)
+                if result.ok:
+                    result = await _with_checkpoints(connection, tenant_id, settings, result)
                 return json.dumps(asdict(result))
             head = await audit.head(connection, tenant_id)
     finally:
         await database.close()
     if head is None:
         raise AuditCommandError("the audit log is empty; there is nothing to sign")
-    key = Ed25519PrivateKey.from_private_bytes(read_key(settings.audit_signing_key_file))
-    checkpoint = audit.sign_head(key, head, datetime.now(UTC))
+    checkpoint = audit.sign_head(signing_key(settings), head, datetime.now(UTC))
     return json.dumps(asdict(checkpoint))
+
+
+async def _with_checkpoints(
+    connection: AsyncConnection,
+    tenant_id: UUID,
+    settings: Settings,
+    result: audit.VerificationResult,
+) -> audit.VerificationResult:
+    """The chain is intact; are the kept checkpoints still its own?"""
+    public_key = signing_key(settings).public_key()
+    found = await audit.verify_checkpoints(connection, tenant_id, public_key)
+    return replace(
+        result, ok=found.problem is None, problem=found.problem, checkpoints_checked=found.checked
+    )
+
+
+def signing_key(settings: Settings) -> Ed25519PrivateKey:
+    try:
+        return audit.load_signing_key(settings.audit_signing_key_file)
+    except (SecretError, OSError) as error:
+        raise AuditCommandError(f"cannot read the audit signing key: {error}") from error
 
 
 def verify(settings: Settings) -> tuple[bool, str]:

@@ -230,8 +230,10 @@ def compose(config: SynapseConfig) -> dict[str, Any]:
                     "SYNAPSE_TENANT_ID": str(config.instance.tenant_id),
                     "SYNAPSE_DB_USER": "synapse_scheduler",
                     "SYNAPSE_DB_PASSWORD_FILE": "/run/secrets/db_synapse_scheduler",
+                    "SYNAPSE_AUDIT_SIGNING_KEY_FILE": "/run/secrets/audit_signing_key",
                 },
-                "secrets": ["db_synapse_scheduler"],
+                # It signs the audit checkpoints.
+                "secrets": ["db_synapse_scheduler", "audit_signing_key"],
                 # It removes the files of purged documents (knowledge/maintenance.py).
                 "volumes": ["blobs:/var/lib/synapse/blobs"],
                 "depends_on": {"migrate": {"condition": "service_completed_successfully"}},

@@ -323,9 +323,18 @@ def test_a_restore_whose_rows_differ_fails(setup: tuple[SynapseConfig, Path]) ->
     assert not any("--include /data/blobs" in command for command in docker.commands())
 
 
-def verify_answers(rows: str = ROWS) -> dict[str, tuple[int, str]]:
+PSQL = "--no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command"
+EVENT_HASH = "ab" * 32
+
+
+def verify_answers(rows: str = ROWS, live_hash: str = EVENT_HASH) -> dict[str, tuple[int, str]]:
     return {
         "run --rm -T restic snapshots": (0, json.dumps([{"id": SNAPSHOT}])),
+        f"run --rm -T pgtools psql --dbname=synapse_drill {PSQL} SELECT seq": (
+            0,
+            f"7|{EVENT_HASH}\n",
+        ),
+        f"run --rm -T pgtools psql --dbname=synapse {PSQL} SELECT encode": (0, f"{live_hash}\n"),
         "run --rm -T pgtools psql --dbname=synapse_drill": (0, rows),
     }
 
@@ -337,6 +346,15 @@ def test_a_verification_restores_into_a_scratch_database_and_drops_it(
     docker = ScriptedDocker(verify_answers(), restore_effects(config))
     backup.verify(config, run=docker, echo=quiet, now=lambda: NOW)
     commands = docker.commands()
+    tenant = str(config.instance.tenant_id)
+    last, same = commands[6:8]
+    assert last.startswith(f"run --rm -T pgtools psql --dbname=synapse_drill {PSQL} SELECT seq")
+    assert tenant in last
+    assert last.endswith("ORDER BY seq DESC LIMIT 1")
+    assert same.startswith(f"run --rm -T pgtools psql --dbname=synapse {PSQL} SELECT encode")
+    assert tenant in same
+    assert same.endswith("AND seq = 7")
+    commands[6:8] = ["the backup's last audit event", "the same event in the live audit log"]
     assert commands[2:] == [
         "run --rm -T pgtools psql --dbname=postgres --no-psqlrc --tuples-only --no-align "
         "--set=ON_ERROR_STOP=1 --command DROP DATABASE IF EXISTS synapse_drill WITH (FORCE)",
@@ -346,13 +364,29 @@ def test_a_verification_restores_into_a_scratch_database_and_drops_it(
         "--exit-on-error /backup/data/synapse.dump",
         "run --rm -T pgtools psql --dbname=synapse_drill --no-psqlrc --tuples-only --no-align "
         f"--set=ON_ERROR_STOP=1 --command {backup.COUNT_ROWS}",
+        "the backup's last audit event",
+        "the same event in the live audit log",
         "run --rm -T pgtools psql --dbname=postgres --no-psqlrc --tuples-only --no-align "
         "--set=ON_ERROR_STOP=1 --command DROP DATABASE IF EXISTS synapse_drill WITH (FORCE)",
         "run --rm -T restic check --read-data-subset=5%",
     ]
-    # the live database is never touched
-    assert not any("--dbname=synapse " in command for command in commands)
+    # the live database is only read, and only for that one audit event
+    assert [command for command in docker.commands() if "--dbname=synapse " in command] == [same]
     assert backup.read_status(config)["verify_ok"]["ok"]
+
+
+@pytest.mark.parametrize(
+    ("live_hash", "change"), [("cd" * 32, "differs in"), ("", "is missing from")]
+)
+def test_a_verification_finds_a_live_audit_log_rewritten_since_the_backup(
+    setup: tuple[SynapseConfig, Path], live_hash: str, change: str
+) -> None:
+    config, _ = setup
+    docker = ScriptedDocker(verify_answers(live_hash=live_hash), restore_effects(config))
+    with pytest.raises(backup.BackupError, match=f"audit event 7 of the backup .* {change}"):
+        backup.verify(config, run=docker, echo=quiet, now=lambda: NOW)
+    assert "DROP DATABASE IF EXISTS synapse_drill" in docker.commands()[-1]
+    assert not backup.read_status(config)["verify"]["ok"]
 
 
 def test_a_failed_verification_still_drops_the_scratch_database(
