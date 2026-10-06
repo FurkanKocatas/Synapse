@@ -61,6 +61,7 @@ sys.path.insert(0, str(EVAL / "answers"))
 sys.path.insert(0, str(EVAL / "golden"))
 
 from chat import ask, judge  # noqa: E402
+from check import fold  # noqa: E402
 from product import signed_in, wait  # noqa: E402
 from score import QUESTIONS, TYPES, Golden, metrics  # noqa: E402
 from synapse.chat.answering import source_text  # noqa: E402
@@ -148,6 +149,7 @@ def answers(
             "id": question["id"],
             "type": question["type"],
             **judge(question, seen, documents),
+            **shown(question, sources),
             "answer": answer.get("text", ""),
             "error": answer.get("error") or seen.get("error"),
             "unsupported": list(unsupported),
@@ -177,6 +179,12 @@ def answers(
         "unanswerable_refused_count": sum(r["correct"] for r in unanswerable),
         "unanswerable": len(unanswerable),
         "answerable": len(answerable),
+        # Why answerable questions went unanswered: their evidence in the chunks the model was
+        # given (the model held back) or not (the context lacked it).
+        "refused_quoted": sum(r["status"] != "answered" and r["quoted"] for r in answerable),
+        "refused_answer_shown": sum(
+            r["status"] != "answered" and r["answer_shown"] for r in answerable
+        ),
         "failed": sum(r["status"] == "failed" for r in records),
         "unsupported_numbers": sum(len(r["unsupported"]) for r in records),
         "retried": sum(r["retried"] for r in records),
@@ -191,6 +199,21 @@ def answers(
         },
     }
     return report, records
+
+
+def shown(question: dict[str, Any], sources: list[dict[str, Any]]) -> dict[str, bool]:
+    """Whether the evidence was in the chunks themselves, not only on their pages (``found``):
+    ``quoted`` when its quote stands in one of them (each part's, for a multi-document question),
+    ``answer_shown`` when the golden answer does (looser: a chunk boundary can cut a quote)."""
+    texts = [fold(source.get("text") or "") for source in sources]
+    quotes = [fold(item["quote"]) for item in question.get("evidence", [])]
+    parts = question.get("answer_parts") or ([question["answer"]] if question.get("answer") else [])
+    if question["type"] == "multi_document":
+        quoted = bool(quotes) and all(any(q in t for t in texts) for q in quotes)
+    else:
+        quoted = any(q in t for q in quotes for t in texts)
+    answer_shown = bool(parts) and all(any(fold(p) in t for t in texts) for p in parts)
+    return {"quoted": quoted, "answer_shown": answer_shown}
 
 
 def _as_shown(source: dict[str, Any]) -> str:
@@ -288,7 +311,9 @@ def markdown(report: dict[str, Any]) -> str:
         ),
         f"Answers: correct {a['correct']} (script; "
         + ", ".join(f"{k} {v}" for k, v in a["correct_by_type"].items())
-        + f"), cited {a['cited']}, answerable refused {a['answerable_refused']}, unanswerable "
+        + f"), cited {a['cited']}, answerable refused {a['answerable_refused']} (evidence quoted "
+        f"in the model's chunks {a['refused_quoted']}, the answer in them "
+        f"{a['refused_answer_shown']}), unanswerable "
         f"refused {a['unanswerable_refused_count']} of {a['unanswerable']}, retried "
         f"{a['retried']}, sentences removed {a['sentences_removed']}.",
         *_scanned_line(report),
