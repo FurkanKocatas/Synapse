@@ -9,7 +9,10 @@ Through the stack's API, as users would, with the corpus already ingested
 corpus's):
 
 1. **Retrieval**: each answerable question of both sets (as written, paraphrased) through
-   ``POST /api/search``, reranked: Hit@1, Hit@10 and MRR@10 per question type.
+   ``POST /api/search``, reranked: Hit@1, Hit@10 and MRR@10 per question type, on the evidence's
+   page; and, reported beside them, the share whose first hit is in the evidence's document
+   (``document_hit@1``: the right document, whatever its page; questions on several documents
+   left out).
 2. **Answers**: each question through ``POST /api/chat`` with the product's own settings,
    refusal before generation included: correct (the golden answer in the answer, numbers read
    as numbers), cited, refused, failed; for the unanswerable questions, refused. Every number
@@ -122,6 +125,7 @@ def retrieval(
             "id": question["id"],
             "type": question["type"],
             "rank": rank,
+            "document_first": _document_first(question, hits),
             "best": round(max(scores), 3) if scores else None,
             "hits": [[h["doc"], *h["pages"]] for h in hits],
         }
@@ -129,15 +133,28 @@ def retrieval(
 
     results = parallel(answerable, search, concurrency)
     ranks: dict[str, list[int | None]] = defaultdict(list)
-    for question, (rank, _, _) in zip(answerable, results, strict=True):
-        ranks[question["type"]].append(rank)
-        ranks["all"].append(rank)
+    first: dict[str, list[bool]] = defaultdict(list)
+    for question, (rank, _, record) in zip(answerable, results, strict=True):
+        for kind in (question["type"], "all"):
+            ranks[kind].append(rank)
+            # One hit cannot hold several documents: those questions have no first document.
+            if question["type"] != "multi_document":
+                first[kind].append(record["document_first"])
     report: dict[str, Any] = {
-        kind: _rounded(metrics(ranks[kind])) for kind in (*TYPES, "all") if ranks[kind]
+        kind: _rounded(metrics(ranks[kind]))
+        | ({"document_hit@1": round(sum(first[kind]) / len(first[kind]), 3)} if first[kind] else {})
+        for kind in (*TYPES, "all")
+        if ranks[kind]
     }
     report["seconds_median"] = round(statistics.median(s for _, s, _ in results), 2)
     report["records"] = [record for _, _, record in results]
     return report
+
+
+def _document_first(question: dict[str, Any], hits: list[dict[str, Any]]) -> bool:
+    """Whether the first hit is in a document of the evidence (one evidence piece only)."""
+    documents = [{doc for doc, _ in piece} for piece in Golden(question).pieces]
+    return len(documents) == 1 and bool(hits) and hits[0]["doc"] in documents[0]
 
 
 def answers(
@@ -356,6 +373,14 @@ def markdown(report: dict[str, Any]) -> str:
         f"{a['refused_answer_shown']}), unanswerable "
         f"refused {a['unanswerable_refused_count']} of {a['unanswerable']}, retried "
         f"{a['retried']}, sentences removed {a['sentences_removed']}.",
+        "Document-level Hit@1, the right document first (as written; paraphrased): "
+        + ", ".join(
+            f"{kind} {r['as_written'][kind]['document_hit@1']:.2f}"
+            f" ({r['paraphrased'][kind]['document_hit@1']:.2f})"
+            for kind in (*TYPES, "all")
+            if "document_hit@1" in r["as_written"].get(kind, {})
+            and "document_hit@1" in r["paraphrased"].get(kind, {})
+        ),
         *_scanned_line(report),
         *_metadata_line(report),
         f"Seconds (median / 90th percentile, {report['concurrency']} at a time): sources "
