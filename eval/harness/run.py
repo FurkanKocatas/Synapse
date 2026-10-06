@@ -286,7 +286,7 @@ def _as_shown(source: dict[str, Any]) -> str:
         text=source["text"] or "",
         page_start=source["page_start"],
         page_end=source["page_end"],
-        context="",
+        context=source.get("context") or "",
         lexical_rank=None,
         dense_rank=None,
     )

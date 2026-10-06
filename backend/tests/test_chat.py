@@ -7,6 +7,7 @@ import asyncio
 import json
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import aclosing
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID, uuid4
@@ -283,6 +284,11 @@ def test_the_context_stays_within_its_token_budget() -> None:
     short = hit("kısa metin", n=1)
     assert assemble([long, short]) == [short]
     assert source_text(short) == "Belge 1, sayfa 2\nBölüm\nkısa metin"
+    # The document's opening words, after its file's name in the context, say whose it is.
+    opened = replace(short, context="encumen karari\nT.C. BOLU BELEDİYESİ ENCÜMEN KARARI")
+    assert source_text(opened) == (
+        "Belge 1, sayfa 2\nBelgenin başı: T.C. BOLU BELEDİYESİ ENCÜMEN KARARI\nBölüm\nkısa metin"
+    )
 
 
 def says(*sentences: tuple[str, list[int]], sufficient: bool = True) -> dict[str, Any]:

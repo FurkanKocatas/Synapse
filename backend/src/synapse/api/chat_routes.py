@@ -74,6 +74,9 @@ class SourceView(BaseModel):
     heading_path: list[str]
     # None when the user may no longer read the document.
     text: str | None
+    # The document's context (its file's name and opening words), as the model read it with the
+    # source; empty for a stored turn.
+    context: str = ""
 
 
 class TurnView(BaseModel):
@@ -189,6 +192,7 @@ def _sse(event: Started | Event) -> str:
                         page_end=h.page_end,
                         heading_path=list(h.heading_path),
                         text=h.text,
+                        context=h.context,
                     ).model_dump(mode="json")
                     for n, h in enumerate(event.hits, start=1)
                 ],

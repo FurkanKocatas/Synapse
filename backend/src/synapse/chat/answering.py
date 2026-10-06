@@ -275,13 +275,24 @@ class _Slot:
 
 
 def source_text(hit: Hit) -> str:
+    """A source as the model reads it: its title and pages, its document's opening words, its
+    headings and its text. The opening words (the document's context after the file's name,
+    chunking.py ``document_context``) say which document it is: "T.C. AKÇAKALE BELEDİYESİ 2025
+    YILI FAALİYET RAPORU". Without them a chunk from a file named "ENCUMEN-KARARI" did not say
+    whose it was, and the model refused answers standing in it word for word."""
     pages = (
         f"{hit.page_start}"
         if hit.page_start == hit.page_end
         else (f"{hit.page_start}-{hit.page_end}")
     )
-    heading = " > ".join(hit.heading_path)
-    return "\n".join(part for part in (f"{hit.title}, sayfa {pages}", heading, hit.text) if part)
+    opening = hit.context.split("\n", 1)[1].strip() if "\n" in hit.context else ""
+    parts = (
+        f"{hit.title}, sayfa {pages}",
+        f"Belgenin başı: {opening}" if opening else "",
+        " > ".join(hit.heading_path),
+        hit.text,
+    )
+    return "\n".join(part for part in parts if part)
 
 
 def assemble(hits: Sequence[Hit]) -> list[Hit]:
