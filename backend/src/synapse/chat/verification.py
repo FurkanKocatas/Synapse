@@ -99,10 +99,11 @@ def check(answer: str, sources: Sequence[str], citations: Sequence[int]) -> Chec
 
 
 def sentences(text: str) -> list[str]:
-    """``text`` split into sentences, each with its trailing citation markers."""
+    """``text`` split into sentences, each with its trailing citation markers: the last one's
+    too, at the end of the text ("Kurul 7 üyedir. [1]" is one sentence, not two)."""
     parts: list[str] = []
     start = 0
-    for match in re.finditer(r"[.!?](?:\s*\[[\d,\s]+\])*(?=\s+)", text):
+    for match in re.finditer(r"[.!?](?:\s*\[[\d,\s]+\])*(?=\s|$)", text):
         end = match.end()
         before = text[start : match.start()].rstrip()
         word = re.split(r"\s", before)[-1] if before else ""

@@ -236,6 +236,15 @@ def test_sentences_with_unsupported_claims_are_removed() -> None:
     kept, removed = strip_unsupported("Kurul 7 üyedir [1]. Toplantı 12 Mart'tadır [2].", ["12"])
     assert kept == "Kurul 7 üyedir [1]."
     assert removed == ("Toplantı 12 Mart'tadır [2].",)
+    # As answers are written (``written``): each sentence's citations after its full stop, the
+    # last one's at the very end; a removed sentence takes them with it.
+    text = "Kurul yedi üyedir. [1] Toplantı 12 Mart'tadır. [2, 3]"
+    assert sentences(text) == ["Kurul yedi üyedir. [1]", "Toplantı 12 Mart'tadır. [2, 3]"]
+    assert strip_unsupported(text, ["12"]) == (
+        "Kurul yedi üyedir. [1]",
+        ("Toplantı 12 Mart'tadır. [2, 3]",),
+    )
+    assert strip_unsupported("Ücret 12 TL'dir. [1]", ["12"]) == ("", ("Ücret 12 TL'dir. [1]",))
 
 
 # Context and parsing
@@ -545,6 +554,19 @@ async def test_still_unsupported_sentences_are_removed() -> None:
         "",
         ("Başkan 3 yıl görev yapar [1].",),
     )
+
+
+async def test_a_removed_sentence_leaves_no_citation_behind() -> None:
+    # In the schema's shape, as the model answers: "Başkan 3 yıl görev yapar. [1]" went, and its
+    # "[1]" stayed, so an answer could read "[1]" and nothing else.
+    hits = [hit("Kurul yedi üyedir.")]
+    bad = says(("Kurul yedi üyedir.", [1]), ("Başkan 3 yıl görev yapar.", [1]))
+    answer = final(await events_of(answerer(hits, StandInChat(bad, bad)), "Soru?"))
+    assert (answer.status, answer.text) == ("answered", "Kurul yedi üyedir. [1]")
+    assert answer.stripped == ("Başkan 3 yıl görev yapar. [1]",)
+    only_bad = says(("Başkan 3 yıl görev yapar.", [1]))
+    answer = final(await events_of(answerer(hits, StandInChat(only_bad, only_bad)), "Soru?"))
+    assert (answer.status, answer.text) == ("insufficient", "")
 
 
 async def test_a_number_from_an_uncited_source_adds_its_citation() -> None:

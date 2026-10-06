@@ -748,7 +748,8 @@ class Answerer:
         stripped: tuple[str, ...] = ()
         if not checked.ok:
             text, stripped = strip_unsupported(text, checked.unsupported)
-            if not text:
+            # Nothing left to read, citation markers aside, is no answer.
+            if not CITATION.sub("", text).strip():
                 seconds["answer"] = _since(started)
                 yield Answer(
                     "insufficient",
