@@ -33,6 +33,19 @@ describe("inTreeOrder", () => {
       ],
     );
   });
+
+  it("puts a collection whose parent is not listed at the top", () => {
+    const collections: Collection[] = [
+      { id: "d", parent_id: "hidden", name: "Mine" },
+      { id: "e", parent_id: "d", name: "2026" },
+    ];
+    expect(inTreeOrder(collections).map(({ collection, depth }) => [collection.id, depth])).toEqual(
+      [
+        ["d", 0],
+        ["e", 1],
+      ],
+    );
+  });
 });
 
 describe("adminAreas", () => {

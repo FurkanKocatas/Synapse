@@ -79,6 +79,7 @@ def test_images_are_one_page_for_ocr(tmp_path: Path) -> None:
     [
         (b"%PDF-1.7\nnothing that pdfium can read", MediaType.PDF, "unreadable"),
         (samples.zip_bomb_word(), MediaType.DOCX, "suspicious_package"),
+        (samples.crowded_word(), MediaType.DOCX, "suspicious_package"),
         (b"PK\x03\x04broken", MediaType.XLSX, "unreadable"),
     ],
 )

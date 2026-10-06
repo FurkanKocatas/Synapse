@@ -22,10 +22,14 @@ export function inTreeOrder<T extends { id: string; parent_id: string | null }>(
   collections: T[],
 ): { collection: T; depth: number }[] {
   const children = new Map<string | null, T[]>();
+  const ids = new Set(collections.map((collection) => collection.id));
   for (const collection of collections) {
-    const siblings = children.get(collection.parent_id) ?? [];
+    // One whose parent this user cannot see stands at the top, rather than nowhere.
+    const parent =
+      collection.parent_id !== null && ids.has(collection.parent_id) ? collection.parent_id : null;
+    const siblings = children.get(parent) ?? [];
     siblings.push(collection);
-    children.set(collection.parent_id, siblings);
+    children.set(parent, siblings);
   }
   const ordered: { collection: T; depth: number }[] = [];
   const visit = (parent: string | null, depth: number) => {

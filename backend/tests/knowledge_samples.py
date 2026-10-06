@@ -143,6 +143,20 @@ def slides() -> bytes:
     return buffer.getvalue()
 
 
+def crowded_word() -> bytes:
+    """A Word package with more members than any real document has, all of them empty."""
+    buffer = io.BytesIO()
+    with (
+        zipfile.ZipFile(io.BytesIO(word())) as source,
+        zipfile.ZipFile(buffer, "w") as target,
+    ):
+        for item in source.infolist():
+            target.writestr(item, source.read(item))
+        for number in range(10_001):
+            target.writestr(f"word/media/empty{number}.bin", b"")
+    return buffer.getvalue()
+
+
 def zip_bomb_word() -> bytes:
     """A Word package with one member that expands about a thousandfold."""
     buffer = io.BytesIO()

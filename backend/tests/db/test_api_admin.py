@@ -199,6 +199,36 @@ def test_an_editor_can_use_the_collection_it_creates(admin: TestClient, setup: S
     assert [(g["principal_type"], g["permission"]) for g in grants] == [("user", "manage")]
 
 
+def test_editors_see_and_extend_only_the_collections_they_manage(
+    admin: TestClient, setup: Setup
+) -> None:
+    hidden = admin.post("/api/admin/collections", json={"name": f"Gizli {uuid.uuid4().hex[:4]}"})
+    hidden_id = hidden.json()["id"]
+    email = f"editor-{uuid.uuid4().hex[:6]}@example.org"
+    admin.post(
+        "/api/admin/users",
+        json={"email": email, "display_name": "Editor", "role": "editor", "password": PASSWORD},
+    )
+    with new_client(setup) as editor:
+        body = editor.post(
+            "/api/auth/login",
+            json={"email": email, "password": PASSWORD},
+            headers={CLIENT_HEADER: "web"},
+        ).json()
+        editor.headers[CSRF_HEADER] = body["csrf_token"]
+        refused = editor.post(
+            "/api/admin/collections", json={"name": "Inside", "parent_id": hidden_id}
+        )
+        assert refused.json() == {"error": "not_found"}
+        own = editor.post("/api/admin/collections", json={"name": f"E {email}"}).json()["id"]
+        child = editor.post("/api/admin/collections", json={"name": "Sub", "parent_id": own})
+        assert child.status_code == 201
+        seen = {c["id"] for c in editor.get("/api/admin/collections").json()}
+    assert {own, child.json()["id"]} <= seen
+    assert hidden_id not in seen
+    assert {hidden_id, own} <= {c["id"] for c in admin.get("/api/admin/collections").json()}
+
+
 def test_administration_is_audited(admin: TestClient, setup: Setup) -> None:
     admin.post("/api/admin/groups", json={"name": f"audited-{uuid.uuid4().hex[:6]}"})
     with new_client(setup) as auditor_client:

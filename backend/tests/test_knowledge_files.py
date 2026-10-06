@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from synapse.knowledge.blobs import LocalBlobStore, Receiver, TooLargeError
-from synapse.knowledge.documents import clean_filename, default_title
+from synapse.knowledge.documents import clean_filename, default_title, named_for
 from synapse.knowledge.filetypes import MediaType, UnsupportedFileError, detect
 
 WORD_MAIN = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
@@ -181,6 +181,28 @@ def test_the_store_lists_its_files_and_removes_old_half_uploads(tmp_path: Path) 
 )
 def test_filenames_are_cleaned(given: str, expected: str) -> None:
     assert clean_filename(given) == expected
+
+
+@pytest.mark.parametrize(
+    ("given", "media_type", "expected"),
+    [
+        ("Karar 2026-35.pdf", MediaType.PDF, "Karar 2026-35.pdf"),
+        ("KARAR.PDF", MediaType.PDF, "KARAR.PDF"),
+        ("tarama.jpeg", MediaType.JPEG, "tarama.jpeg"),
+        ("karar.html", MediaType.PDF, "karar.html.pdf"),
+        ("rapor.pdf", MediaType.DOCX, "rapor.pdf.docx"),
+        ("scan", MediaType.PNG, "scan.png"),
+    ],
+)
+def test_a_name_keeps_or_gets_the_extension_of_its_content(
+    given: str, media_type: MediaType, expected: str
+) -> None:
+    assert named_for(given, media_type) == expected
+
+
+def test_an_added_extension_keeps_the_name_within_its_limit() -> None:
+    named = named_for("a" * 255, MediaType.XLSX)
+    assert (len(named), named[-5:]) == (255, ".xlsx")
 
 
 def test_the_title_defaults_to_the_name_without_extension() -> None:

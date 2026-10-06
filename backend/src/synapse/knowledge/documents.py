@@ -30,7 +30,7 @@ from synapse.audit.public import AuditEvent
 from synapse.jobs.queue import enqueue
 from synapse.kernel.database import Database
 from synapse.knowledge.blobs import BlobStore, Incoming
-from synapse.knowledge.filetypes import MediaType, detect
+from synapse.knowledge.filetypes import SUFFIXES, MediaType, detect
 from synapse.knowledge.maintenance import lock_blob
 from synapse.knowledge.metadata import SUGGESTED, checked
 from synapse.knowledge.pipeline import parse_job, purge_job
@@ -151,6 +151,16 @@ def clean_filename(name: str) -> str:
     return cleaned[:MAX_FILENAME] or "file"
 
 
+def named_for(name: str, media_type: MediaType) -> str:
+    """``name``, with the extension of its content added when it has another: "karar.html"
+    holding a PDF is kept as "karar.html.pdf", so a download opens in a PDF reader, never in
+    the program its name would have chosen."""
+    suffixes = SUFFIXES[media_type]
+    if PurePath(name).suffix.lower() in suffixes:
+        return name
+    return name[: MAX_FILENAME - len(suffixes[0])] + suffixes[0]
+
+
 def default_title(filename: str) -> str:
     stem = PurePath(filename).stem.strip()
     return (stem or filename)[:MAX_TITLE]
@@ -242,7 +252,8 @@ class DocumentService:
         """Store a new document. The caller checked ``may_upload`` before receiving the bytes;
         it is checked again here, in the transaction that writes."""
         media_type = detect(incoming.path)
-        name = clean_filename(filename)
+        given = clean_filename(filename)
+        name = named_for(given, media_type)
         now = self._now()
         async with self._db.tenant_transaction(self._tenant_id) as connection:
             if not await _has_collection(connection, uploader.user_id, collection_id, "write"):
@@ -257,7 +268,7 @@ class DocumentService:
                 (
                     self._tenant_id,
                     collection_id,
-                    (title or "").strip()[:MAX_TITLE] or default_title(name),
+                    (title or "").strip()[:MAX_TITLE] or default_title(given),
                     uploader.user_id,
                     now,
                 ),
@@ -288,7 +299,8 @@ class DocumentService:
         self, uploader: Uploader, document_id: UUID, incoming: Incoming, filename: str
     ) -> Uploaded:
         media_type = detect(incoming.path)
-        name = clean_filename(filename)
+        given = clean_filename(filename)
+        name = named_for(given, media_type)
         now = self._now()
         async with self._db.tenant_transaction(self._tenant_id) as connection:
             if not await _has_document(connection, uploader.user_id, document_id, "write"):

@@ -35,6 +35,8 @@ Detected from the bytes ([filetypes.py](../../backend/src/synapse/knowledge/file
 | PNG, JPEG, TIFF | Magic numbers |
 | DOCX, XLSX, PPTX | A zip whose `[Content_Types].xml` declares the Word, Excel or PowerPoint main part. Parsed with `defusedxml`, size-capped |
 
+The stored file name keeps the uploader's extension only when it fits the detected type; otherwise the type's own is added (`karar.html` holding a PDF is kept as `karar.html.pdf`), so a download opens in the program its content is for. The default title comes from the name as uploaded.
+
 Refused, with a reason code the interface translates: legacy Office (`.doc`, `.xls`, `.ppt`, and password-protected Office files, which share the old container format) as `legacy_office`; macro-enabled Office files and anything else as `unknown_type`.
 
 On the evaluation corpus, 97 of 100 files are recognised as the type the manifest lists. The other three are all `.doc`: one real legacy Word file, and two Word-saved HTML files in UTF-16 with a `.doc` name. Both kinds are outside v1 ([v1-scope.md](../product/v1-scope.md)).
@@ -99,7 +101,7 @@ sequenceDiagram
 | PPTX | slide | Text frames, tables and speaker notes |
 | PNG, JPEG, TIFF | page | No text layer: one page marked `needs_ocr` |
 
-Text is NFC-normalized, with Unix line ends and no control characters. Failures get reason codes: `unreadable`, `encrypted`, `too_many_pages`, `sheet_too_large`, and `suspicious_package` for Office files that expand to more than 1 GiB or more than 200 times their size (zip bombs). PDFium is not thread-safe, so every call into it goes through one lock.
+Text is NFC-normalized, with Unix line ends and no control characters. Failures get reason codes: `unreadable`, `encrypted`, `too_many_pages`, `sheet_too_large`, and `suspicious_package` for Office files that expand to more than 1 GiB or more than 200 times their size (zip bombs), or hold more than 10,000 members. PDFium is not thread-safe, so every call into it goes through one lock.
 
 On the evaluation corpus: 97 documents, 5,296 pages, in 8 seconds on the work laptop, with no errors.
 

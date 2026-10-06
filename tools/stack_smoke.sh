@@ -144,6 +144,7 @@ cmp "$sample" "$sample.back"
 web_log="$(stack logs --no-color web)"
 grep -q '"uri":"/api/collections/' <<<"$web_log"  # the editor's requests are there
 if grep -qF "$csrf" <<<"$web_log"; then echo "the access log holds the CSRF token" >&2; exit 1; fi
+if grep -qF "Karar%202026-35" <<<"$web_log"; then echo "the access log holds a file name" >&2; exit 1; fi
 
 # Waits until a document's first version is done (parsed, or ready with the model servers);
 # fails on failed or after $2 seconds.

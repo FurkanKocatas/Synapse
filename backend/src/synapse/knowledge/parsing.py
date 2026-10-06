@@ -51,9 +51,11 @@ PICTURE_SHARE = 0.5
 STAMP_WORDS = 30
 MAX_PAGES = 5000
 MAX_SHEET_CELLS = 500_000
-# Office files are zip packages; refuse ones that expand to far more than they weigh.
+# Office files are zip packages; refuse ones that expand to far more than they weigh, and ones
+# with more members than real documents have (each member costs memory before it is read).
 MAX_UNCOMPRESSED_BYTES = 1 << 30
 MAX_COMPRESSION_RATIO = 200
+MAX_PACKAGE_MEMBERS = 10_000
 # A slide's title is a section of the deck; a sheet's name is the outermost section.
 SLIDE_TITLE_LEVEL = 2
 SHEET_LEVEL = 1
@@ -271,6 +273,8 @@ def _check_package(path: Path) -> None:
             entries = package.infolist()
     except zipfile.BadZipFile as error:
         raise ParseError("unreadable") from error
+    if len(entries) > MAX_PACKAGE_MEMBERS:
+        raise ParseError("suspicious_package")
     expanded = sum(entry.file_size for entry in entries)
     compressed = max(1, sum(entry.compress_size for entry in entries))
     if expanded > MAX_UNCOMPRESSED_BYTES or expanded / compressed > MAX_COMPRESSION_RATIO:

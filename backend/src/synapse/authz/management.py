@@ -202,10 +202,27 @@ async def remove_member(
 # Collections
 
 
-async def list_collections(connection: AsyncConnection) -> list[Collection]:
+async def list_collections(connection: AsyncConnection, actor: Actor) -> list[Collection]:
+    """Every collection, for an administrator. Anyone else sees those they manage, the only
+    ones they may create collections in: the names of the others are not theirs to read."""
+    query = "SELECT id, parent_id, name FROM collections "
+    values: tuple[UUID, ...] = ()
+    if actor.role != "admin":
+        query += "WHERE id IN (SELECT collection_id FROM accessible_collections(%s, 'manage')) "
+        values = (actor.user_id,)
     async with connection.cursor(row_factory=class_row(Collection)) as cursor:
-        await cursor.execute("SELECT id, parent_id, name FROM collections ORDER BY lower(name)")
+        await cursor.execute(query + "ORDER BY lower(name)", values)
         return await cursor.fetchall()
+
+
+async def _manages(connection: AsyncConnection, user_id: UUID, collection_id: UUID) -> bool:
+    cursor = await connection.execute(
+        "SELECT EXISTS (SELECT 1 FROM accessible_collections(%s, 'manage') "
+        "WHERE collection_id = %s)",
+        (user_id, collection_id),
+    )
+    row = await cursor.fetchone()
+    return bool(row and row[0])
 
 
 async def create_collection(
@@ -214,8 +231,15 @@ async def create_collection(
     """Create a collection. Its creator gets ``manage`` on it, unless the creator is an admin.
 
     Admins manage permissions but, like everyone else, read documents only through grants
-    (ADR 0007); an editor who creates a collection needs to be able to use it.
+    (ADR 0007); an editor who creates a collection needs to be able to use it. Anyone but an
+    admin needs ``manage`` on the parent: otherwise a parent they cannot see is "not found".
     """
+    if (
+        parent_id is not None
+        and actor.role != "admin"
+        and not await _manages(connection, actor.user_id, parent_id)
+    ):
+        raise NotFoundError("collection")
     collection_id = await _insert_returning_id(
         connection,
         "INSERT INTO collections (tenant_id, parent_id, name, created_by) VALUES (%s, %s, %s, %s)",

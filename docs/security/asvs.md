@@ -1,13 +1,13 @@
 # OWASP ASVS 5.0, levels 1 and 2: where Synapse stands
 
-Status: first draft, 6 October 2026, read from the code and the design documents at commit 0b339a1, then updated for the fixes committed with it. Each requirement was checked against the code; "met" only with the evidence named. It is the review checklist v1-scope.md asks for (Security: OWASP ASVS level 2), to be kept with the code: a change that meets a requirement updates its row.
+Status: first draft, 6 October 2026, read from the code and the design documents at commit 0b339a1, then updated as gaps were fixed. Each requirement was checked against the code; "met" only with the evidence named. It is the review checklist v1-scope.md asks for (Security: OWASP ASVS level 2), to be kept with the code: a change that meets a requirement updates its row.
 
 The requirements' text is OWASP's, not copied here: see the [OWASP Application Security Verification Standard 5.0.0](https://github.com/OWASP/ASVS/tree/v5.0.0/5.0) (CC BY-SA 4.0), by the identifiers below.
 
 | Status | Requirements |
 |---|---|
-| met | 105 |
-| partly | 63 |
+| met | 109 |
+| partly | 59 |
 | not yet | 12 |
 | not applicable | 73 |
 | **all, levels 1 and 2** | **253** |
@@ -109,14 +109,14 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 ## V5 File Handling
 
-5 met, 3 partly, 1 not yet.
+7 met, 1 partly, 1 not yet.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
 | V5.1.1 | 2 | File Handling Documentation | partly | docs/design/knowledge-base.md:23,28-38,59,102 | Permitted types, size limit, unpacked limits and safe download are documented. Expected extensions and behaviour when a malicious file is detected are not. |
 | V5.2.1 | 1 | File Upload and Content | met | backend/src/synapse/knowledge/blobs.py:134-153; backend/src/synapse/kernel/config.py:64; backend/src/synapse/knowledge/parsing.py:52-55 | The body streams to disk with a 100 MB cap (413) after the permission check. Pages, sheet cells and expansion are limited; parsing runs in memory-limited workers. |
-| V5.2.2 | 1 | File Upload and Content | partly | backend/src/synapse/knowledge/filetypes.py:50-88; docs/design/knowledge-base.md:30 | Type comes from magic bytes and Office content types. The extension is never checked against the content, and the original name is returned on download. |
-| V5.2.3 | 2 | File Upload and Content | partly | backend/src/synapse/knowledge/parsing.py:268-277; backend/src/synapse/knowledge/filetypes.py:74 | Office zips are checked against 1 GiB total and a 200x ratio before parsing. No limit on entry count; images rely on Pillow defaults. |
+| V5.2.2 | 1 | File Upload and Content | met | backend/src/synapse/knowledge/filetypes.py:50-88 (SUFFIXES); backend/src/synapse/knowledge/documents.py (named_for); backend/tests/test_knowledge_files.py; docs/design/knowledge-base.md#file-types | The type comes from magic bytes and Office content types, never the name. A stored name whose extension does not fit its content gets the content's extension added, so downloads open in the right program. |
+| V5.2.3 | 2 | File Upload and Content | met | backend/src/synapse/knowledge/parsing.py (_check_package); backend/tests/test_parsing.py; backend/src/synapse/knowledge/filetypes.py:74 | Office zips are refused before parsing above 1 GiB expanded, a 200x ratio or 10,000 members, with tests. Images rely on Pillow's decompression bomb limit. |
 | V5.3.1 | 1 | File Storage | met | backend/src/synapse/knowledge/blobs.py:71-73; deploy/web/Caddyfile:43-52; deploy/compose.stack.yml:128,148,167 | Blobs sit on a volume outside the web root, named by hash with no extension, and are served only through the API as attachments. |
 | V5.3.2 | 1 | File Storage | met | backend/src/synapse/knowledge/blobs.py:71-73,141; backend/src/synapse/knowledge/documents.py:147-151 | Storage paths come from the tenant UUID and SHA-256, temporary names are random. The user's filename is only cleaned and stored as metadata. |
 | V5.4.1 | 2 | File Download | met | backend/src/synapse/api/document_routes.py:205-235; backend/src/synapse/knowledge/documents.py:147-151 | Downloads take no filename input. The server puts the cleaned stored name in an attachment Content-Disposition. |
@@ -192,14 +192,14 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 ## V8 Authorization
 
-3 met, 4 partly.
+4 met, 3 partly.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
-| V8.1.1 | 1 | Authorization Documentation | partly | docs/design/authorization.md:5-39,51-67; docs/adr/0007-authorization.md:14-28; docs/design/knowledge-base.md:44-56; docs/design/answers.md:80 | Role permissions, document grants, inheritance and 404 for invisible objects are documented. The summary role table omits permissions.manage and operations.*. Parent rules for sub-collections are undefined. |
+| V8.1.1 | 1 | Authorization Documentation | partly | docs/design/authorization.md:5-39,51-67; docs/adr/0007-authorization.md:14-28; docs/design/knowledge-base.md:44-56; docs/design/answers.md:80 | Role permissions, document grants, inheritance, who may create a collection where, and 404 for invisible objects are documented. The summary role table omits permissions.manage and operations.*. |
 | V8.1.2 | 2 | Authorization Documentation | partly | docs/design/knowledge-base.md:52; docs/design/identity.md:132; backend/src/synapse/chat/conversations.py:12-13 | Some field rules are documented: which metadata fields are editable, and that admins can change only role and status. No systematic field-level read/write rules by permission or state. |
 | V8.2.1 | 1 | General Authorization Design | met | backend/src/synapse/api/deps.py:113-129; backend/src/synapse/authz/checks.py:16-46; backend/src/synapse/migrations/versions/0005_authorization.py:32-44; backend/tests/test_route_inventory.py:47-69 | require() checks the role_permissions table on every request and denies by default. A CI test fails any route without a session guard or an explicit public marker. |
-| V8.2.2 | 1 | General Authorization Design | partly | backend/src/synapse/knowledge/documents.py:340-368,520-539; backend/src/synapse/chat/conversations.py:133,443-461; backend/src/synapse/identity/profile.py:144-148; backend/src/synapse/authz/management.py:205-232; backend/src/synapse/api/admin_routes.py:247-261 | Documents, conversations, sessions and passkeys are checked per object. Gap: editors can list every collection name and create sub-collections under any parent_id without an access check. |
+| V8.2.2 | 1 | General Authorization Design | met | backend/src/synapse/knowledge/documents.py:340-368,520-539; backend/src/synapse/chat/conversations.py:133,443-461; backend/src/synapse/identity/profile.py:144-148; backend/src/synapse/authz/management.py (list_collections, create_collection); backend/tests/db/test_api_admin.py | Documents, conversations, sessions and passkeys are checked per object. Non-admins list only the collections they manage and create collections only inside those (another parent is 404), with a test. |
 | V8.2.3 | 2 | General Authorization Design | partly | backend/src/synapse/api/document_routes.py:82-91; backend/src/synapse/api/admin_routes.py:77-110; backend/src/synapse/chat/conversations.py:366-391 | Allowlisted request models (extra=forbid) and explicit response views limit fields. No per-field permissions exist, and stored answers stay visible after document access is revoked. |
 | V8.3.1 | 1 | Operation Level Authorization | met | backend/src/synapse/api/deps.py:58-129; backend/src/synapse/migrations/versions/0005_authorization.py:153-192; docs/design/authorization.md:71 | Authorization runs in FastAPI dependencies and in SQL functions under row-level security. Frontend route guards only change what is shown; the API makes every decision. |
 | V8.4.1 | 2 | Other Authorization Considerations | met | backend/src/synapse/migrations/sql_helpers.py:4-17; backend/src/synapse/kernel/database.py:65-81; backend/tests/db/test_schema_invariants.py:40-63; backend/src/synapse/knowledge/blobs.py:71-73; docs/adr/0005-tenancy.md | Every tenant table has forced row-level security and the tenant is set per transaction. Foreign keys and blob directories are tenant-scoped, and a schema test enforces this. |
@@ -313,13 +313,13 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 ## V14 Data Protection
 
-4 met, 3 partly, 2 not yet.
+5 met, 2 partly, 2 not yet.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
 | V14.1.1 | 2 | Data Protection Documentation | not yet | docs/ (no classification document); docs/adr/0014-observability.md:14 | Sensitive data (documents, chats, audit events, credentials, personal data) is not listed or classified into protection levels. KVKK appears only in research docs. |
 | V14.1.2 | 2 | Data Protection Documentation | not yet | docs/design/audit.md:63; docs/adr/0021-backups.md:65-66; docs/adr/0014-observability.md:14 | No protection requirements per level. Only scattered decisions exist: log content rules, backup encryption and retention, and audit retention still pending. |
-| V14.2.1 | 1 | General Data Protection | partly | backend/src/synapse/api/deps.py:17-18; backend/src/synapse/api/auth_routes.py:69-79; docs/design/search.md:34; backend/src/synapse/api/document_routes.py:3-4,35,138; synapsectl/src/synapsectl/support.py:8-13 | Tokens travel in cookie or header; credentials and questions in bodies. Upload file names and titles go in the query string and land in Caddy access logs. |
+| V14.2.1 | 1 | General Data Protection | met | backend/src/synapse/api/deps.py:17-18; backend/src/synapse/api/auth_routes.py:69-79; backend/src/synapse/api/document_routes.py:35,138; deploy/web/Caddyfile (log filter); tools/stack_smoke.sh | Tokens travel in the cookie or a header, credentials and questions in bodies. An upload's file name and title go in the query string, and the access log drops both (checked against a live Caddy and in the stack smoke test). |
 | V14.2.2 | 2 | General Data Protection | met | deploy/web/Caddyfile (handle /api/*); backend/src/synapse/api/document_routes.py:233; synapsectl/src/synapsectl/render.py | No caching proxy or application cache, and partial uploads are deleted. The web front marks every API answer no-store unless the route set its own header. |
 | V14.2.3 | 2 | General Data Protection | met | deploy/web/Caddyfile:27; frontend/index.html; frontend/package.json; docs/research/04-architecture.md:272 | No analytics, trackers or third-party scripts. CSP limits scripts, connections and images to self, fonts are bundled, and there is no telemetry. |
 | V14.2.4 | 2 | General Data Protection | partly | backend/src/synapse/identity/totp.py:1-39; docs/design/identity.md:47; deploy/web/Caddyfile:55-62; synapsectl/src/synapsectl/support.py:1-13 | Individual controls exist: encrypted TOTP secrets, hashed session tokens, log redaction, encrypted backups. None can be checked against protection levels, because none are defined. |

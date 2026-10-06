@@ -246,8 +246,8 @@ class GrantRequest(BaseModel):
 
 @router.get("/collections")
 async def list_collections(session: CreateCollections, request: Request) -> list[authz.Collection]:
-    async with _changes(request, session) as (connection, _):
-        return await authz.management.list_collections(connection)
+    async with _changes(request, session) as (connection, actor):
+        return await authz.management.list_collections(connection, actor)
 
 
 @router.post("/collections", status_code=status.HTTP_201_CREATED)

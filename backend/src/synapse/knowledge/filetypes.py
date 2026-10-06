@@ -23,6 +23,18 @@ class MediaType(StrEnum):
     TIFF = "image/tiff"
 
 
+# The extensions a type is saved under; the first is the one added to a name without them.
+SUFFIXES = {
+    MediaType.PDF: (".pdf",),
+    MediaType.DOCX: (".docx",),
+    MediaType.XLSX: (".xlsx",),
+    MediaType.PPTX: (".pptx",),
+    MediaType.PNG: (".png",),
+    MediaType.JPEG: (".jpg", ".jpeg", ".jfif"),
+    MediaType.TIFF: (".tif", ".tiff"),
+}
+
+
 class UnsupportedFileError(ValueError):
     """Not a type Synapse can read; ``reason`` is a stable code for the interface."""
 
