@@ -23,6 +23,9 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
+from synapse.chat.numerals import numeric
+from synapse.chat.verification import CITATION, claims, stands_in
+from synapse.chat.verification import fold as read_numbers
 from synapse.knowledge.filetypes import MediaType
 from synapse.knowledge.parsing import LightParser, Page
 from synapse.knowledge.turkish import lower
@@ -52,6 +55,27 @@ PLAIN = str.maketrans(
 
 def fold(text: str) -> str:
     return " ".join(lower(text).translate(PLAIN).split())
+
+
+def states(answer: str, golden: str) -> bool:
+    """Whether ``answer`` states ``golden`` (a golden answer, or one of its parts), as a reader
+    checking by hand does (docs/benchmarks/answers.md, "Scoring by hand"):
+
+    - its words, folded, numbers as digits ("3 yıl" for "üç yıl"), or folded word for word
+      ("Ordu Mahallesi altı": "altı" is "below" as often as "six");
+    - or, when the golden answer rests on numbers, each of them standing whole in the answer as
+      the product's verification reads numbers: "22.12.2023 tarih ve 2023/1497" states
+      "22.12.2023 tarih 2023/1497", "15.000.000 TL" states "₺15.000.000". An identifier
+      written otherwise does not ("34674941" for "UİP-34674941"), a "1" read from the word "bir"
+      is no number to state, and citation markers are not the answer's.
+    """
+    text = CITATION.sub(" ", answer)
+    if numeric(fold(golden)) in numeric(fold(text)) or fold(golden) in fold(text):
+        return True
+    written_one = re.search(r"(?<!\w)1(?!\w)", fold(golden)) is not None
+    needed = [claim for claim in claims(golden) if claim != "1" or written_one]
+    folded = read_numbers(text)
+    return bool(needed) and all(stands_in(claim, folded) for claim in needed)
 
 
 @cache

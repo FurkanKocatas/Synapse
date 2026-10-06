@@ -13,9 +13,10 @@ whether the answer was retried or had sentences removed, and the times to the so
 first token and to the whole answer, as the client sees them.
 
 Scored as answer.py scores: an answerable question is correct when it was answered and the
-answer contains the golden answer (or every answer part) after Turkish lower-casing, plain
-apostrophes and dashes and numbers written as digits; cited when its cited sources cover every
-piece of evidence; an unanswerable one is right when it was not answered.
+answer states the golden answer (or every answer part) as eval/golden/check.py ``states`` reads
+it: its words after Turkish lower-casing, or each of its numbers standing whole in the answer;
+cited when its cited sources cover every piece of evidence; an unanswerable one is right when it
+was not answered.
 
 With ``--scores`` (refusal.py's output: each question's best reranker score) it also prints
 what refusal before generation would make of these answers at each threshold. For that the
@@ -40,10 +41,9 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "retrieval"))
 sys.path.insert(0, str(HERE.parent / "golden"))
 
-from check import fold  # noqa: E402
+from check import states  # noqa: E402
 from product import signed_in  # noqa: E402
 from score import QUESTIONS, Golden  # noqa: E402
-from synapse.chat.numerals import numeric  # noqa: E402
 
 OUT = HERE / "work"
 DOCUMENTS = HERE.parent / "retrieval" / "work" / "product" / "documents.json"
@@ -87,9 +87,8 @@ def judge(
     answered = answer["status"] == "answered"
     if question["type"] == "unanswerable":
         return {"status": answer["status"], "correct": not answered, "cited": True}
-    text = numeric(fold(answer["text"]))
     parts = question.get("answer_parts") or [question["answer"]]
-    correct = answered and all(numeric(fold(part)) in text for part in parts)
+    correct = answered and all(states(answer["text"], part) for part in parts)
     sources = seen.get("sources") or []
     cited = [sources[n - 1] for n in answer["citations"] if 1 <= n <= len(sources)]
     return {

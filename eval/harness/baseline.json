@@ -92,12 +92,12 @@
   }
  },
  "answers": {
-  "correct": 0.675,
+  "correct": 0.775,
   "correct_by_type": {
-   "factual": 0.662,
-   "identifier": 0.694,
-   "table": 0.767,
-   "multi_document": 0.476
+   "factual": 0.769,
+   "identifier": 0.79,
+   "table": 0.837,
+   "multi_document": 0.619
   },
   "cited": 0.644,
   "answerable_refused": 0.099,

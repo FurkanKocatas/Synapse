@@ -37,7 +37,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "retrieval"))
 sys.path.insert(0, str(HERE.parent / "golden"))
 
-from check import fold  # noqa: E402
+from check import fold, states  # noqa: E402
 from score import PREFIX, QUESTIONS, WORK, Bm25, Golden  # noqa: E402
 from synapse.chat.numerals import numeric  # noqa: E402
 
@@ -123,7 +123,7 @@ def judge(
         refused = not answer.get("sufficient", True) or "bulunamad" in text
         return {"correct": refused, "cited": True}
     parts = q.get("answer_parts") or [q["answer"]]
-    correct = all(numeric(fold(part)) in text for part in parts)
+    correct = all(states(str(answer.get("answer", "")), part) for part in parts)
     cited_chunks = [shown[n - 1] for n in answer.get("citations", []) if 1 <= n <= len(shown)]
     cited = all(any(covers(chunks[i], piece) for i in cited_chunks) for piece in golden.pieces)
     return {"correct": correct, "cited": cited}
