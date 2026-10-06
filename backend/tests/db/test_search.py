@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 
 import pytest
 from fastapi.testclient import TestClient
+from psycopg.types.json import Jsonb
 
 from synapse import accounts_cli
 from synapse.api.app import create_app
@@ -22,7 +23,7 @@ from synapse.api.deps import CLIENT_HEADER, CSRF_HEADER
 from synapse.jobs.queue import Queue
 from synapse.kernel.database import Database
 from synapse.knowledge.public import Scope, Search
-from synapse.knowledge.search import RERANK_TOP, fuse, lexical_text
+from synapse.knowledge.search import RERANK_TOP, fuse, lexical_text, with_synonyms
 from synapse.knowledge.turkish import lower
 from synapse.models.public import ModelUnavailableError
 from tests import knowledge_samples as samples
@@ -64,11 +65,13 @@ class Prefers:
     word: str
     fail: bool = False
     seen: list[int] = field(default_factory=list)
+    queries: list[str] = field(default_factory=list)
 
     async def rerank(self, query: str, passages: Sequence[str]) -> list[float]:
         if self.fail:
             raise ModelUnavailableError("reranking", "/v1/rerank answered 503: loading")
         self.seen.append(len(passages))
+        self.queries.append(query)
         return [1.0 if self.word in lower(p) else 0.0 for p in passages]
 
 
@@ -394,3 +397,45 @@ def test_the_search_endpoint_takes_a_scope(world: World, editor: Editor) -> None
     assert editor.client.post("/api/search", json=elsewhere).json()["hits"] == []
     too_many = {**asked, "scope": {"collections": [str(uuid.uuid4()) for _ in range(51)]}}
     assert editor.client.post("/api/search", json=too_many).status_code == 422
+
+
+PRIVACY = "Kişisel verilerin korunması kanunu aydınlatma yükümlülüğünü düzenler."
+KVKK = ["KVKK", "Kişisel Verilerin Korunması Kanunu"]
+
+
+def test_a_question_brings_the_synonyms_of_what_it_names() -> None:
+    groups = [KVKK, ["BŞB", "Büyükşehir Belediyesi"]]
+    assert with_synonyms("KVKK'nın 10. maddesi", groups) == (
+        "KVKK'nın 10. maddesi\nKişisel Verilerin Korunması Kanunu"
+    )
+    # inflected and capitalised, the long form names its group too
+    assert with_synonyms("KİŞİSEL VERİLERİN KORUNMASI KANUNUNA göre", groups).endswith("\nKVKK")
+    # a phrase is named only whole: "kişisel veriler" alone is not the law
+    assert with_synonyms("kişisel veriler", groups) == "kişisel veriler"
+    assert with_synonyms("BŞB ve KVKK", groups) == (
+        "BŞB ve KVKK\nKişisel Verilerin Korunması Kanunu; Büyükşehir Belediyesi"
+    )
+    assert with_synonyms("bütçe", []) == "bütçe"
+
+
+async def test_synonyms_find_what_the_question_calls_otherwise(
+    world: World, editor: Editor, database: Database
+) -> None:
+    privacy, _ = await asyncio.to_thread(ingest, world, editor, PRIVACY, BUDGET)
+    reranker = Prefers("aydın")
+    service = search(world, database, reranker=reranker)
+    assert (await service.candidates(editor.user_id, "KVKK")).hits == []
+    world.db.execute(
+        "INSERT INTO synapse.tenant_settings (tenant_id, settings, updated_at) "
+        "VALUES (%s, %s, now())",
+        (world.tenant_id, Jsonb({"synonyms": [KVKK]})),
+    )
+    try:
+        found = await service.search(editor.user_id, "KVKK'ya göre ne yapılır?")
+    finally:
+        world.db.execute(
+            "DELETE FROM synapse.tenant_settings WHERE tenant_id = %s", (world.tenant_id,)
+        )
+    assert [h.document_id for h in found.hits] == [uuid.UUID(privacy["id"])]
+    assert found.searched == "KVKK'ya göre ne yapılır?\nKişisel Verilerin Korunması Kanunu"
+    assert reranker.queries == [found.searched]

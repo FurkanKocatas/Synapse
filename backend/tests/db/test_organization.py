@@ -58,13 +58,13 @@ def level_of(world: World, email: str) -> str:
 
 def test_a_role_asked_for_a_second_factor_must_enrol_one(world: World, admin: TestClient) -> None:
     editor, member = account(world, "editor"), account(world, "member")
-    assert admin.get("/api/admin/settings").json() == {"mfa_required_roles": []}
+    assert admin.get("/api/admin/settings").json() == {"mfa_required_roles": [], "synonyms": []}
     assert (level_of(world, editor), level_of(world, member)) == ("full", "full")
 
-    changed = admin.put("/api/admin/settings", json={"mfa_required_roles": ["editor", "editor"]})
+    changed = admin.patch("/api/admin/settings", json={"mfa_required_roles": ["editor", "editor"]})
     assert changed.status_code == 200, changed.json()
-    assert changed.json() == {"mfa_required_roles": ["editor"]}
-    assert admin.get("/api/admin/settings").json() == {"mfa_required_roles": ["editor"]}
+    assert changed.json() == {"mfa_required_roles": ["editor"], "synonyms": []}
+    assert admin.get("/api/admin/settings").json()["mfa_required_roles"] == ["editor"]
     assert (level_of(world, editor), level_of(world, member)) == ("enroll_mfa", "full")
 
     events = world.db.execute(
@@ -74,14 +74,14 @@ def test_a_role_asked_for_a_second_factor_must_enrol_one(world: World, admin: Te
     ).fetchall()
     assert events == [({"changed": {"mfa_required_roles": ["editor"]}},)]
     # the same settings again change nothing, and record nothing
-    admin.put("/api/admin/settings", json={"mfa_required_roles": ["editor"]})
+    admin.patch("/api/admin/settings", json={"mfa_required_roles": ["editor"]})
     assert world.db.execute(
         "SELECT count(*) FROM synapse.audit_events WHERE tenant_id = %s "
         "AND action = 'org.settings.change'",
         (world.tenant_id,),
     ).fetchone() == (1,)
 
-    admin.put("/api/admin/settings", json={"mfa_required_roles": []})
+    admin.patch("/api/admin/settings", json={"mfa_required_roles": []})
     assert level_of(world, editor) == "full"
 
 
@@ -94,9 +94,51 @@ def test_settings_are_checked_and_only_administrators_change_them(
         {"theme": "dark"},
         {"mfa_required_roles": "x"},
     ):
-        assert admin.put("/api/admin/settings", json=wrong).status_code == 422, wrong
+        assert admin.patch("/api/admin/settings", json=wrong).status_code == 422, wrong
     with TestClient(create_app(world.api), base_url="https://testserver") as client:
         body = sign_in(client, account(world, "editor"))
         client.headers[CSRF_HEADER] = body["csrf_token"]
         assert client.get("/api/admin/settings").json() == {"error": "forbidden"}
-        assert client.put("/api/admin/settings", json={}).json() == {"error": "forbidden"}
+        assert client.patch("/api/admin/settings", json={}).json() == {"error": "forbidden"}
+
+
+def test_synonyms_are_stored_distinct_and_a_change_keeps_the_other_settings(
+    world: World, admin: TestClient
+) -> None:
+    admin.patch("/api/admin/settings", json={"mfa_required_roles": ["auditor"]})
+    changed = admin.patch(
+        "/api/admin/settings",
+        json={
+            "synonyms": [
+                ["KVKK", " Kişisel  Verilerin Korunması Kanunu ", "kvkk"],
+                ["BŞB", "Büyükşehir Belediyesi"],
+            ]
+        },
+    )
+    assert changed.status_code == 200, changed.json()
+    assert admin.get("/api/admin/settings").json() == {
+        "mfa_required_roles": ["auditor"],
+        "synonyms": [
+            ["KVKK", "Kişisel Verilerin Korunması Kanunu"],
+            ["BŞB", "Büyükşehir Belediyesi"],
+        ],
+    }
+    # the audit log keeps how many groups there are, not the phrases
+    last = world.db.execute(
+        "SELECT details FROM synapse.audit_events WHERE tenant_id = %s "
+        "AND action = 'org.settings.change' ORDER BY seq DESC LIMIT 1",
+        (world.tenant_id,),
+    ).fetchone()
+    assert last == ({"changed": {"synonyms": {"groups": 2}}},)
+
+    for wrong in (
+        [["KVKK"]],
+        [["KVKK", "kvkk"]],
+        [["KVKK", "Kişisel Verilerin Korunması Kanunu"], ["kvkk", "Kurul"]],
+        [["...", "Kanun"]],
+        [["a", "b"]] * 201,
+        [["x" * 101, "y"]],
+    ):
+        response = admin.patch("/api/admin/settings", json={"synonyms": wrong})
+        assert response.status_code == 422, wrong[:2]
+    admin.patch("/api/admin/settings", json={"synonyms": [], "mfa_required_roles": []})

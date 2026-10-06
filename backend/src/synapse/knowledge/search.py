@@ -12,6 +12,8 @@ measured:
      the question turned into terms the same way;
    - dense: bge-m3's vector of the question against the chunks' (HNSW, cosine), when an
      embedding model is configured.
+   Both look for the question with the organisation's synonyms of what it names
+   (``with_synonyms``, ADR 0010 query rule 1), and so does the reranker.
 2. **Fusion** by reciprocal rank (k 60) of the two top-50 lists: ranks only. No score is ever
    compared with a threshold; fused scores have no absolute meaning (ADR 0010).
 3. **Reranking** of the fusion's top 15 by the cross-encoder, the rest following in fused order.
@@ -87,6 +89,8 @@ _DENSE = (
     "WHERE c.version_id IN (SELECT id FROM searchable) AND c.embedding IS NOT NULL "
     "ORDER BY c.embedding <=> %(vector)s::halfvec LIMIT %(limit)s"
 )
+# The organisation's synonyms (synapse.organization validates them).
+_SYNONYMS = "SELECT coalesce(settings->'synonyms', '[]'::jsonb) FROM tenant_settings"
 _DETAILS = (
     "SELECT c.version_id, c.ordinal, v.document_id, d.title, v.version, c.kind, "
     "c.heading_path, c.text, c.page_start, c.page_end, coalesce(v.context, '') "
@@ -126,6 +130,8 @@ class Found:
     reranked: bool
     warnings: list[str]
     milliseconds: dict[str, float]
+    # What was searched for: the question with its synonyms (``with_synonyms``).
+    searched: str = ""
 
 
 def lexical_text(text: str) -> str:
@@ -135,10 +141,39 @@ def lexical_text(text: str) -> str:
     characters or more also whole ("2026/16", "e-81912396-105.04"), so a number is not matched
     only digit group by digit group."""
     folded = lower(text)
-    words = [w if any(ch.isdigit() for ch in w) else w[:PREFIX] for w in _WORD.findall(folded)]
+    words = _terms(folded)
     identifiers = [t.strip(".-/") for t in _IDENTIFIER.findall(folded)]
     whole = [t for t in identifiers if len(t) >= MIN_IDENTIFIER and not t.isdigit()]
     return " ".join([*words, *whole])
+
+
+def _terms(text: str) -> list[str]:
+    """The words of ``text`` as lexical search compares them: lower-cased the Turkish way, each
+    word without a digit cut to its first five letters."""
+    words = _WORD.findall(lower(text))
+    return [w if any(ch.isdigit() for ch in w) else w[:PREFIX] for w in words]
+
+
+def with_synonyms(query: str, groups: Sequence[Sequence[str]]) -> str:
+    """The question and, after it, the other phrases of every group of synonyms it names:
+    "KVKK" brings "Kişisel Verilerin Korunması Kanunu", and the other way round. Phrases are
+    compared as lexical terms, so an inflected or capitalised form names one too ("KVKK'nın",
+    "belediye kanununa")."""
+    asked = _terms(query)
+    added = [
+        phrase
+        for group in groups
+        if any(_names(asked, phrase) for phrase in group)
+        for phrase in group
+        if not _names(asked, phrase)
+    ]
+    return "\n".join([query, "; ".join(added)]) if added else query
+
+
+def _names(asked: list[str], phrase: str) -> bool:
+    terms = _terms(phrase)
+    width = len(terms)
+    return width > 0 and any(asked[i : i + width] == terms for i in range(len(asked) - width + 1))
 
 
 def fuse(*rankings: Sequence[Key], k: int = RRF_K) -> list[Key]:
@@ -170,13 +205,14 @@ class Search:
         self, user_id: UUID, query: str, *, limit: int = RERANK_TOP, scope: Scope = EVERYTHING
     ) -> Found:
         """The fused first stage: the ``limit`` best chunks by words and by meaning, within
-        ``scope``."""
+        ``scope``, for the question with its synonyms."""
         warnings: list[str] = []
         timings: dict[str, float] = {}
-        vector = await self._query_vector(query, warnings, timings)
+        searched = with_synonyms(query, await self._synonyms())
+        vector = await self._query_vector(searched, warnings, timings)
         async with self._db.tenant_transaction(self._tenant_id) as connection:
             started = time.perf_counter()
-            lexical = await self._lexical(connection, user_id, query, scope)
+            lexical = await self._lexical(connection, user_id, searched, scope)
             timings["lexical"] = _since(started)
             dense: list[Key] = []
             if vector is not None:
@@ -185,17 +221,21 @@ class Search:
                 timings["dense"] = _since(started)
             fused = fuse(lexical, dense)[:limit]
             hits = await _details(connection, fused, lexical, dense)
-        return Found(hits, reranked=False, warnings=warnings, milliseconds=timings)
+        return Found(
+            hits, reranked=False, warnings=warnings, milliseconds=timings, searched=searched
+        )
 
     async def rerank(self, query: str, found: Found, *, limit: int) -> Found:
-        """The candidates' first 15 in the reranker's order, then the rest as they were."""
+        """The candidates' first 15 in the reranker's order, then the rest as they were; the
+        reranker reads what the candidates were searched for, synonyms included."""
         if self._reranker is None or not found.hits:
             return replace(found, hits=found.hits[:limit])
         top, rest = found.hits[:RERANK_TOP], found.hits[RERANK_TOP:]
         started = time.perf_counter()
         try:
             scores = await self._reranker.rerank(
-                query, [contextual_text(h.context, h.heading_path, h.text) for h in top]
+                found.searched or query,
+                [contextual_text(h.context, h.heading_path, h.text) for h in top],
             )
         except ModelError as error:
             log.warning("search.rerank_unavailable", error=str(error))
@@ -209,6 +249,7 @@ class Search:
             reranked=True,
             warnings=found.warnings,
             milliseconds={**found.milliseconds, "rerank": _since(started)},
+            searched=found.searched,
         )
 
     async def search(
@@ -216,6 +257,13 @@ class Search:
     ) -> Found:
         found = await self.candidates(user_id, query, limit=max(limit, RERANK_TOP), scope=scope)
         return await self.rerank(query, found, limit=limit)
+
+    async def _synonyms(self) -> list[list[str]]:
+        async with self._db.tenant_transaction(self._tenant_id) as connection:
+            cursor = await connection.execute(_SYNONYMS)
+            row = await cursor.fetchone()
+        groups: list[list[str]] = row[0] if row else []
+        return groups
 
     async def library(self, user_id: UUID, scope: Scope = EVERYTHING) -> Overview:
         """What the user's documents are (within ``scope``), for questions about the

@@ -21,7 +21,13 @@ flowchart LR
 4. **Fusion** by reciprocal rank of the two top-50 lists: ranks only, ties in order of first appearance. No score is compared with a threshold anywhere (ADR 0010): fused scores have no absolute meaning.
 5. **Reranking.** bge-reranker-v2-m3 reads the question with each of the fusion's first 15 (the chunk as embedded: context, headings, text) and orders them; the rest follow in fused order. ADR 0018: the fused order is shown at once, the reranked one replaces it when it arrives.
 
+The question is searched for with its synonyms ([below](#synonyms)) by all three: words, meaning and the reranker.
+
 A model that does not answer leaves its stage out and says so: `embedding_unavailable` (search by words alone) or `reranking_unavailable` (the fused order). The answer still comes, and the user sees what is missing (ADR 0009: model errors are shown, never swallowed).
+
+## Synonyms
+
+An administrator lists phrases that mean the same, abbreviations among them: `PATCH /api/admin/settings` with `{"synonyms": [["KVKK", "Kişisel Verilerin Korunması Kanunu"], ["BŞB", "Büyükşehir Belediyesi"]]}` (ADR 0010, query rule 1). A question that names a phrase of a group is searched for with the group's other phrases after it, on a line of their own ([search.py](../../backend/src/synapse/knowledge/search.py), `with_synonyms`); `Found.searched` is what was searched for. Phrases are compared as lexical terms, so "KVKK'nın" and "kişisel verilerin korunması kanununa" name their groups, while "kişisel veriler" alone names none: a phrase is named whole. Groups have 2 to 10 phrases of at most 100 characters, at most 200 groups; a phrase is in one group only, and once in it whatever its case (validated by [organization/settings.py](../../backend/src/synapse/organization/settings.py), refused with 422). None are set by default, so the golden set measures search without them.
 
 ## API
 

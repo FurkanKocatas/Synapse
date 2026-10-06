@@ -24,7 +24,8 @@ async def settings(_session: ManageSettings, request: Request) -> OrganizationSe
     return await _service(request).get()
 
 
-@router.put("/settings")
+# Only the keys sent change.
+@router.patch("/settings")
 async def change_settings(
     body: OrganizationSettings, session: ManageSettings, request: Request
 ) -> OrganizationSettings:
