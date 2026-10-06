@@ -64,8 +64,8 @@ http://:8099 {
 	log {
 		output stdout
 		# The CSRF token is a credential: left out, as Caddy leaves out cookies and authorization.
-		# An upload's file name and title travel in the query string; they say what a document is
-		# about, so they are left out too.
+		# An upload's file name and title travel in the query string, and a download's name in
+		# its Content-Disposition; they say what a document is about, so they are left out too.
 		format filter {
 			wrap json
 			request>headers>X-Synapse-Csrf delete
@@ -73,6 +73,7 @@ http://:8099 {
 				delete filename
 				delete title
 			}
+			resp_headers>Content-Disposition delete
 		}
 	}
 }

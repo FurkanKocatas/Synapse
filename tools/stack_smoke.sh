@@ -63,6 +63,10 @@ stack() { docker compose -p "$project" "${files[@]}" "$@"; }
 cleanup() {
   status=$?
   if [ "$status" -ne 0 ]; then
+    # In GitHub Actions, an annotation: readable on the run page without opening the logs.
+    if [ "${GITHUB_ACTIONS:-}" = true ]; then
+      echo "::error title=Stack smoke test::${current_step:-setup}: ${failed_at:-exit $status}"
+    fi
     printf '\n== Smoke test failed; container logs:\n'
     stack logs --no-color --tail 60 || true
   fi
@@ -72,8 +76,12 @@ cleanup() {
   if [ -n "${backup_work:-}" ]; then sudo rm -rf "$backup_work"; fi
 }
 trap cleanup EXIT
+trap 'failed_at="line $LINENO: $BASH_COMMAND"' ERR
 
-step() { printf '\n== %s\n' "$*"; }
+step() {
+  current_step="$*"
+  printf '\n== %s\n' "$*"
+}
 
 python3 tools/dev_secrets.py
 
