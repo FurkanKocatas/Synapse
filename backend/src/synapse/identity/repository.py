@@ -91,6 +91,13 @@ async def user_by_email(connection: AsyncConnection, email: str) -> UserRecord |
         return await cursor.fetchone()
 
 
+async def organization_name(connection: AsyncConnection) -> str:
+    """The tenant's name (row-level security shows only the current tenant's row)."""
+    cursor = await connection.execute("SELECT name FROM tenants")
+    row = await cursor.fetchone()
+    return str(row[0]) if row else ""
+
+
 async def user_by_id(connection: AsyncConnection, user_id: UUID) -> UserRecord | None:
     async with connection.cursor(row_factory=class_row(UserRecord)) as cursor:
         await cursor.execute(

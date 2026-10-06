@@ -486,10 +486,17 @@ class IdentityService:
         email = normalize_email(account.email)
         password_hash = None
         if account.password is not None:
+            async with self._db.tenant_transaction(self._tenant_id) as connection:
+                organization = await repository.organization_name(connection)
             passwords.validate_password(
                 account.password,
                 mfa_enabled=False,
-                context_words=[email.split("@")[0], account.display_name, *account.context_words],
+                context_words=[
+                    email.split("@")[0],
+                    account.display_name,
+                    organization,
+                    *account.context_words,
+                ],
             )
             password_hash = await asyncio.to_thread(passwords.hash_password, account.password)
         try:

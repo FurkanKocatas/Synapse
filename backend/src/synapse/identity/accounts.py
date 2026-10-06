@@ -126,12 +126,13 @@ class AccountService:
         now = self._now()
         async with self._db.tenant_transaction(self._tenant_id) as connection:
             account = await _account(connection, user_id, lock=False)
+            organization = await repository.organization_name(connection)
         if account is None:
             return False
         passwords.validate_password(
             password,
             mfa_enabled=account.has_mfa,
-            context_words=[account.email.split("@")[0], account.display_name],
+            context_words=[account.email.split("@")[0], account.display_name, organization],
         )
         password_hash = await asyncio.to_thread(passwords.hash_password, password)
         async with self._db.tenant_transaction(self._tenant_id) as connection:

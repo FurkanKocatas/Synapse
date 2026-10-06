@@ -69,6 +69,8 @@ class LlamaServer:
             headers={"Authorization": f"Bearer {api_key}"},
             timeout=timeout,
             transport=transport,
+            # The servers are fixed internal addresses; an answer pointing elsewhere is an error.
+            follow_redirects=False,
         )
 
     async def close(self) -> None:

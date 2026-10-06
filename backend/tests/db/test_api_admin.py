@@ -274,6 +274,9 @@ def test_resetting_a_password(admin: TestClient, setup: Setup) -> None:
         assert admin.post(reset, json={"password": "short"}).json() == {
             "error": "password_too_short"
         }
+        # the organization is "Admin tests"
+        named = {"password": "we are the admin tests team"}
+        assert admin.post(reset, json=named).json() == {"error": "password_contains_context"}
         assert admin.post(reset, json={"password": new_password}).status_code == 204
         assert target.get("/api/auth/session").status_code == 401
     with new_client(setup) as target:

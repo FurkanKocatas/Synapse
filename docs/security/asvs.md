@@ -6,8 +6,8 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 | Status | Requirements |
 |---|---|
-| met | 109 |
-| partly | 59 |
+| met | 111 |
+| partly | 57 |
 | not yet | 12 |
 | not applicable | 73 |
 | **all, levels 1 and 2** | **253** |
@@ -142,7 +142,7 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 | V6.2.8 | 1 | Password Security | met | backend/src/synapse/identity/passwords.py:59-66; frontend/src/lib/forms.ts:2-5 | The password reaches Argon2 unchanged: no trimming, case change or truncation. Passwords over 256 characters are rejected, not cut. |
 | V6.2.9 | 2 | Password Security | met | backend/src/synapse/identity/passwords.py:20-22; backend/src/synapse/api/auth_routes.py:28-30 | Passwords up to 256 characters are accepted (the request limit is 1024). |
 | V6.2.10 | 2 | Password Security | met | backend/src/synapse/identity/passwords.py:6-8; docs/design/identity.md:63; backend/src/synapse/identity/repository.py:122-127 | No expiry. password_changed_at is recorded but never used to force rotation. |
-| V6.2.11 | 2 | Password Security | partly | backend/src/synapse/identity/service.py:489-493; backend/src/synapse/identity/profile.py:76-80; backend/src/synapse/identity/accounts.py:131-135 | Email name and display name are rejected. The organization name is never passed in, although the docs say it is. Product and role names are not checked. |
+| V6.2.11 | 2 | Password Security | partly | backend/src/synapse/identity/service.py (create_user); backend/src/synapse/identity/profile.py; backend/src/synapse/identity/accounts.py (reset_password); backend/src/synapse/identity/repository.py (organization_name); backend/tests/db/test_api_admin.py | The email name, display name and organization name are refused in every new password (creation, change, reset), with a test. Product and role names are not. |
 | V6.2.12 | 2 | Password Security | not yet | docs/design/identity.md:65; docs/adr/0006-authentication.md:19 | A breached-password check (offline list) is planned but not implemented. |
 | V6.3.1 | 1 | General Authentication Security | partly | backend/src/synapse/identity/service.py:144-161,210-225; backend/src/synapse/identity/throttle.py:9-26; backend/tests/db/test_api_auth.py:128-137 | Per-account and per-IP backoff work as documented. The ADR's admin notification after 20 failures is only a log warning. |
 | V6.3.2 | 1 | General Authentication Security | met | backend/src/synapse/accounts_cli.py:1-4,98-119; docs/design/identity.md:85-94; backend/src/synapse/migrations/versions/0002_identity.py:21-43 | No seeded accounts. The first admin is created on the server with an email and password the operator chooses. |
@@ -167,7 +167,7 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 ## V7 Session Management
 
-7 met, 7 partly, 1 not yet, 3 not applicable.
+8 met, 6 partly, 1 not yet, 3 not applicable.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
@@ -177,7 +177,7 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 | V7.2.1 | 1 | Fundamental Session Management Security | met | backend/src/synapse/api/deps.py:58-67; backend/src/synapse/identity/service.py:260-287 | On every request the API hashes the cookie token and looks it up in Postgres. |
 | V7.2.2 | 1 | Fundamental Session Management Security | met | backend/src/synapse/identity/tokens.py:15-20; backend/src/synapse/identity/service.py:227-256 | Each sign-in gets a new random reference token. No static API keys are used for user sessions. |
 | V7.2.3 | 1 | Fundamental Session Management Security | met | backend/src/synapse/identity/tokens.py:12-16; backend/src/synapse/migrations/versions/0002_identity.py:50 | 256-bit tokens from secrets.token_urlsafe, and the stored hash column is UNIQUE. |
-| V7.2.4 | 1 | Fundamental Session Management Security | partly | backend/src/synapse/api/auth_routes.py:101-114; backend/src/synapse/identity/service.py:363-384 | A new token is issued at login and at each MFA step, and the old one is revoked. Login does not revoke a session cookie the browser already holds. |
+| V7.2.4 | 1 | Fundamental Session Management Security | met | backend/src/synapse/api/auth_routes.py (login); backend/src/synapse/identity/service.py:363-384; backend/tests/db/test_api_auth.py | A new token is issued at login and at each MFA step, and the one it replaces is revoked; signing in again also ends the session cookie the browser already held, with a test. |
 | V7.3.1 | 2 | Session Timeout | met | backend/src/synapse/identity/service.py:268-275; backend/src/synapse/kernel/config.py:60; docs/adr/0006-authentication.md:20 | A 30-minute idle timeout (configurable) is enforced server-side for full sessions. Half-signed-in sessions expire after 5 to 15 minutes. |
 | V7.3.2 | 2 | Session Timeout | met | backend/src/synapse/identity/service.py:191,268,381; backend/src/synapse/kernel/config.py:61 | A 12-hour absolute expiry is stored for each session and checked on every request. |
 | V7.4.1 | 1 | Session Termination | met | backend/src/synapse/identity/service.py:266-275,295-306; backend/src/synapse/api/auth_routes.py:131-136 | Logout and expiry set revoked_at in the database, and revoked sessions are rejected. |
@@ -329,7 +329,7 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 ## V15 Secure Coding and Architecture
 
-7 met, 5 partly, 1 not yet.
+8 met, 4 partly, 1 not yet.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
@@ -340,7 +340,7 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 | V15.2.2 | 2 | Security Architecture and Dependencies | partly | backend/src/synapse/chat/answering.py:225-249; backend/src/synapse/dbadmin/roles.py:17-26; backend/src/synapse/kernel/config.py:64,87; backend/src/synapse/knowledge/parsing.py:52-53; synapsectl/src/synapsectl/render.py:38-42 | Upload size, page, OCR and statement limits and memory caps exist. No per-user limits on chat, search or upload; the chat queue is unbounded; ADR 0002's circuit breaker is missing. |
 | V15.2.3 | 2 | Security Architecture and Dependencies | met | deploy/app/Dockerfile:19-21,29; deploy/web/Dockerfile:40; backend/src/synapse/api/app.py:95-98; synapsectl/src/synapsectl/render.py (_SERVER) | Images exclude tests, dev dependencies and pip, and API docs are off. llama-server runs with --no-webui, so its built-in web page is off. |
 | V15.3.1 | 1 | Defensive Coding | met | backend/src/synapse/api/admin_routes.py:77-96; backend/src/synapse/api/document_routes.py:49-102; backend/src/synapse/api/audit_routes.py:164-168; backend/src/synapse/api/chat_routes.py:66-111 | Routes return explicit Pydantic view models or narrow dataclasses. Internal fields such as hashes and secrets are never serialized. |
-| V15.3.2 | 2 | Defensive Coding | partly | backend/src/synapse/models/llama.py:67-71; backend/src/synapse/kernel/config.py:27-28,80-85 | Only fixed internal model URLs are called. Not following redirects relies on the httpx2 client default; it is not set explicitly. |
+| V15.3.2 | 2 | Defensive Coding | met | backend/src/synapse/models/llama.py (follow_redirects=False); backend/src/synapse/kernel/config.py:27-28,80-85 | Only fixed internal model URLs are called, and the client is told explicitly not to follow redirects. |
 | V15.3.3 | 2 | Defensive Coding | met | backend/src/synapse/api/document_routes.py:82-91; backend/src/synapse/organization/settings.py:31-32; backend/src/synapse/api/admin_routes.py:99-110,139-151 | Each action has its own request model with only allowed fields, passed to services explicitly. Settings and metadata models reject extra keys. |
 | V15.3.4 | 2 | Defensive Coding | met | deploy/web/Caddyfile:36-41; backend/src/synapse/cli.py:225-236; backend/src/synapse/kernel/config.py:40-42; synapsectl/src/synapsectl/render.py:180; backend/src/synapse/api/deps.py:42-55 | Uvicorn trusts X-Forwarded-For only from the internal subnet; Caddy sets it from the peer. The validated client IP feeds throttling and the audit log. |
 | V15.3.5 | 2 | Defensive Coding | met | backend/pyproject.toml:100; .github/workflows/ci.yml:39-40,97-98; frontend/tsconfig.app.json:11; frontend/eslint.config.js:10 | mypy strict, strict TypeScript with ESLint strictTypeChecked, and Pydantic validation on all inputs. The frontend uses === except deliberate == null checks. |

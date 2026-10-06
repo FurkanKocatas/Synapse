@@ -105,6 +105,20 @@ def test_member_login_sets_a_hardened_cookie(client: TestClient, tenant: Tenant)
     assert session["user"]["role"] == "member"
 
 
+def test_signing_in_again_ends_the_session_the_browser_had(
+    client: TestClient, tenant: Tenant
+) -> None:
+    login(client, tenant.member)
+    first = client.cookies[SESSION_COOKIE]
+    login(client, tenant.member)
+    assert client.cookies[SESSION_COOKIE] != first
+    assert client.get("/api/auth/session").status_code == 200
+    with TestClient(
+        create_app(tenant.settings), base_url="https://testserver", cookies={SESSION_COOKIE: first}
+    ) as earlier:
+        assert earlier.get("/api/auth/session").json() == {"error": "not_authenticated"}
+
+
 def test_bad_credentials_get_one_generic_answer(client: TestClient, tenant: Tenant) -> None:
     wrong = client.post(
         "/api/auth/login", json={"email": tenant.member, "password": "x" * 20}, headers=WEB

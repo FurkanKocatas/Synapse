@@ -110,6 +110,11 @@ async def login(
     )
     if isinstance(result, LoginRejected):
         raise reject(result)
+    # The session this browser had before ends, so signing in again never leaves one behind.
+    previous = request.cookies.get(SESSION_COOKIE)
+    earlier = await identity.authenticate(previous) if previous else None
+    if earlier is not None:
+        await identity.logout(earlier, client_ip=client_ip(request))
     set_session_cookie(response, result)
     return SessionView(auth_level=result.auth_level, csrf_token=result.csrf_token)
 
