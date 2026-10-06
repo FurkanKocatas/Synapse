@@ -47,7 +47,6 @@ search, no sources, a system prompt that only says when it is.
 
 import asyncio
 import json
-import re
 import time
 from collections import Counter, deque
 from collections.abc import AsyncGenerator, Sequence
@@ -59,6 +58,7 @@ from uuid import UUID
 
 import structlog
 
+from synapse.chat.reply import AnswerStream, parse, schema
 from synapse.chat.talk import (
     CLASSIC_CHARS,
     CLASSIC_SYSTEM,
@@ -74,7 +74,16 @@ from synapse.chat.talk import (
     small_talk,
     voice_for,
 )
-from synapse.chat.verification import CITATION, Checked, check, cited, fold, strip_unsupported
+from synapse.chat.verification import (
+    CITATION,
+    Checked,
+    check,
+    cited,
+    claims,
+    fold,
+    stands_in,
+    strip_unsupported,
+)
 from synapse.knowledge.public import (
     EVERYTHING,
     Found,
@@ -140,38 +149,6 @@ REWRITE_SCHEMA = {
 NOT_FOUND = "bulunamad"
 
 
-def schema(sources: int) -> dict[str, object]:
-    """The reply's shape when ``sources`` sources are shown: sentences that each cite one of
-    them or more, then whether they sufficed."""
-    citation = {"type": "integer", "minimum": 1, "maximum": sources}
-    sentence = {
-        "type": "object",
-        "properties": {
-            "text": {"type": "string"},
-            "sources": {"type": "array", "items": citation, "minItems": 1},
-        },
-        "required": ["text", "sources"],
-    }
-    return {
-        "type": "object",
-        "properties": {
-            "answer": {"type": "array", "items": sentence, "minItems": 1},
-            "sufficient": {"type": "boolean"},
-        },
-        "required": ["answer", "sufficient"],
-    }
-
-
-def written(sentences: Sequence[tuple[str, Sequence[int]]]) -> str:
-    """Sentences as one text, each followed by its citations: ``Kurul 7 üyedir. [1, 3]``."""
-    parts = []
-    for text, numbers in sentences:
-        if text := text.strip():
-            marker = f" [{', '.join(str(n) for n in numbers)}]" if numbers else ""
-            parts.append(text + marker)
-    return " ".join(parts)
-
-
 type Status = Literal["answered", "not_found", "insufficient", "failed"]
 # What an answer rests on: the documents (cited), or nothing (conversation, general knowledge).
 type Kind = Literal["documents", "conversation", "general", "library"]
@@ -234,6 +211,9 @@ class Answer:
     retried: bool = False
     # Sentences removed because a claim in them stood in no source, after the retry.
     stripped: tuple[str, ...] = ()
+    # Identifiers the answer states that OCR read uncertainly on a page it cites
+    # (``uncertain_in``): the page shows them to be checked against the document.
+    uncertain: tuple[str, ...] = ()
     error: str | None = None
     seconds: dict[str, float] = field(default_factory=dict)
     kind: Kind = "documents"
@@ -294,64 +274,6 @@ class _Slot:
             self._ticket = None
 
 
-class AnswerStream:
-    """The answer as far as the JSON reply has streamed, written as ``written`` writes it.
-
-    Each sentence's text shows as it comes and its citations once their list is closed, so
-    what is shown is always the start of the whole answer.
-    """
-
-    _PARTS = re.compile(
-        r'"text"\s*:\s*"(?P<text>(?:[^"\\]|\\.)*)(?P<closed>")?'
-        r'|"sources"\s*:\s*\[(?P<sources>[^\]]*)(?P<end>\])?'
-    )
-
-    def __init__(self) -> None:
-        self._raw = ""
-        self._shown = ""
-
-    def feed(self, text: str) -> str:
-        """The answer's text that ``text`` completes."""
-        self._raw += text
-        sentences: list[tuple[str, list[int]]] = []
-        for part in self._PARTS.finditer(self._raw):
-            if part["text"] is not None:
-                body = part["text"] if part["closed"] else _complete(part["text"])
-                try:
-                    sentences.append((json.loads(f'"{body}"'), []))
-                except ValueError:
-                    break
-                if not part["closed"]:
-                    break
-            elif part["end"] and sentences:
-                numbers = [int(n) for n in re.findall(r"\d+", part["sources"])]
-                sentences[-1] = (sentences[-1][0], numbers)
-        shown = written(sentences)
-        if not shown.startswith(self._shown):  # pragma: no cover  (only a bad reply)
-            return ""
-        new = shown[len(self._shown) :]
-        self._shown = shown
-        return new
-
-
-def _complete(body: str) -> str:
-    """A JSON string's body as far as it decodes: without an escape cut short at its end, nor a
-    high surrogate whose pair has not come yet."""
-    end = at = 0
-    while at < len(body):
-        if body[at] != "\\":
-            at += 1
-        elif body[at + 1 : at + 2] != "u":
-            at += 2
-        elif re.fullmatch(r"[dD][89abAB][0-9a-fA-F]{2}", body[at + 2 : at + 6]):
-            at += 12  # 😀: the pair
-        else:
-            at += 6
-        if at <= len(body):
-            end = at
-    return body[:end]
-
-
 def source_text(hit: Hit) -> str:
     pages = (
         f"{hit.page_start}"
@@ -387,6 +309,21 @@ def assemble(hits: Sequence[Hit]) -> list[Hit]:
     return picked
 
 
+def uncertain_in(text: str, sources: Sequence[Hit]) -> tuple[str, ...]:
+    """The identifiers ``text`` states that OCR read on a page of ``sources`` without its second
+    reading agreeing (knowledge-base.md, OCR): verification finds them in the source, since the
+    source is what OCR read, yet the document may say otherwise; the reader checks them."""
+    folded = fold(text)
+    return tuple(
+        dict.fromkeys(
+            identifier
+            for hit in sources
+            for identifier in hit.uncertain
+            if (said := claims(identifier)) and all(stands_in(c, folded) for c in said)
+        )
+    )
+
+
 def _overlap(a: set[str], b: set[str]) -> float:
     return len(a & b) / max(1, min(len(a), len(b)))
 
@@ -397,31 +334,6 @@ def prompt(question: str, hits: Sequence[Hit]) -> list[ChatMessage]:
         ChatMessage("system", SYSTEM),
         ChatMessage("user", f"Kaynaklar:\n\n{numbered}\n\nSoru: {question}"),
     ]
-
-
-def parse(content: str) -> tuple[str, bool]:
-    """The reply's answer, written out, and whether the model found the sources sufficient. A
-    sentence the model repeats is written once, with the citations of every time it said it
-    (a small model can loop: one answer said the same sentence three times). The streamed text
-    may show the repeat for a moment; the final answer replaces it."""
-    try:
-        reply = json.loads(content)
-    except ValueError:
-        return content.strip(), True
-    if not isinstance(reply, dict):
-        return content.strip(), True
-    answer = reply.get("answer")
-    sufficient = reply.get("sufficient") is not False
-    if isinstance(answer, str):
-        return answer.strip(), sufficient
-    sentences: dict[str, tuple[str, list[int]]] = {}
-    for sentence in answer if isinstance(answer, list) else []:
-        if isinstance(sentence, dict) and isinstance(sentence.get("text"), str):
-            numbers = sentence.get("sources")
-            cited = [n for n in numbers if isinstance(n, int)] if isinstance(numbers, list) else []
-            text, before = sentences.get(fold(sentence["text"]), (sentence["text"], []))
-            sentences[fold(text)] = (text, [*before, *(n for n in cited if n not in before)])
-    return written(list(sentences.values())), sufficient
 
 
 @dataclass
@@ -771,15 +683,17 @@ class Answerer:
         seconds["answer"] = _since(started)
         # A claim that stands only in a source shown but not cited is grounded, cited wrongly:
         # the source it stands in is cited for it.
+        numbers = sorted({*citations, *checked.lacking})
         yield Answer(
             "answered",
             text,
-            sorted({*citations, *checked.lacking}),
+            numbers,
             question,
             best,
             checked,
             retried,
             stripped,
+            uncertain_in(text, [context[n - 1] for n in numbers]),
             seconds=seconds,
         )
 

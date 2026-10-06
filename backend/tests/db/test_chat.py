@@ -32,9 +32,10 @@ from synapse.chat.public import (
 from synapse.kernel.database import Database
 from synapse.knowledge.public import Scope, Search
 from synapse.models.public import ChatDelta, ChatMessage, ChatReply
+from tests import knowledge_samples as samples
 from tests.db.conftest import TestDatabase
-from tests.db.test_ingest_pipeline import PASSWORD, World, make_world
-from tests.db.test_search import BagOfWords, Editor, Prefers, ingest
+from tests.db.test_ingest_pipeline import PASSWORD, World, make_world, run_worker, upload
+from tests.db.test_search import QUEUES, BagOfWords, Editor, Prefers, ingest
 
 COUNCIL = "Belediye meclisi 7 üyeden oluşur ve 2026/35 sayılı kararı oybirliğiyle kabul etti."
 BUDGET = "Bütçe raporu yıllık harcamaları ve gelirleri gösterir."
@@ -186,6 +187,26 @@ async def test_a_question_is_answered_stored_and_audited(
     assert details["retrieved"] == details["cited"] == [document["id"]]
     assert len(details["answer_sha256"]) == 64
     assert "7 üyeden" not in json.dumps(details)  # the answer itself is not in the log
+
+
+async def test_an_identifier_ocr_was_unsure_of_is_flagged_and_kept(
+    world: World, editor: Editor, database: Database
+) -> None:
+    # The stand-in OCR reads "Karar 2026/35 okundu." and its second reading lacks "2026/35".
+    def scan() -> None:
+        upload(editor.client, samples.pdf(""), "meclis-tarama.pdf")
+        run_worker(world, queues=QUEUES, embedder=BagOfWords())
+
+    await asyncio.to_thread(scan)
+    service = conversations(world, database, ScriptedChat(answer="Karar 2026/35 okundu."))
+    events = await ask(service, editor.user_id, "Meclis kararı 2026/35 okundu mu?")
+    answer = events[-1]
+    assert isinstance(answer, Answer)
+    assert (answer.status, answer.uncertain) == ("answered", ("2026/35",))
+    started = events[0]
+    assert isinstance(started, Started)
+    stored = await service.get(editor.user_id, started.conversation_id)
+    assert stored.turns[0].uncertain == ("2026/35",)
 
 
 async def test_a_greeting_is_stored_as_conversation_without_sources(
@@ -415,6 +436,7 @@ def test_the_endpoints_stream_answers_and_manage_conversations(
         "citations": [1],
         "error": None,
         "stripped": 0,
+        "uncertain": [],
         "kind": "documents",
     }
 

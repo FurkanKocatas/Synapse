@@ -19,7 +19,6 @@ from synapse.chat.answering import (
     SOURCES,
     Answer,
     Answerer,
-    AnswerStream,
     Delta,
     Event,
     Gate,
@@ -30,12 +29,10 @@ from synapse.chat.answering import (
     Sources,
     Turn,
     assemble,
-    parse,
-    schema,
     source_text,
-    written,
 )
 from synapse.chat.numerals import numeric
+from synapse.chat.reply import AnswerStream, parse, schema, written
 from synapse.chat.talk import CLASSIC_TURNS, moment, small_talk
 from synapse.chat.verification import check, cited, claims, sentences, strip_unsupported
 from synapse.knowledge.public import EVERYTHING, Folder, Found, Hit, Listed, Overview, Scope
@@ -72,7 +69,14 @@ LIBRARY = Overview(
 )
 
 
-def hit(text: str, *, score: float | None = 2.0, document: UUID | None = None, n: int = 0) -> Hit:
+def hit(
+    text: str,
+    *,
+    score: float | None = 2.0,
+    document: UUID | None = None,
+    n: int = 0,
+    uncertain: tuple[str, ...] = (),
+) -> Hit:
     return Hit(
         document_id=document or uuid4(),
         title=f"Belge {n}",
@@ -89,6 +93,7 @@ def hit(text: str, *, score: float | None = 2.0, document: UUID | None = None, n
         dense_rank=None,
         reranked=score is not None,
         rerank_score=score,
+        uncertain=uncertain,
     )
 
 
@@ -570,6 +575,18 @@ async def test_a_removed_sentence_leaves_no_citation_behind() -> None:
     only_bad = says(("Başkan 3 yıl görev yapar.", [1]))
     answer = final(await events_of(answerer(hits, StandInChat(only_bad, only_bad)), "Soru?"))
     assert (answer.status, answer.text) == ("insufficient", "")
+
+
+async def test_an_identifier_ocr_was_unsure_of_is_flagged() -> None:
+    # Page 1 was read by OCR, whose second reading did not confirm "2026/35" or "2026/40".
+    hits = [hit("Karar 2026/35 okundu.", uncertain=("2026/35", "2026/40")), hit("Ek.", n=1)]
+    chat = StandInChat(says(("Karar 2026/35 okundu.", [1])))
+    answer = final(await events_of(answerer(hits, chat), "Karar no?"))
+    assert (answer.status, answer.uncertain) == ("answered", ("2026/35",))
+    # Only what the answer states, on a page it cites.
+    other = [hit("Karar okundu.", uncertain=("2026/35",)), hit("Karar 2026/35.", n=1)]
+    chat = StandInChat(says(("Karar 2026/35.", [2])))
+    assert final(await events_of(answerer(other, chat), "Karar no?")).uncertain == ()
 
 
 async def test_a_number_from_an_uncited_source_adds_its_citation() -> None:

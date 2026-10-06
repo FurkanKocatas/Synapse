@@ -93,7 +93,10 @@ _DENSE = (
 _SYNONYMS = "SELECT coalesce(settings->'synonyms', '[]'::jsonb) FROM tenant_settings"
 _DETAILS = (
     "SELECT c.version_id, c.ordinal, v.document_id, d.title, v.version, c.kind, "
-    "c.heading_path, c.text, c.page_start, c.page_end, coalesce(v.context, '') "
+    "c.heading_path, c.text, c.page_start, c.page_end, coalesce(v.context, ''), "
+    "array(SELECT DISTINCT u FROM document_pages p CROSS JOIN unnest(p.uncertain_identifiers) u "
+    "WHERE p.version_id = c.version_id AND p.number BETWEEN c.page_start AND c.page_end "
+    "ORDER BY u) "
     "FROM document_chunks c JOIN document_versions v ON v.id = c.version_id "
     "JOIN documents d ON d.id = v.document_id "
     "WHERE (c.version_id, c.ordinal) IN (SELECT * FROM unnest(%s::uuid[], %s::int[]))"
@@ -122,6 +125,9 @@ class Hit:
     # The reranker's score (a logit): the one score with a meaning of its own, which refusal
     # before generation is calibrated on (ADR 0010, query rule 6). None when not reranked.
     rerank_score: float | None = None
+    # Identifiers OCR read on the chunk's pages that its second reading did not confirm
+    # (``uncertain_identifiers``): an answer that states one says so (chat/answering.py).
+    uncertain: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -333,7 +339,7 @@ async def _details(
         if row is None:  # pragma: no cover  (same transaction: the chunk cannot have gone)
             continue
         version_id, ordinal, document_id, title, version, kind, headings, text = row[:8]
-        page_start, page_end, context = row[8:]
+        page_start, page_end, context, uncertain = row[8:]
         hits.append(
             Hit(
                 document_id=document_id,
@@ -349,6 +355,7 @@ async def _details(
                 context=context,
                 lexical_rank=lexical_rank.get(key),
                 dense_rank=dense_rank.get(key),
+                uncertain=tuple(uncertain),
             )
         )
     return hits

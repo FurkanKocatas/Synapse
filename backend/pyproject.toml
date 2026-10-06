@@ -237,6 +237,7 @@ forbidden_modules = [
     "synapse.chat.answering",
     "synapse.chat.conversations",
     "synapse.chat.numerals",
+    "synapse.chat.reply",
     "synapse.chat.verification",
 ]
 allow_indirect_imports = true

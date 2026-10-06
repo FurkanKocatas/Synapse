@@ -107,6 +107,8 @@ class StoredTurn:
     created_at: datetime
     # What the answer rests on: the documents, or nothing (conversation, general knowledge).
     kind: str = "documents"
+    # Identifiers of the answer OCR read uncertainly (Answer.uncertain).
+    uncertain: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -266,6 +268,7 @@ class Conversations:
                 "best_score": answer.best_score,
                 "retried": answer.retried,
                 "stripped": list(answer.stripped),
+                "uncertain": list(answer.uncertain),
                 "error": answer.error,
                 "seconds": answer.seconds,
                 "checked": asdict(answer.checked) if answer.checked else None,
@@ -341,7 +344,8 @@ class Conversations:
             title, mode, scope = await self._owned(connection, user_id, conversation_id)
             cursor = await connection.execute(
                 "SELECT ordinal, question, status, answer, sources, citations, feedback, "
-                "created_at, kind FROM conversation_turns WHERE conversation_id = %s "
+                "created_at, kind, details->'uncertain' FROM conversation_turns "
+                "WHERE conversation_id = %s "
                 "ORDER BY ordinal",
                 (conversation_id,),
             )
@@ -358,7 +362,8 @@ class Conversations:
             readable = {(row[0], row[1]): (row[2], row[3]) for row in await cursor.fetchall()}
         turns = []
         for row in rows:
-            ordinal, question, status, answer, sources, citations, feedback, created, kind = row
+            ordinal, question, status, answer, sources, citations, feedback, created, kind = row[:9]
+            uncertain = tuple(row[9] or ())
             stored = []
             for s in sources:
                 text, headings = readable.get((UUID(s["version_id"]), s["ordinal"]), (None, []))
@@ -386,6 +391,7 @@ class Conversations:
                     feedback,
                     created,
                     kind,
+                    uncertain,
                 )
             )
         return ConversationView(conversation_id, title, turns, mode, scope)

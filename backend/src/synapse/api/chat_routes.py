@@ -87,6 +87,8 @@ class TurnView(BaseModel):
     created_at: datetime
     # "documents", "conversation" or "general": what the answer rests on.
     kind: str
+    # Identifiers of the answer OCR read uncertainly: to check against the document.
+    uncertain: list[str]
 
 
 class ConversationSummaryView(BaseModel):
@@ -207,6 +209,7 @@ def _sse(event: Started | Event) -> str:
                 "citations": event.citations,
                 "error": event.error,
                 "stripped": len(event.stripped),
+                "uncertain": list(event.uncertain),
                 "kind": event.kind,
             }
     return _message(name, data)
@@ -264,6 +267,7 @@ async def conversation(
                 feedback=t.feedback,
                 created_at=t.created_at,
                 kind=t.kind,
+                uncertain=list(t.uncertain),
             )
             for t in found.turns
         ],
