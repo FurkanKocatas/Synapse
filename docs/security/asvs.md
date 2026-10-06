@@ -6,8 +6,8 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 | Status | Requirements |
 |---|---|
-| met | 117 |
-| partly | 52 |
+| met | 119 |
+| partly | 50 |
 | not yet | 11 |
 | not applicable | 73 |
 | **all, levels 1 and 2** | **253** |
@@ -125,11 +125,11 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 ## V6 Authentication
 
-16 met, 8 partly, 4 not yet, 7 not applicable.
+18 met, 6 partly, 4 not yet, 7 not applicable.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
-| V6.1.1 | 1 | Authentication Documentation | partly | docs/design/identity.md:51; docs/adr/0006-authentication.md:23; backend/src/synapse/identity/throttle.py:1-15 | Backoff thresholds, cap and "no permanent lockout" are documented. The values are hard-coded, and the docs do not address an attacker repeatedly blocking one account for 15 minutes. |
+| V6.1.1 | 1 | Authentication Documentation | met | docs/design/identity.md (Security properties); docs/adr/0006-authentication.md:23; backend/src/synapse/identity/throttle.py:1-15 | Backoff thresholds, cap and no permanent lockout are documented, with the accepted risk: anyone who knows an address can keep that account waiting up to 15 minutes at a time, and 20 failures in a row are logged. The values are constants. |
 | V6.1.2 | 2 | Authentication Documentation | partly | docs/design/identity.md:63; docs/research/04-architecture.md:151 | Only categories are named (email name, display name, organization, product). There is no actual documented list of context-specific words or permutations. |
 | V6.1.3 | 2 | Authentication Documentation | met | docs/design/identity.md:5-59,140-142 | Password, TOTP, recovery-code and passkey pathways are documented together, with session levels, throttling and which roles must use MFA. |
 | V6.2.1 | 1 | Password Security | met | backend/src/synapse/identity/passwords.py:18-19,73-77; backend/src/synapse/identity/service.py:489-493 | At least 15 characters for single-factor accounts, 8 with a second factor. Enforced on create, change and admin reset. |
@@ -146,12 +146,12 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 | V6.2.12 | 2 | Password Security | not yet | docs/design/identity.md:65; docs/adr/0006-authentication.md:19 | A breached-password check (offline list) is planned but not implemented. |
 | V6.3.1 | 1 | General Authentication Security | partly | backend/src/synapse/identity/service.py:144-161,210-225; backend/src/synapse/identity/throttle.py:9-26; backend/tests/db/test_api_auth.py:128-137 | Per-account and per-IP backoff work as documented. The ADR's admin notification after 20 failures is only a log warning. |
 | V6.3.2 | 1 | General Authentication Security | met | backend/src/synapse/accounts_cli.py:1-4,98-119; docs/design/identity.md:85-94; backend/src/synapse/migrations/versions/0002_identity.py:21-43 | No seeded accounts. The first admin is created on the server with an email and password the operator chooses. |
-| V6.3.3 | 2 | General Authentication Security | partly | backend/src/synapse/identity/repository.py:241-251; backend/src/synapse/organization/settings.py:22-35; docs/product/v1-scope.md:41 | MFA is mandatory only for admins; other roles are optional and off by default. No documented rationale or mitigations beyond longer passwords. |
+| V6.3.3 | 2 | General Authentication Security | met | backend/src/synapse/identity/repository.py:241-251; backend/src/synapse/organization/settings.py:22-35; docs/design/identity.md (second-factor policy) | MFA is mandatory for admins; for other roles the organisation may require it. The default and its reasoning are documented: 15-character passwords for a single factor, an installation usually serving the internal network only. |
 | V6.3.4 | 2 | General Authentication Security | met | backend/tests/test_route_inventory.py:47-59; backend/src/synapse/api/deps.py:58-102; docs/design/identity.md:26-41 | A test checks every route either needs a session or is explicitly public. The MFA methods share the same level checks and throttle. |
 | V6.4.1 | 1 | Authentication Factor Lifecycle and Recovery | not yet | backend/src/synapse/api/admin_routes.py:117-136; backend/src/synapse/identity/accounts.py:122-145 | No system-generated initial secrets. Passwords an admin sets at creation or reset become long-term: they never expire and need no change at first login. |
 | V6.4.2 | 1 | Authentication Factor Lifecycle and Recovery | met | backend/src/synapse/migrations/versions/0002_identity.py:21-43; docs/design/identity.md:61-65 | No password hints or security questions in the schema, API or UI. |
 | V6.4.3 | 2 | Authentication Factor Lifecycle and Recovery | partly | backend/src/synapse/identity/accounts.py:122-145; docs/design/identity.md:134-136,151 | Only admins can reset; the reset keeps MFA and ends sessions. The admin chooses and knows the password, no change is forced, and there is no self-service reset. |
-| V6.4.4 | 2 | Authentication Factor Lifecycle and Recovery | partly | backend/src/synapse/identity/accounts.py:147-162; docs/design/identity.md:135; backend/src/synapse/identity/recovery.py:12-22 | Recovery codes and an admin MFA reset exist. Nothing documents how the admin proves the user's identity before resetting a lost factor. |
+| V6.4.4 | 2 | Authentication Factor Lifecycle and Recovery | partly | backend/src/synapse/identity/accounts.py:147-162; docs/design/identity.md (Account administration); backend/src/synapse/identity/recovery.py:12-22 | Recovery codes and an admin MFA reset exist. How the admin makes sure the request comes from the owner (in person, or calling back a known number) is documented for operators, and both resets are audited; the system cannot enforce it. |
 | V6.5.1 | 2 | General Multi-factor authentication requirements | met | backend/src/synapse/identity/repository.py:296-330; backend/src/synapse/identity/totp.py:54-69 | Recovery codes are marked used atomically. The TOTP time step is claimed atomically, so the same or an earlier code is rejected. |
 | V6.5.2 | 2 | General Multi-factor authentication requirements | not yet | backend/src/synapse/identity/recovery.py:13,30-31; docs/design/identity.md:69 | Recovery codes have 80 bits (under 112) but are stored as unsalted SHA-256, not a salted password hash. |
 | V6.5.3 | 2 | General Multi-factor authentication requirements | met | backend/src/synapse/identity/recovery.py:20; backend/src/synapse/identity/totp.py:46-47; backend/src/synapse/identity/passkeys.py:127,228 | Codes and challenges use secrets.token_bytes. TOTP seeds use pyotp.random_base32 (pyotp 2.10, secrets-based per its documentation; library source not read). |
