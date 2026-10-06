@@ -381,6 +381,16 @@ def test_finished_pages_are_chunked_with_their_entities(world: World, editor: Te
     # The scanned page is chunked from its OCR text, once OCR has read it.
     assert chunks(scan["version_id"]) == [(0, "text", "Karar 2026/35 okundu.", 1, 1, 32)]
     assert entities(scan["version_id"]) == [("decision_number", "2026/35", "2026/35")]
+    # What the second reading found and the text lacks is searched for, never shown.
+    terms = world.db.execute(
+        "SELECT version_id = %s, search FROM synapse.document_chunks "
+        "WHERE version_id IN (%s, %s) ORDER BY 1",
+        (scan["version_id"], layer["version_id"], scan["version_id"]),
+    ).fetchall()
+    assert [(scanned, "2026/36" in search.split()) for scanned, search in terms] == [
+        (False, False),
+        (True, True),
+    ]
 
 
 ALL_QUEUES = (Queue.INGEST, Queue.OCR, Queue.EMBED)
@@ -534,18 +544,19 @@ async def test_reindex_writes_missing_terms_and_queues_embedding(
 ) -> None:
     old = upload(editor, samples.pdf(TEXT), "eski.pdf")
     plain = upload(editor, samples.pdf(TEXT), "vektorsuz.pdf")
-    # Without an embedding model: both parsed, without vectors.
-    await asyncio.to_thread(run_worker, world, None, [Queue.INGEST])
-    # As if old had been chunked before its terms were written (migration 0016).
+    scan = upload(editor, samples.pdf(""), "eski-tarama.pdf")
+    # Without an embedding model: all parsed, without vectors.
+    await asyncio.to_thread(run_worker, world, None, [Queue.INGEST, Queue.OCR])
+    # As if old and scan had been chunked before their terms were written (migration 0016).
     world.db.execute(
-        "UPDATE synapse.document_chunks SET search = NULL WHERE version_id = %s",
-        (old["version_id"],),
+        "UPDATE synapse.document_chunks SET search = NULL WHERE version_id IN (%s, %s)",
+        (old["version_id"], scan["version_id"]),
     )
     database = Database(world.worker.database("test-reindex"), max_size=1)
     await database.open()
     try:
         without_model = await reindex(database, world.tenant_id, embed=False)
-        assert without_model.terms_written == 1
+        assert without_model.terms_written == 2
         assert without_model.embedding_queued == 0
         searchable = world.db.execute(
             "SELECT search FROM synapse.document_chunks WHERE version_id = %s",
@@ -553,6 +564,13 @@ async def test_reindex_writes_missing_terms_and_queues_embedding(
         ).fetchone()
         assert searchable is not None
         assert searchable[0].startswith("eski")
+        # OCR's second reading of the scan is written with the terms again.
+        scanned = world.db.execute(
+            "SELECT search FROM synapse.document_chunks WHERE version_id = %s",
+            (scan["version_id"],),
+        ).fetchone()
+        assert scanned is not None
+        assert "2026/36" in scanned[0].split()
         assert embedding_jobs(world, old["version_id"]) == 0
         with_model = await reindex(database, world.tenant_id, embed=True)
         assert with_model.terms_written == 0

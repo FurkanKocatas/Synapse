@@ -28,6 +28,7 @@ retries. Any other error is retried by the worker; after the last attempt the ve
 """
 
 import asyncio
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -391,7 +392,10 @@ async def retry_failed(database: Database, tenant_id: UUID, *, embed: bool) -> R
 
 async def _write_terms(connection: AsyncConnection, version_id: UUID) -> None:
     cursor = await connection.execute(
-        "SELECT c.ordinal, coalesce(v.context, ''), c.heading_path, c.text "
+        "SELECT c.ordinal, coalesce(v.context, ''), c.heading_path, c.text, "
+        "array(SELECT i FROM document_pages p CROSS JOIN unnest(p.extra_identifiers) i "
+        "WHERE p.version_id = c.version_id AND p.number BETWEEN c.page_start AND c.page_end "
+        "ORDER BY p.number) "
         "FROM document_chunks c JOIN document_versions v ON v.id = c.version_id "
         "WHERE c.version_id = %s AND c.search IS NULL",
         (version_id,),
@@ -401,10 +405,18 @@ async def _write_terms(connection: AsyncConnection, version_id: UUID) -> None:
         await update.executemany(
             "UPDATE document_chunks SET search = %s WHERE version_id = %s AND ordinal = %s",
             [
-                (lexical_text(contextual_text(context, headings, text)), version_id, ordinal)
-                for ordinal, context, headings, text in rows
+                (_terms(context, headings, text, extra), version_id, ordinal)
+                for ordinal, context, headings, text, extra in rows
             ],
         )
+
+
+def _terms(context: str, headings: Sequence[str], text: str, extra: Sequence[str]) -> str:
+    """What lexical search reads of a chunk (migration 0016): the terms of its document's
+    context, its headings and its text, and the identifiers OCR's second reading found on its
+    pages that the text lacks (``extra_identifiers``): search terms only, never shown, so a
+    number OCR misread in the text is still found by the reading that got it right."""
+    return lexical_text("\n".join([contextual_text(context, headings, text), *extra]))
 
 
 def _version_id(args: Args) -> UUID:
@@ -481,12 +493,13 @@ async def _store_pages(
 async def _store_chunks(connection: AsyncConnection, tenant_id: UUID, version_id: UUID) -> int:
     """Chunk the version's pages, as they are now, and store the chunks and their entities."""
     cursor = await connection.execute(
-        "SELECT number, text_source, blocks FROM document_pages WHERE version_id = %s "
-        "ORDER BY number",
+        "SELECT number, text_source, blocks, extra_identifiers FROM document_pages "
+        "WHERE version_id = %s ORDER BY number",
         (version_id,),
     )
     pages = await cursor.fetchall()
-    blocks = [Block.from_json(data) for _, _, page in pages for data in page]
+    blocks = [Block.from_json(data) for _, _, page, _ in pages for data in page]
+    extra = {number: identifiers for number, _, _, identifiers in pages}
     chunks = chunk(blocks)
     cursor = await connection.execute(
         "SELECT filename FROM document_versions WHERE id = %s", (version_id,)
@@ -495,7 +508,7 @@ async def _store_chunks(connection: AsyncConnection, tenant_id: UUID, version_id
     # The opening words come from pages with a text layer when the document has any: a cover
     # page sent to OCR reads its logo as noise ("il ll \ WW"), which then stood in front of
     # every chunk of 17 of the corpus's 97 documents. A scan has only OCR pages.
-    read = {number for number, source, _ in pages if source == "ocr"}
+    read = {number for number, source, _, _ in pages if source == "ocr"}
     layered = [b for b in blocks if b.page not in read]
     opening = chunk(layered) if layered and read else chunks
     context = document_context(row[0] if row else "", opening)[:MAX_CONTEXT]
@@ -523,8 +536,16 @@ async def _store_chunks(connection: AsyncConnection, tenant_id: UUID, version_id
                     c.tokens,
                     content_hash(c.text),
                     simhash(c.text),
-                    # What lexical search reads (migration 0016): the chunk's terms.
-                    lexical_text(contextual_text(context, c.heading_path, c.text)),
+                    _terms(
+                        context,
+                        c.heading_path,
+                        c.text,
+                        [
+                            identifier
+                            for number in range(c.page_start, c.page_end + 1)
+                            for identifier in extra.get(number, [])
+                        ],
+                    ),
                 )
                 for c in chunks
             ],

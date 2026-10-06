@@ -181,6 +181,6 @@ Checked in the browser against the real API and worker: uploading, a refused fil
 
 ## Not in this step
 
-- Layout analysis (tables kept whole comes with chunking); chunking and indexing (step 5 on). Using `extra_identifiers` in search and `uncertain_identifiers` in answers (steps 7 and 8).
+- Layout analysis (tables kept whole comes with chunking); chunking and indexing (step 5 on). Using `uncertain_identifiers` in answers (step 8); `extra_identifiers` are search terms of the chunks on their page ([search.md](search.md)).
 - Versions and titles on the screen (the API has versions already).
 - Per-document grants through the API, and editing titles and metadata.
