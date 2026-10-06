@@ -1,6 +1,6 @@
 """``synapsectl upgrade``: move an installation to another release (ADR 0012).
 
-1. The release's images must be on the machine (from the release's bundle, or pulled).
+1. The release's images must be on the machine (``synapsectl bundle load``, or pulled).
 2. A release on another PostgreSQL major version is refused: its server would not start on this
    one's data directory.
 3. A backup is taken with the running release: migrations only go forward, so restoring this
@@ -55,7 +55,7 @@ def upgrade(  # noqa: PLR0913  (the backup and apply steps are passed in by the 
     if missing:
         raise UpgradeError(
             f"the images of {version} are not on this machine ({', '.join(missing)}): "
-            "load the release first"
+            "load the release first (synapsectl bundle load BUNDLE)"
         )
     running_major = _postgres_major(run, current)
     new_major = _postgres_major(run, version)

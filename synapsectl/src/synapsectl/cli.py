@@ -1,5 +1,5 @@
-"""``synapsectl``: init, render, doctor, apply, backup, restore, upgrade and support-bundle
-(ADR 0012)."""
+"""``synapsectl``: init, render, doctor, apply, backup, restore, upgrade, bundle and
+support-bundle (ADR 0012)."""
 
 import argparse
 import os
@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from synapsectl import (
     __version__,
     backup,
+    bundle,
     config,
     doctor,
     models,
@@ -94,6 +95,19 @@ def build_parser() -> argparse.ArgumentParser:
         "upgrade", help="Move to another release: take a backup, then apply the release."
     )
     release.add_argument("--to", required=True, metavar="VERSION", help="The release's version")
+    offline = commands.add_parser(
+        "bundle",
+        help="Make an offline bundle of a release (create), check one (verify), or load one "
+        "into this installation (load).",
+    )
+    offline.add_argument("action", choices=["create", "verify", "load"])
+    offline.add_argument(
+        "path", type=Path, help="create: the directory to write it in; verify, load: the bundle"
+    )
+    offline.add_argument("--release", metavar="VERSION", help="create: the release's version")
+    offline.add_argument(
+        "--models-from", type=Path, help="create: the model files (default: models.dir)"
+    )
     bundle = commands.add_parser(
         "support-bundle", help="Write the versions, checks and recent logs, redacted, to one file."
     )
@@ -106,13 +120,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        if args.command == "init":
-            return _init(args.config, args.source)
-        if args.command == "restore" and args.configuration_from:
-            return _restore_configuration(args)
-        if args.command == "models" and args.dir and args.accelerator:
-            accelerator = models.Accelerator(args.accelerator)
-            return _models(args.action, args.dir, accelerator, verify=args.verify)
+        if (done := _without_configuration(args)) is not None:
+            return done
         loaded = config.load(args.config)
     except FileNotFoundError as error:
         print(f"error: {error.filename} not found (run: synapsectl init)", file=sys.stderr)
@@ -133,9 +142,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         "backup": lambda: _backup(loaded, args),
         "restore": lambda: _restore(loaded, args),
         "upgrade": lambda: _upgrade(loaded, args),
+        "bundle": lambda: _bundle(loaded, args),
         "support-bundle": lambda: _support_bundle(loaded, args),
     }
     return commands[args.command]()
+
+
+def _without_configuration(args: argparse.Namespace) -> int | None:
+    """A command that runs without synapse.toml, run; None for the others."""
+    if args.command == "init":
+        return _init(args.config, args.source)
+    if args.command == "restore" and args.configuration_from:
+        return _restore_configuration(args)
+    if args.command == "bundle" and (
+        args.action == "verify" or (args.action == "create" and args.models_from)
+    ):
+        return _bundle(None, args)
+    if args.command == "models" and args.dir and args.accelerator:
+        accelerator = models.Accelerator(args.accelerator)
+        return _models(args.action, args.dir, accelerator, verify=args.verify)
+    return None
 
 
 def _render(loaded: config.SynapseConfig) -> int:
@@ -258,6 +284,30 @@ def _upgrade(loaded: config.SynapseConfig, args: argparse.Namespace) -> int:
     try:
         upgrade.upgrade(loaded, args.config.resolve(), args.to)
     except (upgrade.UpgradeError, backup.BackupError, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _bundle(loaded: config.SynapseConfig | None, args: argparse.Namespace) -> int:
+    try:
+        if args.action == "verify":
+            version, wrong = bundle.verify(args.path)
+            if wrong:
+                print("error: the bundle is damaged:\n  " + "\n  ".join(wrong), file=sys.stderr)
+                return 1
+            print(f"{version}: every file is right")
+        elif args.action == "create":
+            if not args.release:
+                print("error: create needs --release VERSION", file=sys.stderr)
+                return 1
+            model_dir = args.models_from or (loaded.models.dir if loaded else None)
+            assert model_dir is not None  # noqa: S101  (main loads the configuration otherwise)
+            bundle.create(args.release, args.path, model_dir=model_dir)
+        else:
+            assert loaded is not None  # noqa: S101  (main loads the configuration for load)
+            bundle.load(args.path, loaded)
+    except (bundle.BundleError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     return 0

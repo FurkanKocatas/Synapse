@@ -8,7 +8,8 @@ Status: init, render, doctor and apply, 2026-09-28; backup, restore, upgrade and
 
 ```bash
 sudo synapsectl init          # asks a few questions, writes synapse.toml, creates secrets, renders
-sudo synapsectl models fetch  # the model files, unless the offline bundle brought them
+sudo synapsectl bundle load /media/usb/synapse-1.0.0  # without the internet: images, models
+sudo synapsectl models fetch  # with it: the model files
 sudo synapsectl doctor        # checks the machine and the files
 sudo synapsectl apply --admin-email admin@example.org --admin-name "Admin"
 ```
@@ -60,12 +61,30 @@ The model servers ([deployment.md](deployment.md#model-servers), [ADR 0018](adr/
 
 `synapsectl upgrade --to VERSION` moves the installation to another release:
 
-1. The release's images must be on the machine. A release on another PostgreSQL major version is refused: its server would not start on this data directory.
+1. The release's images must be on the machine (`synapsectl bundle load`, below). A release on another PostgreSQL major version is refused: its server would not start on this data directory.
 2. A backup is taken with the running release. Migrations only go forward, so restoring this backup with the old release is the way back; without backups set up, the upgrade is refused.
 3. `[images] version` is changed in `synapse.toml`, and only that line: comments and hand edits stay.
 4. `apply` renders the files, checks the machine, migrates the database and starts the release.
 
 If `apply` stops, the new version stays written, so `apply` can run again once the cause is fixed; the error also lists the commands that go back to the old release with the backup just taken. Tested by [tests/test_upgrade.py](../synapsectl/tests/test_upgrade.py) with a scripted Docker.
+
+## bundle
+
+A release in one directory, for machines without the internet ([bundle.py](../synapsectl/src/synapsectl/bundle.py)):
+
+```
+synapse-VERSION/
+  manifest.json   the version, and every file: what it is, its SHA-256 and size
+  SHA256SUMS      the same hashes, as sha256sum -c reads them
+  images/         the release's three images, the llama.cpp servers' (CPU and Vulkan) and restic's
+  models/         the model files of both accelerators
+```
+
+- `synapsectl bundle create DIR --release VERSION [--models-from DIR]` makes one (on the vendor's machine): the release's images must be there, the others are pulled by their pinned digests, and every model file must have its SHA-256 (`models fetch` gets them). About 10 GB. Nothing is left half made: the bundle is written as `synapse-VERSION.partial` and renamed when complete.
+- `synapsectl bundle verify DIR` checks every file listed, its size and SHA-256, that nothing else is there, and that `SHA256SUMS` says the same; it needs no `synapse.toml`.
+- `sudo synapsectl bundle load DIR` verifies, then loads the images into Docker and copies the model files the installation's accelerator needs into `models.dir` (files already there and right are kept). A damaged bundle loads nothing. It then says what to run: `apply` on a new machine, `upgrade --to VERSION` on one running another release.
+
+The hashes find a bundle damaged on its way (a copy cut short, a failing disk), not one changed on purpose: that needs the vendor's signature over the manifest (ADR 0012), which comes with the vendor's signing key. Tested by [tests/test_bundle.py](../synapsectl/tests/test_bundle.py) with a scripted Docker.
 
 ## support-bundle
 
@@ -134,7 +153,7 @@ Two details that matter for non-standard ports:
 
 ## Not done yet
 
-- The offline bundle with a signed release manifest that `upgrade` checks (image digests, migration heads), licence files.
+- The bundle's signature (the vendor's key) and a release manifest `upgrade` checks (image digests, migration heads); licence files.
 - Upgrades across PostgreSQL major versions (through a backup and a restore).
 - Backups to S3-compatible storage (a NAS share or disk mounted on the host until then), and the backup status on the Operations page.
 - A web-based setup screen for the same steps, served on localhost during installation.
