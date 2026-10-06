@@ -25,6 +25,7 @@ import docx
 import openpyxl
 import pptx
 import pypdfium2 as pdfium
+import pypdfium2.raw as pdfium_c
 from docx.oxml.ns import qn
 from docx.table import Table as WordTable
 from docx.text.paragraph import Paragraph
@@ -41,6 +42,13 @@ PageKind = Literal["page", "slide", "sheet", "document"]
 # Fewer visible characters than this on a PDF page means the text layer is missing (a scan)
 # or unusable; the page goes to OCR.
 MIN_TEXT_CHARS = 20
+# A page mostly covered by one picture with only a few words of text layer is a scan, and its
+# words are a stamp put on it (an e-signature's, a filing number), not its content: it goes to
+# OCR too. On the evaluation corpus this sends 75 of 5,052 PDF pages to OCR on top of the others:
+# such a scan, section covers of annual reports, and figures and tables stored as pictures, whose
+# text only OCR reads. OCR costs time there; the page keeps the better text (ocr.better_text).
+PICTURE_SHARE = 0.5
+STAMP_WORDS = 30
 MAX_PAGES = 5000
 MAX_SHEET_CELLS = 500_000
 # Office files are zip packages; refuse ones that expand to far more than they weigh.
@@ -80,14 +88,22 @@ class Page:
         return self.issue is not None
 
 
-def scanned_page(number: int, kind: PageKind, text: str, block_text: str | None = None) -> Page:
+def scanned_page(
+    number: int,
+    kind: PageKind,
+    text: str,
+    block_text: str | None = None,
+    picture_share: float = 0.0,
+) -> Page:
     """A page of a format that can carry an OCR'd text layer: PDF pages and images.
 
     ``block_text``: the text its blocks are made from, when it differs from what the page shows
-    (running headers and footers removed).
+    (running headers and footers removed). ``picture_share``: how much of the page its largest
+    picture covers.
     """
     blocks = tuple(blocks_from_text(text if block_text is None else block_text, number))
-    if visible_chars(text) < MIN_TEXT_CHARS:
+    stamped = picture_share >= PICTURE_SHARE and len(text.split()) < STAMP_WORDS
+    if visible_chars(text) < MIN_TEXT_CHARS or stamped:
         return Page(number, kind, text, issue="no_text", blocks=blocks)
     assessed = quality.assess(text)
     issue: QualityIssue | None = None
@@ -162,11 +178,12 @@ def _pdf(path: Path) -> Parsed:
         try:
             if len(document) > MAX_PAGES:
                 raise ParseError("too_many_pages")
-            texts = []
+            texts, pictures = [], []
             for index in range(len(document)):
                 page = document[index]
                 textpage = page.get_textpage()
                 texts.append(normalize(textpage.get_text_range()))
+                pictures.append(picture_share(page))
                 textpage.close()
                 page.close()
         finally:
@@ -176,10 +193,22 @@ def _pdf(path: Path) -> Parsed:
     cleaned = without_running_lines(texts)
     return Parsed(
         [
-            scanned_page(n, "page", text, block_text)
-            for n, (text, block_text) in enumerate(zip(texts, cleaned, strict=True), start=1)
+            scanned_page(n, "page", text, block_text, share)
+            for n, (text, block_text, share) in enumerate(
+                zip(texts, cleaned, pictures, strict=True), start=1
+            )
         ]
     )
+
+
+def picture_share(page: pdfium.PdfPage) -> float:
+    """The share of the page its largest picture covers (pictures inside forms included)."""
+    width, height = page.get_size()
+    largest = 0.0
+    for picture in page.get_objects(filter=[pdfium_c.FPDF_PAGEOBJ_IMAGE], max_depth=5):
+        left, bottom, right, top = picture.get_bounds()
+        largest = max(largest, max(0.0, right - left) * max(0.0, top - bottom))
+    return min(1.0, largest / (width * height)) if width and height else 0.0
 
 
 def without_running_lines(texts: list[str], page_word: str | None = None) -> list[str]:

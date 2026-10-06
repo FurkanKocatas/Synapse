@@ -22,23 +22,33 @@ def scanned_pdf(*lines: str, dpi: int = 200) -> bytes:
     return buffer.getvalue()
 
 
-def pdf(*pages: str) -> bytes:
+def pdf(*pages: str, picture: bool = False) -> bytes:
     """A valid PDF with the given text per page, one printed line per "\\n" (Helvetica, ASCII
-    text); an empty string makes a page without text, like a scan."""
+    text); an empty string makes a page without text, like a scan. With ``picture`` a grey
+    picture covers every page under its text: a scan with a text layer of its own."""
     objects: list[bytes] = []
     kids = " ".join(f"{3 + 2 * i} 0 R" for i in range(len(pages)))
     objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
     objects.append(f"<< /Type /Pages /Kids [{kids}] /Count {len(pages)} >>".encode())
     font = 3 + 2 * len(pages)
+    image = font + 1
+    xobject = f" /XObject << /Im1 {image} 0 R >>" if picture else ""
     for i, text in enumerate(pages):
         lines = " 0 -16 Td ".join(f"({line}) Tj" for line in text.split("\n"))
         content = f"BT /F1 12 Tf 72 720 Td {lines} ET".encode() if text else b""
+        if picture:
+            content = b"q 612 0 0 792 0 0 cm /Im1 Do Q " + content
         objects.append(
             f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {4 + 2 * i} 0 R "
-            f"/Resources << /Font << /F1 {font} 0 R >> >> >>".encode()
+            f"/Resources << /Font << /F1 {font} 0 R >>{xobject} >> >>".encode()
         )
         objects.append(b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream")
     objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    if picture:
+        objects.append(
+            b"<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceGray "
+            b"/BitsPerComponent 8 /Length 4 >>\nstream\n\x80\x80\x80\x80\nendstream"
+        )
     out = bytearray(b"%PDF-1.7\n")
     offsets = []
     for number, body in enumerate(objects, start=1):

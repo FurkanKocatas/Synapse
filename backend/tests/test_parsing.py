@@ -24,6 +24,23 @@ def test_pdf_pages_keep_their_numbers_and_blank_pages_go_to_ocr(tmp_path: Path) 
     assert (second.number, second.text, second.needs_ocr) == (2, "", True)
 
 
+STAMP = "BAKAN YARDIMCILIGI HUKUK HIZMETLERI GENEL MUDURLUGU 4.12.2024 10:19:24 E-11045126-010.06"
+
+
+def test_a_scan_whose_text_layer_is_only_a_stamp_goes_to_ocr(tmp_path: Path) -> None:
+    [stamped] = parse(tmp_path, samples.pdf(STAMP, picture=True)).pages
+    assert (stamped.needs_ocr, stamped.issue) == (True, "no_text")
+    # the same words without a picture under them are the page's own text
+    [plain] = parse(tmp_path, samples.pdf(STAMP)).pages
+    assert not plain.needs_ocr
+
+
+def test_a_scan_with_a_text_layer_of_its_own_is_judged_by_its_words(tmp_path: Path) -> None:
+    text = "\n".join(["Belediye meclisi karar defterine kayit edildi ve onaylandi."] * 6)
+    [page] = parse(tmp_path, samples.pdf(text, picture=True)).pages
+    assert not page.needs_ocr
+
+
 def test_word_keeps_headings_and_tables_in_order(tmp_path: Path) -> None:
     [page] = parse(tmp_path, samples.word()).pages
     assert page.kind == "document"

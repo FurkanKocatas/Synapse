@@ -44,3 +44,7 @@ Chosen: **-4.2 and 0.03**.
 - The score and reason are stored per page (`document_pages.quality_issue`, `char_score`, `artefacts`) for the administrators' OCR summary.
 - The model file is 9,632 trigram counts (about 100 KB) built from the corpus; it holds no text. Rebuilding: `uv run --directory backend python ../eval/quality/build_char_model.py`. Re-running the calibration: `.../calibrate.py`.
 - To revisit with a bigger corpus: the thresholds, and whether short pages (under 80 letters in lower-case words) should be judged at all.
+
+## Scans with a stamp for a text layer (2026-10-06)
+
+A scanned page can carry a few words of real text: the stamp an e-signature puts on it ("BAKAN YARDIMCILIĞI ... 4.12.2024 10:19:24 E-11045126-010.06"). The words are well formed and too few to judge, so the page passed as usable and was never read by OCR: the first page of a health circular (doc-100) was missing from the product, found while writing the golden set's questions on scanned documents. Rule since then (`parsing.PICTURE_SHARE`, `STAMP_WORDS`): a PDF page that one picture covers at least half of, with fewer than 30 words of text layer, goes to OCR as a page without text. On the corpus it adds 75 of 5,052 PDF pages: that scan, section covers of annual reports (a photograph and a title) and figures and tables stored as pictures, whose text only OCR reads. Scans with a full text layer of their own (the Danıştay decisions) are judged by their words as before.
