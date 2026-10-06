@@ -175,8 +175,43 @@ jobs:
       - name: Image scan
         # Fails on any HIGH or CRITICAL vulnerability that already has a fix.
         run: |
+          mkdir -p "$RUNNER_TEMP/trivy"
           for image in synapse-app:dev synapse-web:dev synapse-postgres:dev; do
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$RUNNER_TEMP/trivy:/root/.cache/trivy" \
               aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
               image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed "$image"
           done
+      - name: Model server images
+        # The llama.cpp images are shipped as they are, pinned by digest: their findings are
+        # listed here, not gated; a fix comes with a newer llama.cpp build (models.py).
+        run: |
+          for image in \
+            ghcr.io/ggml-org/llama.cpp:server-b11243@sha256:f9115c95639e60abc09d4ea83b26fd4d56c66aa1174594393335a514da00c283 \
+            ghcr.io/ggml-org/llama.cpp:server-vulkan-b11243@sha256:fb1b039d27638fb22a5e7e59e97729534e73fe621f430ef496666ec01ac0630b; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$RUNNER_TEMP/trivy:/root/.cache/trivy" \
+              aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+              image --severity HIGH,CRITICAL --ignore-unfixed "$image"
+          done
+      - name: Software bills of materials
+        # One SPDX file per image (ADR 0015): ours from the daemon, the model servers' from the
+        # registry by digest, kept with the run.
+        run: |
+          mkdir -p "$RUNNER_TEMP/sbom"
+          for pair in \
+            "synapse-app docker:synapse-app:dev" \
+            "synapse-web docker:synapse-web:dev" \
+            "synapse-postgres docker:synapse-postgres:dev" \
+            "llama-cpp-cpu registry:ghcr.io/ggml-org/llama.cpp:server-b11243@sha256:f9115c95639e60abc09d4ea83b26fd4d56c66aa1174594393335a514da00c283" \
+            "llama-cpp-vulkan registry:ghcr.io/ggml-org/llama.cpp:server-vulkan-b11243@sha256:fb1b039d27638fb22a5e7e59e97729534e73fe621f430ef496666ec01ac0630b"; do
+            set -- $pair
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              anchore/syft:v1.54.1@sha256:3eb5379ba7b409c3f4069b686110527af0c47df993fa5c10d13e7cf34f49b1aa \
+              "$2" -o spdx-json > "$RUNNER_TEMP/sbom/$1.spdx.json"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom
+          path: ${{ runner.temp }}/sbom
+          retention-days: 90

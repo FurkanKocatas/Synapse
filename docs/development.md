@@ -107,5 +107,5 @@ CI additionally runs the licence check, dependency vulnerability audits, a secre
 These are decided in the ADRs and will be added as the code they apply to lands:
 
 - RAG evaluation gate ([ADR 0010](adr/0010-rag-pipeline.md)): needs the pipeline and the golden set.
-- SBOMs and image signing: need a release workflow.
+- Image signing, and SBOMs attached to a release: need a release workflow (CI already makes the SBOMs).
 - A check that every test directory is collected by a CI job: needs more than one test tree.

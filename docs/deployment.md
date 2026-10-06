@@ -11,7 +11,7 @@ Status: 2026-09-28; model servers 2026-10-01. Customer installations get their c
 | `synapse-postgres` | [deploy/postgres/Dockerfile](../deploy/postgres/Dockerfile) | postgres (999) | PostgreSQL 18 with pgvector and pg_textsearch, Debian security updates applied, gosu removed |
 | `ghcr.io/ggml-org/llama.cpp:server-b11243` and `server-vulkan-b11243` | llama.cpp's own images, pinned by digest | uid 10001 (set by us; the images default to root) | `llama-server` for the three model servers below, on the CPU or on a GPU through Vulkan. Not built here |
 
-The application image applies Debian's security updates published after its base image was built, as the database image does. Every base image is pinned by digest. CI builds all three and fails on any HIGH or CRITICAL vulnerability that has a fix ([Trivy](https://trivy.dev), `--ignore-unfixed`).
+The application image applies Debian's security updates published after its base image was built, as the database image does. Every base image is pinned by digest. CI builds all three and fails on any HIGH or CRITICAL vulnerability that has a fix ([Trivy](https://trivy.dev), `--ignore-unfixed`). The model server images (llama.cpp, CPU and Vulkan, pinned by digest) are scanned too and their findings listed, without failing the run: they are shipped as they are, and a fix comes with a newer llama.cpp build. Every run keeps an SPDX software bill of materials for each of the five images ([Syft](https://github.com/anchore/syft), the `sbom` artifact, 90 days).
 
 Why Caddy is rebuilt: the published Caddy 2.11.4 binary was built with Go 1.26.3 and older `golang.org/x` and gRPC modules, which the scan reports (17 HIGH findings on 2026-09-28). Building the same Caddy version with Go 1.26.8 and current modules removes all of them. When the scan fails again, bump the versions in the Dockerfile.
 
@@ -94,6 +94,6 @@ It then removes everything it created. CI runs it, with `--with-backup`, on ever
 
 - The offline bundle and its signed release manifest ([installer.md](installer.md)).
 - The scheduler's consistency checks, and separate workers per queue on bigger machines.
-- Image signing and SBOMs in a release workflow.
+- Image signing, and attaching the SBOMs to a release, in a release workflow.
 - Scanning the llama.cpp images in CI as our own images are, and a second GPU kind (Intel's integrated GPUs) measured before the installer recommends Vulkan for it.
 - TLS configuration and a production memory profile per hardware tier.
