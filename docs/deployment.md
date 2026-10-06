@@ -92,7 +92,7 @@ It then removes everything it created. CI runs it, with `--with-backup`, on ever
 
 ## Not done yet
 
-- Upgrades and the offline bundle ([installer.md](installer.md)).
+- The offline bundle and its signed release manifest ([installer.md](installer.md)).
 - The scheduler role (periodic jobs such as audit checkpoints and cleanup), and separate workers per queue on bigger machines.
 - Image signing and SBOMs in a release workflow.
 - Scanning the llama.cpp images in CI as our own images are, and a second GPU kind (Intel's integrated GPUs) measured before the installer recommends Vulkan for it.

@@ -1,4 +1,4 @@
-"""``synapsectl``: init, render, doctor, apply, backup and restore (ADR 0012)."""
+"""``synapsectl``: init, render, doctor, apply, backup, restore and upgrade (ADR 0012)."""
 
 import argparse
 import os
@@ -9,7 +9,17 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from synapsectl import __version__, backup, config, doctor, models, render, secrets, wizard
+from synapsectl import (
+    __version__,
+    backup,
+    config,
+    doctor,
+    models,
+    render,
+    secrets,
+    upgrade,
+    wizard,
+)
 from synapsectl.apply import ApplyError, FirstAdmin, apply
 
 DEFAULT_CONFIG = Path("/etc/synapse/synapse.toml")
@@ -78,6 +88,10 @@ def build_parser() -> argparse.ArgumentParser:
     back.add_argument(
         "--password-file", type=Path, help="With --configuration-from: the backup password"
     )
+    release = commands.add_parser(
+        "upgrade", help="Move to another release: take a backup, then apply the release."
+    )
+    release.add_argument("--to", required=True, metavar="VERSION", help="The release's version")
     return parser
 
 
@@ -110,6 +124,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "doctor": lambda: _doctor(loaded, running=args.running),
         "backup": lambda: _backup(loaded, args),
         "restore": lambda: _restore(loaded, args),
+        "upgrade": lambda: _upgrade(loaded, args),
     }
     return commands[args.command]()
 
@@ -225,6 +240,15 @@ def _restore(loaded: config.SynapseConfig, args: argparse.Namespace) -> int:
     try:
         backup.restore(loaded, snapshot=args.snapshot, replace=args.replace)
     except (backup.BackupError, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _upgrade(loaded: config.SynapseConfig, args: argparse.Namespace) -> int:
+    try:
+        upgrade.upgrade(loaded, args.config.resolve(), args.to)
+    except (upgrade.UpgradeError, backup.BackupError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     return 0

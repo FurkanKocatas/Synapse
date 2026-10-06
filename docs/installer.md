@@ -1,6 +1,6 @@
 # Installer: synapsectl
 
-Status: init, render, doctor and apply, 2026-09-28; backup and restore, 2026-10-06. Decision records: [ADR 0012](adr/0012-installer-modules-licensing.md), [ADR 0021](adr/0021-backups.md) (backups). Code: [synapsectl/](../synapsectl/).
+Status: init, render, doctor and apply, 2026-09-28; backup, restore and upgrade, 2026-10-06. Decision records: [ADR 0012](adr/0012-installer-modules-licensing.md), [ADR 0021](adr/0021-backups.md) (backups). Code: [synapsectl/](../synapsectl/).
 
 `synapsectl` runs on the customer's machine, operated by the vendor's installer. One file, `/etc/synapse/synapse.toml`, describes the installation; everything else is produced from it.
 
@@ -33,7 +33,7 @@ Unknown keys, unknown modules and incomplete TLS settings are rejected, so a typ
 
 ## apply
 
-`apply` brings the machine to the state `synapse.toml` describes. Every step is safe to repeat, so the same command installs, repairs, and (after `[images] version` is changed) upgrades:
+`apply` brings the machine to the state `synapse.toml` describes. Every step is safe to repeat, so the same command installs, repairs, and (after `[images] version` is changed) upgrades; `upgrade` below does that with a backup first:
 
 1. Renders the files again and runs the doctor checks. Any FAIL stops here, before anything starts. If the services are already running, their ports count as in use by Synapse.
 2. Starts the database, then runs bootstrap (creates or repairs roles and schema) and the migrations.
@@ -55,6 +55,17 @@ The model servers ([deployment.md](deployment.md#model-servers), [ADR 0018](adr/
 - `synapsectl models fetch [--dir D] [--accelerator cpu|vulkan]` gets what is missing: the chat model (Qwen3.5-4B Q4_K_M) is downloaded from its pinned Hugging Face revision; the encoders (bge-m3, bge-reranker-v2-m3) are converted from their pinned revisions with llama.cpp's own converter at the servers' build, in a throwaway container with the converter's dependencies pinned, running as the calling user. The conversion is deterministic: a fresh container produced the measured file byte for byte (3.5 minutes for bge-m3 on the reference machine), so the SHA-256 also proves the file is the one the benchmarks measured. A file whose digest is wrong is removed.
 - `synapsectl models check [--verify]` reports missing files and wrong sizes; with `--verify` it also reads every file for its SHA-256 (4 to 5 GB).
 - Offline installs get the files in the bundle and only check them.
+
+## upgrade
+
+`synapsectl upgrade --to VERSION` moves the installation to another release:
+
+1. The release's images must be on the machine. A release on another PostgreSQL major version is refused: its server would not start on this data directory.
+2. A backup is taken with the running release. Migrations only go forward, so restoring this backup with the old release is the way back; without backups set up, the upgrade is refused.
+3. `[images] version` is changed in `synapse.toml`, and only that line: comments and hand edits stay.
+4. `apply` renders the files, checks the machine, migrates the database and starts the release.
+
+If `apply` stops, the new version stays written, so `apply` can run again once the cause is fixed; the error also lists the commands that go back to the old release with the backup just taken. Tested by [tests/test_upgrade.py](../synapsectl/tests/test_upgrade.py) with a scripted Docker.
 
 ## Backups
 
@@ -108,6 +119,7 @@ Two details that matter for non-standard ports:
 
 ## Not done yet
 
-- `upgrade` (with its mandatory backup), `support-bundle`, the offline bundle, licence files.
+- `support-bundle`, the offline bundle with a signed release manifest that `upgrade` checks (image digests, migration heads), licence files.
+- Upgrades across PostgreSQL major versions (through a backup and a restore).
 - Backups to S3-compatible storage (a NAS share or disk mounted on the host until then), and the backup status on the Operations page.
 - A web-based setup screen for the same steps, served on localhost during installation.
