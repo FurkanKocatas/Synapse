@@ -1,10 +1,12 @@
 """The sign-in API end to end: real database, real cookies, CSRF and TOTP."""
 
+import logging
 import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pyotp
 import pytest
@@ -202,6 +204,48 @@ def test_enrollment_rejects_a_wrong_code(client: TestClient, tenant: Tenant) -> 
     response = client.post("/api/auth/mfa/totp/confirm", json={"code": "000000"}, headers=csrf)
     assert response.status_code == 400
     assert response.json() == {"error": "invalid_code"}
+
+
+class Events(logging.Handler):
+    """The structlog events one logger writes, as their dictionaries."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.events: list[dict[str, Any]] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if isinstance(record.msg, dict):
+            self.events.append(record.msg)
+
+
+@pytest.fixture
+def denials() -> Iterator[list[dict[str, Any]]]:
+    handler = Events()
+    logger = logging.getLogger("synapse.api.deps")
+    logger.addHandler(handler)
+    try:
+        yield handler.events
+    finally:
+        logger.removeHandler(handler)
+
+
+def test_denied_requests_are_logged_with_the_user(
+    client: TestClient, tenant: Tenant, denials: list[dict[str, Any]]
+) -> None:
+    login(client, tenant.member)
+    assert client.post("/api/auth/logout").status_code == 403
+    assert client.get("/api/audit/status").status_code == 403
+    csrf, forbidden = denials
+    assert (csrf["event"], csrf["method"], csrf["path"]) == (
+        "api.csrf_failed",
+        "POST",
+        "/api/auth/logout",
+    )
+    assert (forbidden["event"], forbidden["role"]) == ("api.forbidden", "member")
+    assert forbidden["permission"].startswith("audit.")
+    assert csrf["level"] == forbidden["level"] == "warning"
+    assert csrf["user_id"] == forbidden["user_id"]
+    uuid.UUID(csrf["user_id"])
 
 
 def test_audit_status_needs_the_audit_permission(client: TestClient, tenant: Tenant) -> None:

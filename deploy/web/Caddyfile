@@ -24,7 +24,7 @@ http://:8099 {
 	encode zstd gzip
 
 	header {
-		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "same-origin"
@@ -34,6 +34,9 @@ http://:8099 {
 	}
 
 	handle /api/* {
+		# Answers carry documents, conversations and credentials: never kept in a cache, unless
+		# a route says otherwise (? only sets the header when the API did not).
+		header ?Cache-Control "no-store"
 		reverse_proxy api:8000 {
 			# Chat answers are streamed; forward every chunk immediately.
 			flush_interval -1

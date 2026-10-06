@@ -17,18 +17,18 @@ services:
   llm-embed:
     <<: *gpu
     command:
-      [-m, /models/bge-m3-q8_0.gguf, --embedding, --pooling, cls, -c, "8192", -np, "16", -b, "512",
-       -ub, "512", -ngl, "99", --api-key-file, /run/secrets/embed_key]
+      [-m, /models/bge-m3-q8_0.gguf, --no-webui, --embedding, --pooling, cls, -c, "8192", -np,
+       "16", -b, "512", -ub, "512", -ngl, "99", --api-key-file, /run/secrets/embed_key]
 
   llm-rerank:
     <<: *gpu
     command:
-      [-m, /models/bge-reranker-v2-m3-q8_0.gguf, --reranking, -c, "8192", -np, "16", -b, "512",
-       -ub, "512", -ngl, "99", --api-key-file, /run/secrets/rerank_key]
+      [-m, /models/bge-reranker-v2-m3-q8_0.gguf, --no-webui, --reranking, -c, "8192", -np,
+       "16", -b, "512", -ub, "512", -ngl, "99", --api-key-file, /run/secrets/rerank_key]
 
   llm-chat:
     <<: *gpu
     command:
-      [-m, /models/Qwen3.5-4B-Q4_K_M.gguf, -c, "16384", --parallel, "2", --jinja,
+      [-m, /models/Qwen3.5-4B-Q4_K_M.gguf, --no-webui, -c, "16384", --parallel, "2", --jinja,
        --reasoning-budget, "0", --cache-ram, "0", -ngl, "99", --api-key-file,
        /run/secrets/chat_key]

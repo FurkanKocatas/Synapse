@@ -110,15 +110,21 @@ export function conversationKey(id: string | undefined) {
   return ["chat", "conversation", id ?? "new"];
 }
 
+// A conversation's ID comes from the address bar (?c=), so it is encoded: "../admin" stays one
+// path segment instead of reaching another endpoint.
+function conversationPath(id: string) {
+  return `/api/conversations/${encodeURIComponent(id)}`;
+}
+
 export const chatApi = {
   conversations: (mode: ChatMode) =>
     apiRequest<ConversationSummary[]>("GET", `/api/conversations?mode=${mode}`),
-  conversation: (id: string) => apiRequest<Conversation>("GET", `/api/conversations/${id}`),
+  conversation: (id: string) => apiRequest<Conversation>("GET", conversationPath(id)),
   rename: (id: string, title: string) =>
-    apiRequest<undefined>("PATCH", `/api/conversations/${id}`, { title }),
-  remove: (id: string) => apiRequest<undefined>("DELETE", `/api/conversations/${id}`),
+    apiRequest<undefined>("PATCH", conversationPath(id), { title }),
+  remove: (id: string) => apiRequest<undefined>("DELETE", conversationPath(id)),
   feedback: (id: string, ordinal: number, kind: Feedback | null) =>
-    apiRequest<undefined>("PUT", `/api/conversations/${id}/turns/${String(ordinal)}/feedback`, {
+    apiRequest<undefined>("PUT", `${conversationPath(id)}/turns/${String(ordinal)}/feedback`, {
       kind,
     }),
   /** The events of one question; aborting ``signal`` cancels the answer on the server too.

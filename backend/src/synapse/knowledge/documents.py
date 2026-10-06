@@ -12,7 +12,7 @@ Rules:
 - Deleting marks the document; it leaves search at once. The delete queues the purge of its
   content, which the scheduler runs (``maintenance.py``).
 - Reading a page in the viewer is audited (``kb.document.view``), as ADR 0008 asks of every
-  document view.
+  document view, and so is downloading a version's file (``kb.document.download``).
 """
 
 from collections.abc import Callable, Mapping
@@ -351,9 +351,11 @@ class DocumentService:
                 )
                 return await cursor.fetchall()
 
-    async def stored_file(self, user_id: UUID, document_id: UUID, version: int) -> StoredFile:
+    async def stored_file(self, viewer: Uploader, document_id: UUID, version: int) -> StoredFile:
+        """The file of one version, for a download; the download is audited."""
+        now = self._now()
         async with self._db.tenant_transaction(self._tenant_id) as connection:
-            if not await _has_document(connection, user_id, document_id, "read"):
+            if not await _has_document(connection, viewer.user_id, document_id, "read"):
                 raise NotFoundError
             async with connection.cursor(row_factory=class_row(StoredFile)) as cursor:
                 await cursor.execute(
@@ -363,8 +365,11 @@ class DocumentService:
                     (document_id, version),
                 )
                 found = await cursor.fetchone()
-        if found is None:
-            raise NotFoundError
+            if found is None:
+                raise NotFoundError
+            await self._audit(
+                connection, "kb.document.download", viewer, document_id, now, {"version": version}
+            )
         return found
 
     async def page(

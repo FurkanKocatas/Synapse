@@ -7,6 +7,7 @@ Anything that fails here denies the request; there is no fallback path (ADR 0006
 import ipaddress
 from typing import Annotated
 
+import structlog
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.params import Depends as DependsMarker
 
@@ -21,6 +22,8 @@ CSRF_HEADER = "X-Synapse-CSRF"
 # submit the login form in the user's browser.
 CLIENT_HEADER = "X-Synapse-Client"
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+log = structlog.get_logger(__name__)
 
 
 class ApiError(HTTPException):
@@ -60,9 +63,12 @@ async def _current_session(request: Request, identity: Identity) -> CurrentSessi
     session = await identity.authenticate(token) if token else None
     if session is None:
         raise ApiError(status.HTTP_401_UNAUTHORIZED, "not_authenticated")
+    # Every later line of this request says whose it is (ADR 0014).
+    structlog.contextvars.bind_contextvars(user_id=str(session.user_id))
     if request.method not in _SAFE_METHODS:
         presented = request.headers.get(CSRF_HEADER, "")
         if not identity.csrf_matches(session, presented):
+            log.warning("api.csrf_failed", method=request.method, path=request.url.path)
             raise ApiError(status.HTTP_403_FORBIDDEN, "csrf_failed")
     return session
 
@@ -122,6 +128,9 @@ def require(permission: str) -> DependsMarker:
         async with database.tenant_transaction(request.app.state.tenant_id) as connection:
             allowed = await authz.role_has_permission(connection, session.role, permission)
         if not allowed:
+            log.warning(
+                "api.forbidden", permission=permission, role=session.role, path=request.url.path
+            )
             raise ApiError(status.HTTP_403_FORBIDDEN, "forbidden")
         return session
 

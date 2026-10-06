@@ -46,9 +46,15 @@ MEMORY = {
 # batch's texts at once) in 16 slots, as many as the embedding job sends and the reranker reads.
 LLAMA_PORT = 8080
 _ENCODER = ["-c", "8192", "-np", "16", "-b", "512", "-ub", "512"]
+# Only the API calls the servers, and only their API: llama-server's own web page stays off.
+_SERVER = ["--no-webui"]
 SERVERS = {
-    "llm-embed": ("embedding", "embed_key", ["--embedding", "--pooling", "cls", *_ENCODER]),
-    "llm-rerank": ("reranking", "rerank_key", ["--reranking", *_ENCODER]),
+    "llm-embed": (
+        "embedding",
+        "embed_key",
+        [*_SERVER, "--embedding", "--pooling", "cls", *_ENCODER],
+    ),
+    "llm-rerank": ("reranking", "rerank_key", [*_SERVER, "--reranking", *_ENCODER]),
     # Two answers at a time on the 16 GB tier (ADR 0009), 8,192 tokens each; thinking off. No
     # prompt cache in host memory: llama-server keeps up to 8 GiB of earlier prompts there by
     # default, which took the chat server past its 5 GB limit three times in 45 minutes of the
@@ -57,6 +63,7 @@ SERVERS = {
         "chat",
         "chat_key",
         [
+            *_SERVER,
             "-c",
             "16384",
             "--parallel",
@@ -99,6 +106,10 @@ class Rendered:
 
 def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+# Docker's json-file logs, rotated: at most five files of 10 MB per container (ADR 0014).
+LOGGING = {"driver": "json-file", "options": {"max-size": "10m", "max-file": "5"}}
 
 
 def _hardened(service: dict[str, Any]) -> dict[str, Any]:
@@ -249,6 +260,8 @@ def compose(config: SynapseConfig) -> dict[str, Any]:
     # The API answers (search, chat), the worker embeds while ingesting.
     _call_models(services["api"], ("llm-embed", "llm-rerank", "llm-chat"))
     _call_models(services["worker"], ("llm-embed",))
+    for service in services.values():
+        service["logging"] = LOGGING
     secret_names = {name for service in services.values() for name in service.get("secrets", [])}
     return {
         "name": f"synapse-{config.instance.slug}",

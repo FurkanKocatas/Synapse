@@ -1,14 +1,29 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fileKind } from "@/lib/fileKind";
 import { source, sse } from "@/test/chat";
+import { fakeApi } from "@/test/fakeApi";
 
-import { answerParts, passageRanges, plainAnswer } from "./chatApi";
+import { answerParts, chatApi, passageRanges, plainAnswer } from "./chatApi";
 import { markPassage } from "./PdfPage";
 import { serverEvents } from "./sse";
 import { advance, isRunning, started } from "./useLiveTurn";
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe("chat pieces", () => {
+  it("keeps a conversation ID from the address bar inside its own path segment", async () => {
+    const calls = fakeApi(() => ({ status: 204 }));
+    await chatApi.conversation("../admin/users");
+    await chatApi.remove("k?x=1#y");
+    expect(calls.map((call) => call.path)).toEqual([
+      "/api/conversations/..%2Fadmin%2Fusers",
+      "/api/conversations/k%3Fx%3D1%23y",
+    ]);
+  });
+
   it("reads server-sent events however the bytes are cut", async () => {
     const text = sse([
       ["turn", { conversation_id: "k", ordinal: 1 }],

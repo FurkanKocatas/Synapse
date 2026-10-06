@@ -191,8 +191,23 @@ def as_csv(events: Sequence[StoredEvent]) -> str:
     for event in events:
         row = event.as_json()
         row["details"] = canonical_bytes(event.details).decode("utf-8")
-        writer.writerow(["" if row[c] is None else row[c] for c in CSV_COLUMNS])
+        writer.writerow([_cell(row[c]) for c in CSV_COLUMNS])
     return buffer.getvalue()
+
+
+# What a spreadsheet takes for the start of a formula, full-width forms included. A display
+# name like "=HYPERLINK(...)" would otherwise run when the auditor opens the file (OWASP's
+# CSV injection).
+_FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r", "\uff1d", "\uff0b", "\uff0d", "\uff20")
+
+
+def _cell(value: JsonValue) -> JsonValue:
+    """A value as a CSV cell: text that would start a formula is kept as text, behind a quote."""
+    if value is None:
+        return ""
+    if isinstance(value, str) and value.startswith(_FORMULA_STARTS):
+        return "'" + value
+    return value
 
 
 def signed_export(

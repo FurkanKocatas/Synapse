@@ -58,7 +58,7 @@ On the evaluation corpus, 97 of 100 files are recognised as the type the manifes
 - Errors: 404 `not_found`, 422 `invalid_metadata`, 409 `duplicate_document` (the same content is already the latest version of a document in that collection), 413 `file_too_large`, 415 `unknown_type` or `legacy_office`, 400 `empty_file`.
 - Downloads are always attachments, with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`, so an uploaded HTML or SVG file can never run in the application's origin.
 
-Audit actions: `kb.document.create`, `kb.document.version`, `kb.document.metadata` (the fields changed), `kb.document.delete`, and `kb.document.purge` from the scheduler (no actor; `versions` and `files_released`).
+Audit actions: `kb.document.create`, `kb.document.version`, `kb.document.metadata` (the fields changed), `kb.document.download` (the version), `kb.document.delete`, and `kb.document.purge` from the scheduler (no actor; `versions` and `files_released`).
 
 ### An exception to ADR 0002, rule 3
 

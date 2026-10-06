@@ -207,7 +207,9 @@ async def download(
     document_id: UUID, version: int, session: FullSession, request: Request
 ) -> StreamingResponse:
     try:
-        stored = await _documents(request).stored_file(session.user_id, document_id, version)
+        stored = await _documents(request).stored_file(
+            Uploader(session.user_id, client_ip(request)), document_id, version
+        )
     except NotFoundError as error:
         raise ApiError(status.HTTP_404_NOT_FOUND, "not_found") from error
     blobs = _blobs(request)

@@ -71,7 +71,7 @@ This is the contract for the first sellable release. Anything not listed here is
 | Answer on a 16 GB GPU | Full answer within 10 s at P50 |
 | Ingestion throughput | Reported per tier after benchmarks; 10,000 documents must complete unattended on the entry tier (overnight batches, resumable) |
 | Availability | Any single role can crash and restart without affecting login or search |
-| Security | No high or critical findings from dependency and image scans at release; OWASP ASVS level 2 as the review checklist |
+| Security | No high or critical findings from dependency and image scans at release; OWASP ASVS level 2 as the review checklist ([asvs.md](../security/asvs.md)) |
 | Accessibility | WCAG 2.2 AA for the main flows (keyboard navigation, contrast, labels) |
 | Localisation | 100% of UI strings in Turkish and English; Turkish casing and formatting correct |
 

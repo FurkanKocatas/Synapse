@@ -65,6 +65,15 @@ def test_every_application_container_is_hardened(config: SynapseConfig) -> None:
         assert services[name]["security_opt"] == ["no-new-privileges:true"], name
 
 
+def test_every_container_logs_with_rotation(config: SynapseConfig) -> None:
+    services = render.compose(config)["services"]
+    for name, service in services.items():
+        assert service["logging"] == {
+            "driver": "json-file",
+            "options": {"max-size": "10m", "max-file": "5"},
+        }, name
+
+
 def test_the_tenant_and_tier_are_applied(config: SynapseConfig) -> None:
     services = render.compose(config)["services"]
     assert services["api"]["environment"]["SYNAPSE_TENANT_ID"] == str(config.instance.tenant_id)
@@ -147,6 +156,8 @@ def test_model_servers_are_hardened_internal_and_keyed(config: SynapseConfig) ->
     assert services["llm-embed"]["command"][:2] == ["-m", "/models/bge-m3-f16.gguf"]
     assert services["llm-rerank"]["command"][:2] == ["-m", "/models/bge-reranker-v2-m3-f16.gguf"]
     chat = services["llm-chat"]["command"]
+    for name in render.SERVERS:
+        assert "--no-webui" in services[name]["command"], name
     assert chat[chat.index("--reasoning-budget") + 1] == "0"
     assert chat[chat.index("--cache-ram") + 1] == "0"
 

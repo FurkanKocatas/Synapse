@@ -27,6 +27,8 @@ Applied in [deploy/compose.stack.yml](../deploy/compose.stack.yml) and required 
 - One internal network. Only the web front publishes a port, bound to loopback in the test stack. The API trusts `X-Forwarded-For` only from the internal subnet.
 - Secrets as files under `/run/secrets`, one per purpose ([ADR 0013](adr/0013-secrets-and-network-security.md)).
 - Health checks on every long-running service; one-shot `bootstrap` and `migrate` must succeed before the API starts.
+- Logs in Docker's `json-file` driver, rotated at five files of 10 MB per container (installations; [ADR 0014](adr/0014-observability.md)).
+- API answers are never cached: the web front adds `Cache-Control: no-store` to every `/api/` response that does not set its own.
 
 ## Web front
 
@@ -50,7 +52,7 @@ Three `llama-server` instances ([ADR 0009](adr/0009-model-runtime.md), [ADR 0018
 | `llm-rerank` | bge-reranker-v2-m3, Q8_0 / 16-bit | `--reranking`, the same slots and batches | API | 1.5 GB |
 | `llm-chat` | Qwen3.5-4B Q4_K_M | 2 answers at a time, 8,192 tokens each, `--jinja --reasoning-budget 0 --cache-ram 0` (no prompt cache in host memory: by default it grows to 8 GiB and took the server past its limit) | API | 5 GB |
 
-- **Hardened like the rest:** read-only root, `tmpfs` for `/tmp`, no capabilities, `no-new-privileges`, uid 10001 (the images default to root and need it for nothing), the model directory mounted read-only.
+- **Hardened like the rest:** read-only root, `tmpfs` for `/tmp`, no capabilities, `no-new-privileges`, uid 10001 (the images default to root and need it for nothing), the model directory mounted read-only, and llama-server's own web page off (`--no-webui`): only the API calls the servers.
 - **On a GPU** (`models.accelerator = "vulkan"`): the Vulkan image, `/dev/dri` passed in, the host groups that own its devices added (`group_add`), and every layer offloaded (`-ngl 99`). Integrated GPUs work: the reference machine's Radeon 680M runs bge-m3 at 4.4 chunks per second against 2.2 on its CPU, the reranker at 2.5 s per 10 candidates against 5.3 ([embeddings.md](benchmarks/embeddings.md)). Batches of 512 tokens are fastest, because llama.cpp computes attention over a whole batch's texts at once.
 - **The files** come from `synapsectl models fetch` or the offline bundle ([installer.md](installer.md#models)); `doctor` checks they are there and that the Vulkan image sees the GPU.
 - Health checks wait up to five minutes for a model to load. The API and the worker do not wait for the model servers: a call to one that is down is a typed error (the worker retries embedding; [knowledge-base.md](design/knowledge-base.md#embeddings)).

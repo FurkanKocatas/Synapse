@@ -134,6 +134,11 @@ def test_an_editor_uploads_and_a_reader_downloads(world: World, clients: list[Te
     assert file.headers["content-disposition"].startswith("attachment;")
     assert "sandbox" in file.headers["content-security-policy"]
     assert file.headers["x-content-type-options"] == "nosniff"
+    downloads = world.connection.execute(
+        "SELECT details FROM audit_events WHERE action = 'kb.document.download' AND target_id = %s",
+        (body["id"],),
+    ).fetchall()
+    assert [row[0] for row in downloads] == [{"version": 1}]
 
 
 def test_people_without_access_see_nothing_and_store_nothing(
@@ -220,7 +225,12 @@ def test_new_versions_and_deletion(world: World, clients: list[TestClient]) -> N
             "SELECT action FROM audit_events WHERE target_id = %s ORDER BY seq", (document,)
         ).fetchall()
     ]
-    assert actions == ["kb.document.create", "kb.document.version", "kb.document.delete"]
+    assert actions == [
+        "kb.document.create",
+        "kb.document.version",
+        "kb.document.download",
+        "kb.document.delete",
+    ]
 
 
 def test_users_see_the_collections_they_can_read_and_where_they_can_write(
