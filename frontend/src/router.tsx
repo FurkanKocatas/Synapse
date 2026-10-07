@@ -5,31 +5,25 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   Outlet,
   redirect,
 } from "@tanstack/react-router";
 
 import { AppLayout } from "@/components/AppShell";
-import { AccountPage } from "@/features/account/AccountPage";
-import { AdminOverview } from "@/features/admin/AdminOverview";
 import { adminAreas, hasAdministration } from "@/features/admin/adminApi";
-import { CollectionsPage } from "@/features/admin/CollectionsPage";
-import { GroupsPage } from "@/features/admin/GroupsPage";
-import { SettingsPage } from "@/features/admin/SettingsPage";
-import { SystemPage } from "@/features/admin/SystemPage";
-import { UsersPage } from "@/features/admin/UsersPage";
-import { EnrollPage } from "@/features/auth/EnrollPage";
 import { LoginPage } from "@/features/auth/LoginPage";
-import { MfaPage } from "@/features/auth/MfaPage";
 import { placeFor, sessionQuery, type Place } from "@/features/auth/session";
 import { ChatPage, ClassicChatPage } from "@/features/chat/ChatPage";
-import { LibraryPage } from "@/features/library/LibraryPage";
 
 interface RouterContext {
   queryClient: QueryClient;
 }
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({ component: Outlet });
+
+// Signing in and the chat load with the app; every other page loads when first opened, so the
+// first screen does not wait for administration code most users never see.
 
 /** Sends the visitor to the page that matches their session, unless they are on it already. */
 function guard(place: Place) {
@@ -89,43 +83,54 @@ const signedIn = [
       typeof search.c === "string" ? { c: search.c } : {},
     component: ClassicChatPage,
   }),
-  createRoute({ getParentRoute: () => appRoute, path: "/library", component: LibraryPage }),
-  createRoute({ getParentRoute: () => appRoute, path: "/account", component: AccountPage }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: "/library",
+    component: lazyRouteComponent(() => import("@/features/library/LibraryPage"), "LibraryPage"),
+  }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: "/account",
+    component: lazyRouteComponent(() => import("@/features/account/AccountPage"), "AccountPage"),
+  }),
   createRoute({
     getParentRoute: () => appRoute,
     path: "/admin",
     beforeLoad: adminGuard("any"),
-    component: AdminOverview,
+    component: lazyRouteComponent(() => import("@/features/admin/AdminOverview"), "AdminOverview"),
   }),
   createRoute({
     getParentRoute: () => appRoute,
     path: "/admin/users",
     beforeLoad: adminGuard("users"),
-    component: UsersPage,
+    component: lazyRouteComponent(() => import("@/features/admin/UsersPage"), "UsersPage"),
   }),
   createRoute({
     getParentRoute: () => appRoute,
     path: "/admin/groups",
     beforeLoad: adminGuard("groups"),
-    component: GroupsPage,
+    component: lazyRouteComponent(() => import("@/features/admin/GroupsPage"), "GroupsPage"),
   }),
   createRoute({
     getParentRoute: () => appRoute,
     path: "/admin/collections",
     beforeLoad: adminGuard("collections"),
-    component: CollectionsPage,
+    component: lazyRouteComponent(
+      () => import("@/features/admin/CollectionsPage"),
+      "CollectionsPage",
+    ),
   }),
   createRoute({
     getParentRoute: () => appRoute,
     path: "/admin/system",
     beforeLoad: adminGuard("operations"),
-    component: SystemPage,
+    component: lazyRouteComponent(() => import("@/features/admin/SystemPage"), "SystemPage"),
   }),
   createRoute({
     getParentRoute: () => appRoute,
     path: "/admin/settings",
     beforeLoad: adminGuard("settings"),
-    component: SettingsPage,
+    component: lazyRouteComponent(() => import("@/features/admin/SettingsPage"), "SettingsPage"),
   }),
 ];
 
@@ -140,13 +145,13 @@ const signIn = [
     getParentRoute: () => rootRoute,
     path: "/mfa",
     beforeLoad: guard("/mfa"),
-    component: MfaPage,
+    component: lazyRouteComponent(() => import("@/features/auth/MfaPage"), "MfaPage"),
   }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: "/enroll",
     beforeLoad: guard("/enroll"),
-    component: EnrollPage,
+    component: lazyRouteComponent(() => import("@/features/auth/EnrollPage"), "EnrollPage"),
   }),
 ];
 
