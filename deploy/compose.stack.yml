@@ -180,7 +180,8 @@ services:
     tmpfs: ["/data:uid=10001,gid=10001", "/config:uid=10001,gid=10001"]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    networks: [internal]
+    # The internal network has no way out; the edge network carries the published port.
+    networks: [internal, edge]
     ports:
       # Loopback only; the host port is configurable because 8080 is often taken.
       - "127.0.0.1:${SYNAPSE_STACK_PORT:-8480}:8080"
@@ -219,10 +220,13 @@ services:
     mem_limit: 5g
 
 networks:
+  # No connections out of the machine from the services, as in installations.
   internal:
+    internal: true
     ipam:
       config:
         - subnet: ${SYNAPSE_STACK_SUBNET:-172.29.0.0/24}
+  edge: {}
 
 secrets:
   postgres_superuser: { file: ../.dev/secrets/postgres_superuser }

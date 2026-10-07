@@ -238,6 +238,10 @@ def upgrade(timeout: float) -> bool:
             "--password-file",
             "/run/password",
         )
+    else:
+        # The containers go (the volumes stay): brought up over a changed network, compose
+        # restarts them on it without their names.
+        stack("down")
     stack("up", "-d", "--wait")
     if fresh:
         run(*uv, "upload", *access, timeout=timeout, env=stack_env())

@@ -50,6 +50,21 @@ def test_provided_certificates_are_copied_into_the_secrets(
     assert (provided.paths.secrets_dir / "tls_certificate").read_text(encoding="utf-8") == "CERT"
 
 
+def test_only_the_web_front_can_reach_beyond_the_machine(config: SynapseConfig) -> None:
+    rendered = render.compose(config)
+    networks = rendered["networks"]
+    assert networks["internal"]["internal"] is True
+    assert networks["internal"]["ipam"] == {"config": [{"subnet": config.network.subnet}]}
+    assert "internal" not in networks["edge"]
+    on_edge = {
+        name
+        for name, service in rendered["services"].items()
+        if "edge" in service.get("networks", [])
+    }
+    assert on_edge == {"web"}
+    assert rendered["services"]["web"]["networks"] == ["internal", "edge"]
+
+
 def test_only_the_web_front_publishes_ports(config: SynapseConfig) -> None:
     services = render.compose(config)["services"]
     published = {name for name, service in services.items() if "ports" in service}

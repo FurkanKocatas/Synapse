@@ -6,8 +6,8 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 | Status | Requirements |
 |---|---|
-| met | 124 |
-| partly | 47 |
+| met | 126 |
+| partly | 45 |
 | not yet | 9 |
 | not applicable | 73 |
 | **all, levels 1 and 2** | **253** |
@@ -21,15 +21,14 @@ Every requirement still "not yet" and the larger "partly" gaps, with what each n
 | 1 | Recovery codes carry 80 bits and are stored as unsalted SHA-256 | V6.5.2, V11.5.1 | A decision: longer codes (about 24 characters to type) or Argon2 storage |
 | 2 | Breached and common passwords are not refused | V6.2.4, V6.2.12 | Choosing an offline list and checking its licence |
 | 3 | A password an administrator sets stays the user's password | V6.4.1, V6.4.3 | A step at the first sign-in where users choose their own (a screen to design) |
-| 4 | The internal network allows connections out | V13.2.4, V13.2.5 | `internal: true`, with a network of its own for the web front, tried on a real installation |
-| 5 | No limits per user on chat, search or uploads | V2.4.1, V15.2.2 | The limits, and how the screen says one was reached |
-| 6 | Adding a passkey or TOTP asks for nothing again; no "end all sessions" | V7.5.1, V7.4.3, V7.4.5, V7.5.2 | Screens to design |
-| 7 | The second-factor pages have no sign-out | V7.4.4 | A screen change |
-| 8 | The API, the worker and the scheduler share one role's table rights | V13.2.2 | Separate grants per process |
-| 9 | No time frames for fixing vulnerable dependencies | V15.1.1 | A policy (for example critical in 7 days, high in 30) |
-| 10 | Plain HTTP to /api is redirected, not refused | V4.1.2 | Caddy configuration for the HTTPS installs |
-| 11 | No TLS between the containers | V12.3.3, V12.3.4 | An internal CA; low priority with everything on one host |
-| 12 | Uploads are not scanned for malware | V5.4.3 | ClamAV in the worker, or a decision not to |
+| 4 | No limits per user on chat, search or uploads | V2.4.1, V15.2.2 | The limits, and how the screen says one was reached |
+| 5 | Adding a passkey or TOTP asks for nothing again; no "end all sessions" | V7.5.1, V7.4.3, V7.4.5, V7.5.2 | Screens to design |
+| 6 | The second-factor pages have no sign-out | V7.4.4 | A screen change |
+| 7 | The API, the worker and the scheduler share one role's table rights | V13.2.2 | Separate grants per process |
+| 8 | No time frames for fixing vulnerable dependencies | V15.1.1 | A policy (for example critical in 7 days, high in 30) |
+| 9 | Plain HTTP to /api is redirected, not refused | V4.1.2 | Caddy configuration for the HTTPS installs |
+| 10 | No TLS between the containers | V12.3.3, V12.3.4 | An internal CA; low priority with everything on one host |
+| 11 | Uploads are not scanned for malware | V5.4.3 | ClamAV in the worker, or a decision not to |
 
 ## V1 Encoding and Sanitization
 
@@ -53,7 +52,7 @@ Every requirement still "not yet" and the larger "partly" gaps, with what each n
 | V1.3.3 | 2 | Sanitization | met | backend/src/synapse/audit/browse.py (_cell); backend/tests/audit/test_csv.py; backend/src/synapse/knowledge/documents.py:147-151; backend/src/synapse/api/app.py:121-124 | Filenames, request IDs and prompt inputs are bounded and cleaned. The audit CSV export writes a cell that would start a formula (including full-width forms) behind an apostrophe. |
 | V1.3.4 | 2 | Sanitization | not applicable | backend/src/synapse/knowledge/filetypes.py:50-67 | SVG uploads are rejected by content detection. Images embedded in documents are never shown to users. |
 | V1.3.5 | 2 | Sanitization | met | frontend/src/features/chat/Markdown.tsx:57; deploy/web/Caddyfile:27; docs/adr/0011-frontend.md | Model Markdown is rendered with skipHtml and default URL filtering. CSP blocks external images. No user CSS, XSL or BBCode is accepted. |
-| V1.3.6 | 2 | Sanitization | met | backend/src/synapse/kernel/config.py:28,80-84; backend/src/synapse/models/llama.py | Outbound calls go only to configured model servers, with pattern-checked URLs and fixed paths. Gap: compose network is not marked internal. |
+| V1.3.6 | 2 | Sanitization | met | backend/src/synapse/kernel/config.py:28,80-84; backend/src/synapse/models/llama.py; synapsectl/src/synapsectl/render.py (networks) | Outbound calls go only to configured model servers, with pattern-checked URLs and fixed paths, on an internal network that reaches nothing beyond the machine. |
 | V1.3.7 | 2 | Sanitization | met | backend/src/synapse/chat/talk.py:154-158; backend/src/synapse/chat/answering.py:428,682 | No template engine. Prompts are constant templates filled by str.format arguments, never built from untrusted input. |
 | V1.3.8 | 2 | Sanitization | not applicable | backend/pyproject.toml | Python application; no Java or JNDI. |
 | V1.3.9 | 2 | Sanitization | not applicable | docs/adr/0003-single-postgres-store.md:33,47 | No memcache or Redis; caching is in-process only. |
@@ -312,7 +311,7 @@ Every requirement still "not yet" and the larger "partly" gaps, with what each n
 
 ## V13 Configuration
 
-8 met, 5 partly.
+10 met, 3 partly.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
@@ -320,8 +319,8 @@ Every requirement still "not yet" and the larger "partly" gaps, with what each n
 | V13.2.1 | 2 | Backend Communication Configuration | partly | synapsectl/src/synapsectl/secrets.py:29-42; backend/src/synapse/dbadmin/bootstrap.py:90-97; synapsectl/src/synapsectl/render.py:312-326,350-356; backend/src/synapse/models/llama.py:67-71 | Each process has its own database role and each model server its own key. All are static passwords or API keys rotated by hand. No short-lived tokens or certificates. |
 | V13.2.2 | 2 | Backend Communication Configuration | partly | backend/src/synapse/dbadmin/bootstrap.py:104-109,149-152; backend/src/synapse/dbadmin/roles.py:17-21; synapsectl/src/synapsectl/render.py:104-111,205-222 | Roles are NOSUPERUSER/NOBYPASSRLS and containers are non-root and hardened. But api, worker and scheduler all get synapse_runtime's full table rights, contrary to ADR 0013. |
 | V13.2.3 | 2 | Backend Communication Configuration | met | synapsectl/src/synapsectl/secrets.py:54-92; backend/src/synapse/kernel/secrets.py:150-162; docs/adr/0013-secrets-and-network-security.md:16-18; synapsectl/src/synapsectl/doctor.py:107-120 | Every service credential is random and generated per install. A missing or empty secret stops startup. There are no default passwords. |
-| V13.2.4 | 2 | Backend Communication Configuration | partly | backend/src/synapse/kernel/config.py:28,80-85; deploy/web/Caddyfile:36-41; synapsectl/src/synapsectl/render.py:256,277; docs/adr/0013-secrets-and-network-security.md:31 | Configuration fixes which endpoints are called. The Docker network is not `internal: true`, so worker, API and model containers have open outbound access, contradicting ADR 0013. |
-| V13.2.5 | 2 | Backend Communication Configuration | partly | deploy/web/Caddyfile:36-41; synapsectl/src/synapsectl/render.py:256,264-286 | Caddy proxies only to api:8000 and the API calls only configured model URLs. No server- or firewall-level outbound allowlist; only restic runs with network_mode none. |
+| V13.2.4 | 2 | Backend Communication Configuration | met | synapsectl/src/synapsectl/render.py (networks); deploy/compose.stack.yml; tools/stack_smoke.sh; backend/src/synapse/kernel/config.py:28,80-85 | Configuration fixes which endpoints are called, and the services' Docker network is internal: no route or name resolution beyond the machine. The web front alone joins an edge network. The stack smoke test checks the API cannot connect out. |
+| V13.2.5 | 2 | Backend Communication Configuration | met | deploy/web/Caddyfile:36-41; synapsectl/src/synapsectl/render.py (networks); synapsectl/tests/test_secrets_and_render.py | Caddy proxies only to api:8000 and the API calls only configured model URLs; the internal network allows nothing out, the web front's edge network serves its ports and ACME, and restic runs with no network. |
 | V13.3.1 | 2 | Secret Management | partly | synapsectl/src/synapsectl/secrets.py:1-116; backend/src/synapse/kernel/secrets.py:150-174; .github/workflows/ci.yml:129-132; .dockerignore:10-11; docs/adr/0013-secrets-and-network-security.md:14-20,47 | Secrets are random, mode 0400 files in a 0700 directory, checked by gitleaks and kept out of images. No vault: plaintext files, and rotation or destruction means deleting files by hand. |
 | V13.3.2 | 2 | Secret Management | met | synapsectl/src/synapsectl/render.py:184,215,236,329,397; synapsectl/src/synapsectl/secrets.py:34-45,110-116; synapsectl/src/synapsectl/doctor.py:107-120 | Each container mounts only the secrets it uses. Files are owned by the reading uid with mode 0400, and doctor flags wrong owners or modes. |
 | V13.4.1 | 1 | Unintended Information Leakage | met | .dockerignore:11; deploy/app/Dockerfile:19-21,68; deploy/web/Dockerfile:40 | .git is excluded from the build context. Images hold only the installed venv and the built SPA, so no source-control metadata is present or served. |

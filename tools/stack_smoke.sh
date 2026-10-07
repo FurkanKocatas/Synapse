@@ -113,6 +113,10 @@ curl -fsS -o /dev/null "$base/login"
 headers="$(curl -fsSI "$base/")"
 grep -qi "content-security-policy: default-src 'self'" <<<"$headers"
 grep -qi "x-content-type-options: nosniff" <<<"$headers"
+# The services' network has no way out: the API cannot open a connection beyond the machine.
+egress="$(stack exec -T api python -c "import socket; s = socket.socket(); s.settimeout(5); \
+print('blocked' if s.connect_ex(('1.1.1.1', 443)) else 'reached')")"
+if [[ "$egress" != blocked ]]; then echo "the API can reach beyond the machine: $egress" >&2; exit 1; fi
 
 login="$(curl -fsS -c "$jar" -H 'X-Synapse-Client: web' -H 'Content-Type: application/json' \
   -X POST "$base/api/auth/login" \

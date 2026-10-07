@@ -24,7 +24,7 @@ Applied in [deploy/compose.stack.yml](../deploy/compose.stack.yml) and required 
 - Read-only root file systems, with `tmpfs` only where a process must write (`/tmp`, Caddy's `/data` and `/config`).
 - `cap_drop: [ALL]` and `no-new-privileges` on the application and web containers.
 - Memory limits per container ([ADR 0002](adr/0002-process-topology.md)).
-- One internal network. Only the web front publishes a port, bound to loopback in the test stack. The API trusts `X-Forwarded-For` only from the internal subnet.
+- One internal network, marked `internal` in Docker: the services on it have no route and no name resolution beyond the machine. The web front alone also joins an `edge` network, which carries the ports it publishes (bound to loopback in the test stack) and its ACME requests. The API trusts `X-Forwarded-For` only from the internal subnet.
 - Secrets as files under `/run/secrets`, one per purpose ([ADR 0013](adr/0013-secrets-and-network-security.md)).
 - Health checks on every long-running service; one-shot `bootstrap` and `migrate` must succeed before the API starts.
 - Logs in Docker's `json-file` driver, rotated at five files of 10 MB per container (installations; [ADR 0014](adr/0014-observability.md)).
@@ -104,7 +104,7 @@ What an installation reaches beyond its own machine, and when:
 | An ACME certificate authority (Let's Encrypt by default) | Only with `tls.mode = "acme"`: issuing and renewing the certificate | The web front |
 | The backup repository | A directory on the host (a NAS share or a disk mounted there); restic itself runs without a network | The host |
 
-Nothing else: the application talks only to PostgreSQL and the model servers on the internal network, and sends no telemetry. The internal network is not yet marked `internal` in Docker, so this holds because of the code, not because the network forbids more ([asvs.md](security/asvs.md), V13.2.4).
+Nothing else: the application talks only to PostgreSQL and the model servers, and sends no telemetry. The network enforces it too: the services' network is `internal`, so only the web front, which also joins the `edge` network, can reach beyond the machine; the stack smoke test checks the API cannot.
 
 ## Not done yet
 

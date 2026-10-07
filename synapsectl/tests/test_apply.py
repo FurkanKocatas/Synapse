@@ -28,7 +28,8 @@ class FakeDocker:
         return subprocess.CompletedProcess(list(args), 0, "", "")
 
     def commands(self) -> list[str]:
-        return [" ".join(args[4:]) for args, _ in self.calls]
+        """The compose commands, without "docker compose -f FILE"."""
+        return [" ".join(args[4:]) for args, _ in self.calls if args[:2] == ["docker", "compose"]]
 
 
 def healthy(_: SynapseConfig, **__: Any) -> list[doctor.Check]:
@@ -84,6 +85,23 @@ def test_a_later_run_skips_the_administrator_and_knows_the_stack_runs(
     apply(config, run=docker, checks=checks, echo=quiet)
     assert not any("user create" in command for command in docker.commands())
     assert seen == [True, True]
+
+
+def test_an_installation_on_the_earlier_network_goes_down_first(config: SynapseConfig) -> None:
+    # The network inspection's arguments, past "docker network inspect NAME", are its key.
+    docker = FakeDocker({**LATER_RUN, "--format": (0, "false\n")})
+    apply(config, run=docker, checks=healthy, echo=quiet)
+    inspect = next(args for args, _ in docker.calls if args[1] == "network")
+    assert inspect[:4] == ["docker", "network", "inspect", "synapse-demo_internal"]
+    commands = docker.commands()
+    assert commands.index("down") < commands.index("up -d --wait db")
+
+
+def test_an_installation_on_the_internal_network_stays_up(config: SynapseConfig) -> None:
+    for answer in ((0, "true\n"), (1, "")):  # internal already, or no network yet
+        docker = FakeDocker({**LATER_RUN, "--format": answer})
+        apply(config, run=docker, checks=healthy, echo=quiet)
+        assert "down" not in docker.commands()
 
 
 def test_the_first_run_needs_an_administrator(config: SynapseConfig) -> None:

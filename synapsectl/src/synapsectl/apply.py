@@ -9,6 +9,10 @@ version) upgrades:
 4. create the first administrator, unless one exists (needed only on the first run);
 5. start every service and wait until each is healthy, then check again.
 
+An installation still on the earlier network, which was not internal, is taken down first
+(its volumes stay): brought up over it, compose recreates the network but restarts the other
+containers on it without their names, and the services no longer find each other.
+
 Docker is called through a runner so tests can check the exact commands without Docker.
 """
 
@@ -75,6 +79,8 @@ def apply(
     render.write(config, render.render(config))
     running = bool(step("Look for running services", "ps", "--status", "running", "-q").strip())
     _require(checks(config, stack_running=running), echo)
+    if _earlier_network(config, run):
+        step("Stop the services, to move them to the internal network", "down")
 
     step("Start the database", "up", "-d", "--wait", "db")
     step("Create or repair the database, roles and schema", "run", "--rm", "bootstrap")
@@ -102,6 +108,13 @@ def apply(
     step("Start every service", "up", "-d", "--wait")
     _require(checks(config, stack_running=True), echo)
     echo(f"== Ready: https://{render.site_address(config)}")
+
+
+def _earlier_network(config: SynapseConfig, run: Runner) -> bool:
+    """Whether the installation's network exists and is not internal yet."""
+    name = f"synapse-{config.instance.slug}_internal"
+    found = run(["docker", "network", "inspect", name, "--format", "{{.Internal}}"])
+    return found.returncode == 0 and found.stdout.strip() == "false"
 
 
 def _admin_command(admin: FirstAdmin, locale: str) -> list[str]:

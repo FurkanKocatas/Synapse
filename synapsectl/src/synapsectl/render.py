@@ -262,11 +262,17 @@ def compose(config: SynapseConfig) -> dict[str, Any]:
     _call_models(services["worker"], ("llm-embed",))
     for service in services.values():
         service["logging"] = LOGGING
+    # The web front alone reaches beyond the machine: the ports it publishes, and ACME.
+    services["web"]["networks"] = ["internal", "edge"]
     secret_names = {name for service in services.values() for name in service.get("secrets", [])}
     return {
         "name": f"synapse-{config.instance.slug}",
         "services": services,
-        "networks": {"internal": {"ipam": {"config": [{"subnet": config.network.subnet}]}}},
+        "networks": {
+            # No connections out of the machine from the services: no route, no outside names.
+            "internal": {"internal": True, "ipam": {"config": [{"subnet": config.network.subnet}]}},
+            "edge": {},
+        },
         "secrets": {
             name: {"file": str(config.paths.secrets_dir / name)} for name in sorted(secret_names)
         },
