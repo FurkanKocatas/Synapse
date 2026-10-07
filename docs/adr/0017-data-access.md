@@ -21,7 +21,7 @@ Synapse's most important queries are PostgreSQL-specific: hybrid retrieval with 
 **Schema and roles**
 
 - All objects live in the `synapse` schema, owned by `synapse_migrator`.
-- Runtime login roles (`synapse_api`, `synapse_worker`, `synapse_scheduler`) are members of the group role `synapse_runtime`, which receives table privileges. They own nothing and have `NOBYPASSRLS`.
+- Runtime login roles (`synapse_api`, `synapse_worker`, `synapse_scheduler`) are members of the group role `synapse_runtime`, which receives table privileges. They own nothing and have `NOBYPASSRLS`. Accounts, sessions, second factors, groups and grants, conversations, the tenant and its settings are `synapse_api`'s alone (migration 0027): the worker and the scheduler hold nothing on them. `tests/db/test_schema_invariants.py` lists every table as the API's alone or shared, and fails on one in neither.
 - Cluster-level setup (database, roles, schema, default privileges) is a separate **bootstrap** step that needs a superuser once. It is idempotent: it creates what is missing and resets passwords from the secret files.
 - `app_current_tenant()` returns the transaction's tenant or `NULL`. Every tenant-owned table has `tenant_id uuid NOT NULL`, RLS enabled and forced, and one policy `USING (tenant_id = app_current_tenant()) WITH CHECK (tenant_id = app_current_tenant())`, created by one migration helper so that no table gets a hand-written variant.
 

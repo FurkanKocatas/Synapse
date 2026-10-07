@@ -58,6 +58,93 @@ def test_every_tenant_table_has_forced_rls_and_the_standard_policy(
         assert tenancy_problems(admin) == []
 
 
+# Who may use each table (migration 0027). Accounts, sessions, permissions, conversations and
+# settings are the API's alone; the worker and the scheduler read documents and keep the system.
+# A new table fails the check below until it is put in one of the two sets.
+API_ONLY = {
+    "auth_throttle",
+    "collection_grants",
+    "conversation_turns",
+    "conversations",
+    "document_grants",
+    "group_members",
+    "groups",
+    "passkeys",
+    "recovery_codes",
+    "role_permissions",
+    "tenant_settings",
+    "tenants",
+    "totp_credentials",
+    "user_sessions",
+    "users",
+    "webauthn_challenges",
+}
+SHARED = {
+    "alembic_version",
+    "audit_checkpoints",
+    "audit_events",
+    "blobs",
+    "chunk_entities",
+    "collections",
+    "document_chunks",
+    "document_pages",
+    "document_versions",
+    "documents",
+    "operation_runs",
+    "procrastinate_events",
+    "procrastinate_jobs",
+    "procrastinate_periodic_defers",
+    "procrastinate_workers",
+}
+_TABLE_NAMES = """
+    SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = %s AND c.relkind IN ('r', 'p') ORDER BY c.relname
+"""
+
+
+def privilege_problems(connection: psycopg.Connection) -> list[str]:
+    tables = [row[0] for row in connection.execute(_TABLE_NAMES, (SCHEMA,)).fetchall()]
+    assert tables, "no tables found; did the migrations run?"
+
+    def holds(role: str, table: str, privilege: str) -> bool:
+        row = connection.execute(
+            "SELECT has_table_privilege(%s, %s, %s)", (role, f"{SCHEMA}.{table}", privilege)
+        ).fetchone()
+        return bool(row and row[0])
+
+    problems = []
+    for table in tables:
+        if table in API_ONLY:
+            for role in ("synapse_worker", "synapse_scheduler"):
+                held = [
+                    p for p in ("SELECT", "INSERT", "UPDATE", "DELETE") if holds(role, table, p)
+                ]
+                if held:
+                    problems.append(f"{table}: {role} holds {', '.join(held)}")
+            if not holds("synapse_api", table, "SELECT"):
+                problems.append(f"{table}: synapse_api cannot read it")
+        elif table not in SHARED:
+            problems.append(f"{table}: neither the API's alone nor shared; put it in one set")
+    return problems
+
+
+def test_accounts_and_conversations_are_the_apis_alone(test_database: TestDatabase) -> None:
+    with test_database.admin() as admin:
+        assert privilege_problems(admin) == []
+
+
+def test_the_privilege_check_catches_a_leak_and_an_unsorted_table(
+    test_database: TestDatabase,
+) -> None:
+    with test_database.admin() as admin, admin.transaction(force_rollback=True):
+        admin.execute(f"GRANT SELECT ON {SCHEMA}.users TO synapse_runtime")
+        admin.execute(f"CREATE TABLE {SCHEMA}.probe_unsorted (id int)")
+        problems = privilege_problems(admin)
+    assert "users: synapse_worker holds SELECT" in problems
+    assert "users: synapse_scheduler holds SELECT" in problems
+    assert "probe_unsorted: neither the API's alone nor shared; put it in one set" in problems
+
+
 def test_the_check_catches_a_table_without_rls(test_database: TestDatabase) -> None:
     # Guards the guard: a check that cannot fail proves nothing.
     with test_database.admin() as admin, admin.transaction(force_rollback=True):

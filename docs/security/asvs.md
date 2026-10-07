@@ -6,8 +6,8 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 | Status | Requirements |
 |---|---|
-| met | 126 |
-| partly | 45 |
+| met | 127 |
+| partly | 44 |
 | not yet | 9 |
 | not applicable | 73 |
 | **all, levels 1 and 2** | **253** |
@@ -24,11 +24,10 @@ Every requirement still "not yet" and the larger "partly" gaps, with what each n
 | 4 | No limits per user on chat, search or uploads | V2.4.1, V15.2.2 | The limits, and how the screen says one was reached |
 | 5 | Adding a passkey or TOTP asks for nothing again; no "end all sessions" | V7.5.1, V7.4.3, V7.4.5, V7.5.2 | Screens to design |
 | 6 | The second-factor pages have no sign-out | V7.4.4 | A screen change |
-| 7 | The API, the worker and the scheduler share one role's table rights | V13.2.2 | Separate grants per process |
-| 8 | No time frames for fixing vulnerable dependencies | V15.1.1 | A policy (for example critical in 7 days, high in 30) |
-| 9 | Plain HTTP to /api is redirected, not refused | V4.1.2 | Caddy configuration for the HTTPS installs |
-| 10 | No TLS between the containers | V12.3.3, V12.3.4 | An internal CA; low priority with everything on one host |
-| 11 | Uploads are not scanned for malware | V5.4.3 | ClamAV in the worker, or a decision not to |
+| 7 | No time frames for fixing vulnerable dependencies | V15.1.1 | A policy (for example critical in 7 days, high in 30) |
+| 8 | Plain HTTP to /api is redirected, not refused | V4.1.2 | Caddy configuration for the HTTPS installs |
+| 9 | No TLS between the containers | V12.3.3, V12.3.4 | An internal CA; low priority with everything on one host |
+| 10 | Uploads are not scanned for malware | V5.4.3 | ClamAV in the worker, or a decision not to |
 
 ## V1 Encoding and Sanitization
 
@@ -311,13 +310,13 @@ Every requirement still "not yet" and the larger "partly" gaps, with what each n
 
 ## V13 Configuration
 
-10 met, 3 partly.
+11 met, 2 partly.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
 | V13.1.1 | 2 | Configuration Documentation | met | docs/deployment.md#outside-connections; docs/adr/0013-secrets-and-network-security.md:28-34; docs/adr/0002-process-topology.md:27-32; docs/installer.md:25 | Internal flows (database, model servers, web front) and every outside connection (registries, model sources, ACME, the backup directory) are listed with when they happen and who makes them. |
 | V13.2.1 | 2 | Backend Communication Configuration | partly | synapsectl/src/synapsectl/secrets.py:29-42; backend/src/synapse/dbadmin/bootstrap.py:90-97; synapsectl/src/synapsectl/render.py:312-326,350-356; backend/src/synapse/models/llama.py:67-71 | Each process has its own database role and each model server its own key. All are static passwords or API keys rotated by hand. No short-lived tokens or certificates. |
-| V13.2.2 | 2 | Backend Communication Configuration | partly | backend/src/synapse/dbadmin/bootstrap.py:104-109,149-152; backend/src/synapse/dbadmin/roles.py:17-21; synapsectl/src/synapsectl/render.py:104-111,205-222 | Roles are NOSUPERUSER/NOBYPASSRLS and containers are non-root and hardened. But api, worker and scheduler all get synapse_runtime's full table rights, contrary to ADR 0013. |
+| V13.2.2 | 2 | Backend Communication Configuration | met | backend/src/synapse/dbadmin/bootstrap.py:104-109,149-152; backend/src/synapse/dbadmin/roles.py:17-21; backend/src/synapse/migrations/versions/0027_api_only_tables.py; backend/tests/db/test_schema_invariants.py; synapsectl/src/synapsectl/render.py:104-111,205-222 | Each process has its own NOSUPERUSER, NOBYPASSRLS role with a statement timeout; containers are non-root and hardened. Accounts, sessions, grants, conversations and settings are the API role's alone; the worker and the scheduler hold nothing on them, and a test makes every new table be placed. |
 | V13.2.3 | 2 | Backend Communication Configuration | met | synapsectl/src/synapsectl/secrets.py:54-92; backend/src/synapse/kernel/secrets.py:150-162; docs/adr/0013-secrets-and-network-security.md:16-18; synapsectl/src/synapsectl/doctor.py:107-120 | Every service credential is random and generated per install. A missing or empty secret stops startup. There are no default passwords. |
 | V13.2.4 | 2 | Backend Communication Configuration | met | synapsectl/src/synapsectl/render.py (networks); deploy/compose.stack.yml; tools/stack_smoke.sh; backend/src/synapse/kernel/config.py:28,80-85 | Configuration fixes which endpoints are called, and the services' Docker network is internal: no route or name resolution beyond the machine. The web front alone joins an edge network. The stack smoke test checks the API cannot connect out. |
 | V13.2.5 | 2 | Backend Communication Configuration | met | deploy/web/Caddyfile:36-41; synapsectl/src/synapsectl/render.py (networks); synapsectl/tests/test_secrets_and_render.py | Caddy proxies only to api:8000 and the API calls only configured model URLs; the internal network allows nothing out, the web front's edge network serves its ports and ACME, and restic runs with no network. |
