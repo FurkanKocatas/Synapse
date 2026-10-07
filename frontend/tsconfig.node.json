@@ -13,5 +13,5 @@
     "allowJs": true,
     "checkJs": true
   },
-  "include": ["vite.config.ts", "eslint.config.js", "paraglide.options.js"]
+  "include": ["vite.config.ts", "phosphor-weights.ts", "eslint.config.js", "paraglide.options.js"]
 }

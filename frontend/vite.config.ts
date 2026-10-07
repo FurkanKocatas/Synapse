@@ -6,9 +6,15 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
 import { paraglideOptions } from "./paraglide.options.js";
+import { phosphorWeights } from "./phosphor-weights";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), paraglideVitePlugin(paraglideOptions)],
+  plugins: [
+    react(),
+    tailwindcss(),
+    paraglideVitePlugin(paraglideOptions),
+    phosphorWeights(fileURLToPath(new URL("./src", import.meta.url))),
+  ],
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
