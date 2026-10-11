@@ -386,9 +386,9 @@ class IdentityService:
     async def issue_recovery_codes(self, connection: AsyncConnection, user_id: UUID) -> list[str]:
         """New recovery codes, replacing any earlier ones. Only their hashes are stored."""
         codes = recovery.new_codes()
-        await repository.replace_recovery_codes(
-            connection, self._tenant_id, user_id, [recovery.hash_code(c) for c in codes]
-        )
+        # Argon2id, ten times: off the event loop, as password hashing is.
+        hashes = await asyncio.to_thread(lambda: [recovery.hash_code(c) for c in codes])
+        await repository.replace_recovery_codes(connection, self._tenant_id, user_id, hashes)
         return codes
 
     async def second_factors(self, session: CurrentSession) -> list[str]:
@@ -410,7 +410,11 @@ class IdentityService:
                 connection, user_id, accepted.step, confirm=False
             ):
                 return True
-        return await repository.use_recovery_code(connection, user_id, recovery.hash_code(code))
+        if not recovery.looks_like_a_code(code):
+            return False
+        stored = await repository.unused_recovery_codes(connection, user_id)
+        found = await asyncio.to_thread(recovery.find, stored, code)
+        return found is not None and await repository.use_recovery_code(connection, found)
 
     async def start_totp_enrollment(self, session: CurrentSession) -> TotpEnrollment | None:
         """Create a new, unconfirmed TOTP secret. None if a confirmed one already exists."""

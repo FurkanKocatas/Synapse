@@ -328,10 +328,20 @@ async def replace_recovery_codes(
         )
 
 
-async def use_recovery_code(connection: AsyncConnection, user_id: UUID, code_hash: str) -> bool:
+async def unused_recovery_codes(
+    connection: AsyncConnection, user_id: UUID
+) -> list[tuple[UUID, str]]:
     cursor = await connection.execute(
-        "UPDATE recovery_codes SET used_at = now() "
-        "WHERE user_id = %s AND code_hash = %s AND used_at IS NULL",
-        (user_id, code_hash),
+        "SELECT id, code_hash FROM recovery_codes WHERE user_id = %s AND used_at IS NULL "
+        "ORDER BY id",
+        (user_id,),
+    )
+    return [(UUID(str(row[0])), str(row[1])) for row in await cursor.fetchall()]
+
+
+async def use_recovery_code(connection: AsyncConnection, code_id: UUID) -> bool:
+    """Marks the code used; False when another request used it first."""
+    cursor = await connection.execute(
+        "UPDATE recovery_codes SET used_at = now() WHERE id = %s AND used_at IS NULL", (code_id,)
     )
     return cursor.rowcount == 1

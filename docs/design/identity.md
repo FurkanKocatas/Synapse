@@ -70,7 +70,7 @@ The backoff has a price, accepted on purpose: someone who knows an address can f
 
 ## Recovery codes
 
-Ten single-use codes of 16 characters (80 random bits), shown once with the account's first second factor (TOTP or passkey); enrolling TOTP later issues a new set. They are stored as SHA-256 rather than Argon2 as ADR 0006 says: with 80 bits of entropy guessing is infeasible regardless of hash speed, and a SHA-256 value can be looked up directly instead of checking all ten stored codes with a slow hash on every attempt. Using a recovery code goes through the same throttle as TOTP codes.
+Ten single-use codes of 16 characters (80 random bits), shown once with the account's first second factor (TOTP or passkey); enrolling TOTP later issues a new set. They are stored with Argon2id, as passwords are and as ADR 0006 says (since 2026-10-11; decided 2026-10-07), so a copy of the table gives no code. A typed code is checked against the user's unused codes one by one, off the event loop; only something that looks like a code (16 letters and digits once dashes and spaces are gone) is tried, so a TOTP code costs no hashing. Codes issued before were stored as unsalted SHA-256 and still work, until the user's next set replaces them. Using a recovery code goes through the same throttle as TOTP codes.
 
 ## Passkeys
 

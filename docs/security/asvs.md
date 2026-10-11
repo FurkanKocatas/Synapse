@@ -6,9 +6,9 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 | Status | Requirements |
 |---|---|
-| met | 129 |
+| met | 130 |
 | partly | 43 |
-| not yet | 8 |
+| not yet | 7 |
 | not applicable | 73 |
 | **all, levels 1 and 2** | **253** |
 
@@ -18,14 +18,13 @@ Every requirement still "not yet" and the larger "partly" gaps, with what each n
 
 | # | Gap | Requirements | Needs |
 |---|---|---|---|
-| 1 | Recovery codes carry 80 bits and are stored as unsalted SHA-256 | V6.5.2, V11.5.1 | A decision: longer codes (about 24 characters to type) or Argon2 storage |
-| 2 | Breached and common passwords are not refused | V6.2.4, V6.2.12 | Choosing an offline list and checking its licence |
-| 3 | A password an administrator sets stays the user's password | V6.4.1, V6.4.3 | A step at the first sign-in where users choose their own (a screen to design) |
-| 4 | Adding a passkey or TOTP asks for nothing again; no "end all sessions" | V7.5.1, V7.4.3, V7.4.5, V7.5.2 | Screens to design |
-| 5 | The second-factor pages have no sign-out | V7.4.4 | A screen change |
-| 6 | Plain HTTP to /api is redirected, not refused | V4.1.2 | Caddy configuration for the HTTPS installs |
-| 7 | No TLS between the containers | V12.3.3, V12.3.4 | An internal CA; low priority with everything on one host |
-| 8 | Uploads are not scanned for malware | V5.4.3 | ClamAV in the worker, or a decision not to |
+| 1 | A password an administrator sets stays the user's password | V6.4.1, V6.4.3 | A step at the first sign-in where users choose their own, with the CSV import (decided 2026-10-07; the screen's mockup first) |
+| 2 | Breached and common passwords are not refused | V6.2.4, V6.2.12 | Not for now (decided 2026-10-07): an offline list and its licence when it comes back |
+| 3 | Adding a passkey or TOTP asks for nothing again; no "end all sessions" | V7.5.1, V7.4.3, V7.4.5, V7.5.2 | The password asked again on a change (decided 2026-10-07; the screens' mockup first) |
+| 4 | The second-factor pages have no sign-out | V7.4.4 | A sign-out on them (decided 2026-10-07; the mockup first) |
+| 5 | Plain HTTP to /api is redirected, not refused | V4.1.2 | Left as it is (decided 2026-10-07) |
+| 6 | No TLS between the containers | V12.3.3, V12.3.4 | Not for now (decided 2026-10-07): an internal CA, with everything on one host |
+| 7 | Uploads are not scanned for malware | V5.4.3 | ClamAV in the worker, or a decision not to |
 
 ## V1 Encoding and Sanitization
 
@@ -140,14 +139,14 @@ Every requirement still "not yet" and the larger "partly" gaps, with what each n
 
 ## V6 Authentication
 
-18 met, 6 partly, 4 not yet, 7 not applicable.
+19 met, 6 partly, 3 not yet, 7 not applicable.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
 | V6.1.1 | 1 | Authentication Documentation | met | docs/design/identity.md (Security properties); docs/adr/0006-authentication.md:23; backend/src/synapse/identity/throttle.py:1-15 | Backoff thresholds, cap and no permanent lockout are documented, with the accepted risk: anyone who knows an address can keep that account waiting up to 15 minutes at a time, and 20 failures in a row are logged. The values are constants. |
 | V6.1.2 | 2 | Authentication Documentation | partly | docs/design/identity.md:63; docs/research/04-architecture.md:151 | Only categories are named (email name, display name, organization, product). There is no actual documented list of context-specific words or permutations. |
 | V6.1.3 | 2 | Authentication Documentation | met | docs/design/identity.md:5-59,140-142 | Password, TOTP, recovery-code and passkey pathways are documented together, with session levels, throttling and which roles must use MFA. |
-| V6.2.1 | 1 | Password Security | met | backend/src/synapse/identity/passwords.py:18-19,73-77; backend/src/synapse/identity/service.py:489-493 | At least 15 characters for single-factor accounts, 8 with a second factor. Enforced on create, change and admin reset. |
+| V6.2.1 | 1 | Password Security | met | backend/src/synapse/identity/passwords.py:18-19,73-77; backend/src/synapse/identity/service.py:493-497 | At least 15 characters for single-factor accounts, 8 with a second factor. Enforced on create, change and admin reset. |
 | V6.2.2 | 1 | Password Security | met | backend/src/synapse/api/account_routes.py:44-59; frontend/src/features/account/AccountPage.tsx:33-103 | Signed-in users change their own password on the account page. |
 | V6.2.3 | 1 | Password Security | met | backend/src/synapse/identity/profile.py:60-80; backend/src/synapse/api/account_routes.py:26-28 | The current password is checked (and throttled) before the new one is validated and stored. |
 | V6.2.4 | 1 | Password Security | not yet | docs/design/identity.md:65; backend/src/synapse/identity/passwords.py:73-84 | No check against common passwords; only length and context words. The docs list this as an open item. |
@@ -166,11 +165,11 @@ Every requirement still "not yet" and the larger "partly" gaps, with what each n
 | V6.4.1 | 1 | Authentication Factor Lifecycle and Recovery | not yet | backend/src/synapse/api/admin_routes.py:117-136; backend/src/synapse/identity/accounts.py:122-145 | No system-generated initial secrets. Passwords an admin sets at creation or reset become long-term: they never expire and need no change at first login. |
 | V6.4.2 | 1 | Authentication Factor Lifecycle and Recovery | met | backend/src/synapse/migrations/versions/0002_identity.py:21-43; docs/design/identity.md:61-65 | No password hints or security questions in the schema, API or UI. |
 | V6.4.3 | 2 | Authentication Factor Lifecycle and Recovery | partly | backend/src/synapse/identity/accounts.py:122-145; docs/design/identity.md:134-136,151 | Only admins can reset; the reset keeps MFA and ends sessions. The admin chooses and knows the password, no change is forced, and there is no self-service reset. |
-| V6.4.4 | 2 | Authentication Factor Lifecycle and Recovery | partly | backend/src/synapse/identity/accounts.py:147-162; docs/design/identity.md (Account administration); backend/src/synapse/identity/recovery.py:12-22 | Recovery codes and an admin MFA reset exist. How the admin makes sure the request comes from the owner (in person, or calling back a known number) is documented for operators, and both resets are audited; the system cannot enforce it. |
+| V6.4.4 | 2 | Authentication Factor Lifecycle and Recovery | partly | backend/src/synapse/identity/accounts.py:147-162; docs/design/identity.md (Account administration); backend/src/synapse/identity/recovery.py:20-31 | Recovery codes and an admin MFA reset exist. How the admin makes sure the request comes from the owner (in person, or calling back a known number) is documented for operators, and both resets are audited; the system cannot enforce it. |
 | V6.5.1 | 2 | General Multi-factor authentication requirements | met | backend/src/synapse/identity/repository.py:296-330; backend/src/synapse/identity/totp.py:54-69 | Recovery codes are marked used atomically. The TOTP time step is claimed atomically, so the same or an earlier code is rejected. |
-| V6.5.2 | 2 | General Multi-factor authentication requirements | not yet | backend/src/synapse/identity/recovery.py:13,30-31; docs/design/identity.md:69 | Recovery codes have 80 bits (under 112) but are stored as unsalted SHA-256, not a salted password hash. |
-| V6.5.3 | 2 | General Multi-factor authentication requirements | met | backend/src/synapse/identity/recovery.py:20; backend/src/synapse/identity/totp.py:46-47; backend/src/synapse/identity/passkeys.py:127,228 | Codes and challenges use secrets.token_bytes. TOTP seeds use pyotp.random_base32 (pyotp 2.10, secrets-based per its documentation; library source not read). |
-| V6.5.4 | 2 | General Multi-factor authentication requirements | met | backend/src/synapse/identity/recovery.py:12-22 | Recovery codes carry 80 random bits. There are no out-of-band codes. |
+| V6.5.2 | 2 | General Multi-factor authentication requirements | met | backend/src/synapse/identity/recovery.py:20-22,44-53; backend/src/synapse/identity/passwords.py:16; backend/tests/identity/test_tokens_and_recovery.py; docs/design/identity.md:73 | Recovery codes have 80 bits (under 112) and are stored with Argon2id and its random 16-byte salt, as passwords are. Codes issued before the change keep their SHA-256 until the next set replaces them. |
+| V6.5.3 | 2 | General Multi-factor authentication requirements | met | backend/src/synapse/identity/recovery.py:29; backend/src/synapse/identity/totp.py:46-47; backend/src/synapse/identity/passkeys.py:127,228 | Codes and challenges use secrets.token_bytes. TOTP seeds use pyotp.random_base32 (pyotp 2.10, secrets-based per its documentation; library source not read). |
+| V6.5.4 | 2 | General Multi-factor authentication requirements | met | backend/src/synapse/identity/recovery.py:20-31 | Recovery codes carry 80 random bits. There are no out-of-band codes. |
 | V6.5.5 | 2 | General Multi-factor authentication requirements | partly | backend/src/synapse/identity/totp.py:18-20,64-68 | The TOTP step is 30 seconds, but the one-step window either side accepts a code for up to about 90 seconds. No out-of-band codes exist. |
 | V6.6.1 | 2 | Out-of-Band authentication mechanisms | not applicable | docs/design/identity.md:5-24 | No phone or SMS one-time passwords. |
 | V6.6.2 | 2 | Out-of-Band authentication mechanisms | not applicable | docs/design/identity.md:5-24,148-151 | No out-of-band authentication (email, SMS or push) is offered. |
@@ -197,7 +196,7 @@ Every requirement still "not yet" and the larger "partly" gaps, with what each n
 | V7.3.2 | 2 | Session Timeout | met | backend/src/synapse/identity/service.py:191,268,381; backend/src/synapse/kernel/config.py:61 | A 12-hour absolute expiry is stored for each session and checked on every request. |
 | V7.4.1 | 1 | Session Termination | met | backend/src/synapse/identity/service.py:266-275,295-306; backend/src/synapse/api/auth_routes.py:131-136 | Logout and expiry set revoked_at in the database, and revoked sessions are rejected. |
 | V7.4.2 | 1 | Session Termination | met | backend/src/synapse/identity/accounts.py:100-106; backend/src/synapse/identity/service.py:272-275 | Disabling an account revokes all its sessions, and status is checked on every request. Accounts can only be disabled, not deleted. |
-| V7.4.3 | 2 | Session Termination | partly | backend/src/synapse/identity/profile.py:85-89; backend/src/synapse/identity/passkeys.py:375-394; backend/src/synapse/identity/service.py:434-476 | Password changes and admin resets end other sessions. Adding or removing passkeys, or enrolling TOTP, does not offer to. |
+| V7.4.3 | 2 | Session Termination | partly | backend/src/synapse/identity/profile.py:85-89; backend/src/synapse/identity/passkeys.py:375-394; backend/src/synapse/identity/service.py:438-480 | Password changes and admin resets end other sessions. Adding or removing passkeys, or enrolling TOTP, does not offer to. |
 | V7.4.4 | 2 | Session Termination | partly | frontend/src/components/AccountMenu.tsx:102-105; frontend/src/components/TopBar.tsx:76; frontend/src/components/AuthLayout.tsx:26-35 | Sign-out is in the top-bar account menu on every fully signed-in page. The second-factor and enrollment pages have no sign-out. |
 | V7.4.5 | 2 | Session Termination | partly | backend/src/synapse/identity/accounts.py:106,143,160; backend/src/synapse/api/admin_routes.py:139-181 | Sessions end only as a side effect of disabling, a role change or a reset. No direct way to end one user's or all users' sessions. |
 | V7.5.1 | 2 | Defenses Against Session Abuse | partly | backend/src/synapse/identity/profile.py:73-75; backend/src/synapse/api/passkey_routes.py:69-99,140-147; backend/src/synapse/api/auth_routes.py:159-188 | Changing the password needs the current one. Adding or removing passkeys and enrolling TOTP need no re-authentication. Users cannot change their email. |
@@ -287,7 +286,7 @@ Every requirement still "not yet" and the larger "partly" gaps, with what each n
 | V11.4.2 | 2 | Hashing and Hash-based Functions | met | backend/src/synapse/identity/passwords.py:14-16,55-70; docs/adr/0006-authentication.md:18 | Argon2id at m=19 MiB, t=2, p=1 (OWASP minimum). Parameters are stored in each hash and old hashes are rehashed on login. |
 | V11.4.3 | 2 | Hashing and Hash-based Functions | met | backend/src/synapse/audit/chain.py:59-84; backend/src/synapse/audit/browse.py:198-247; backend/src/synapse/knowledge/blobs.py:3 | Integrity hashes are SHA-256 (audit chain, export manifest, blob names, bundles) and signatures are Ed25519. 64-bit BLAKE2b is used only for non-security feature hashing. |
 | V11.4.4 | 2 | Hashing and Hash-based Functions | partly | backend/src/synapse/dbadmin/scram.py:14-21 | Only password-derived keys are PostgreSQL SCRAM verifiers: PBKDF2-SHA-256 at 4096 iterations, below current guidance (inputs are 256-bit random). restic handles its own KDF. |
-| V11.5.1 | 2 | Random Values | partly | backend/src/synapse/identity/recovery.py:3,12-21; backend/src/synapse/identity/tokens.py:12-16; backend/src/synapse/identity/passkeys.py:127,228; synapsectl/src/synapsectl/secrets.py:54-56 | A CSPRNG is used throughout, and sessions, challenges and keys have 256 bits. Recovery codes carry only 80 bits, below the 128-bit minimum. |
+| V11.5.1 | 2 | Random Values | partly | backend/src/synapse/identity/recovery.py:3,20-30; backend/src/synapse/identity/tokens.py:12-16; backend/src/synapse/identity/passkeys.py:127,228; synapsectl/src/synapsectl/secrets.py:54-56 | A CSPRNG is used throughout, and sessions, challenges and keys have 256 bits. Recovery codes carry 80 bits, below the 128-bit minimum: kept at 16 characters to type (decided 2026-10-07) and stored with Argon2id instead. |
 | V11.6.1 | 2 | Public Key Cryptography | met | backend/src/synapse/audit/anchor.py:33-59; backend/src/synapse/audit/browse.py:198-240; synapsectl/src/synapsectl/secrets.py:54-56 | Ed25519 signing via pyca/cryptography from a 32-byte CSPRNG seed. py_webauthn verifies WebAuthn signatures, with the algorithm list left at library defaults. |
 
 ## V12 Secure Communication
@@ -374,7 +373,7 @@ Every requirement still "not yet" and the larger "partly" gaps, with what each n
 | V16.2.3 | 2 | General Logging | met | backend/src/synapse/kernel/logging.py:39-47; deploy/web/Caddyfile:55-57; docs/adr/0014-observability.md:14-16; docs/design/audit.md | Processes log only to stdout and the audit table, both documented; Caddy logs to stdout; no other sinks exist (OTLP export not implemented). |
 | V16.2.4 | 2 | General Logging | partly | backend/src/synapse/kernel/logging.py:26-30; deploy/web/Caddyfile:55-62; backend/src/synapse/api/app.py:118-130 | API and Caddy emit JSON lines, linked by X-Request-ID; PostgreSQL and llama-server logs are plain text, no trace or job IDs, no log processor shipped. |
 | V16.2.5 | 2 | General Logging | partly | backend/src/synapse/identity/service.py:166-177; deploy/web/Caddyfile:57-61; synapsectl/src/synapsectl/support.py:39-96; docs/adr/0014-observability.md:14; backend/tests/test_logging.py | Passwords/tokens not logged; unknown emails hashed; Caddy drops CSRF header; bundle redacts. No classification-based control; promised secret-scan test absent; upload filenames in access logs. |
-| V16.3.1 | 2 | Security Events | met | backend/src/synapse/identity/service.py:147-207,318-359,448-474; backend/src/synapse/identity/passkeys.py:256-359; backend/src/synapse/identity/profile.py:90-121; docs/design/audit.md:7-13 | Password login, MFA verify (TOTP, recovery, passkey), enrolment, throttling, logout and password changes audited with outcome; TOTP versus recovery-code use not distinguished. |
+| V16.3.1 | 2 | Security Events | met | backend/src/synapse/identity/service.py:147-207,318-359,452-478; backend/src/synapse/identity/passkeys.py:256-359; backend/src/synapse/identity/profile.py:90-121; docs/design/audit.md:7-13 | Password login, MFA verify (TOTP, recovery, passkey), enrolment, throttling, logout and password changes audited with outcome; TOTP versus recovery-code use not distinguished. |
 | V16.3.2 | 2 | Security Events | partly | backend/src/synapse/api/deps.py (_current_session, require); backend/tests/db/test_api_auth.py; backend/src/synapse/knowledge/documents.py:10-11 | CSRF failures (api.csrf_failed) and missing permissions (api.forbidden) are logged as warnings with the user. A document the user may not read answers 404 like a missing one, unlogged. |
 | V16.3.3 | 2 | Security Events | partly | docs/adr/0008-audit-log.md:14; backend/src/synapse/knowledge/documents.py (stored_file); backend/src/synapse/identity/service.py:147-161; backend/src/synapse/api/deps.py | The events ADR 0008 lists are audited, file downloads included (kb.document.download); CSRF failures are logged. Input validation failures (422) are not. |
 | V16.3.4 | 2 | Security Events | met | backend/src/synapse/api/chat_routes.py:166-168; backend/src/synapse/api/app.py:151-160; backend/src/synapse/jobs/worker.py:77-83; backend/src/synapse/scheduler_cli.py:105-109; backend/src/synapse/api/audit_routes.py (_signing_key); backend/tests/test_audit_routes.py | Unhandled, stream, readiness and job errors, audit-chain breaks and an unreadable audit signing key (which leaves the checkpoints unchecked) are logged as errors. There is no backend TLS whose failures could be logged. |
