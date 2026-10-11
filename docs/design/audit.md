@@ -60,4 +60,4 @@ Every export is audited (`audit.export`, with its format, count and filter). A s
 
 - Exporting checkpoints as they are signed (email to the customer's administrator, syslog), beyond the backups that carry them.
 - The auditor's screen (the endpoints above are ready), after its design.
-- Retention: removing events older than the configured period needs a separate maintenance role and must itself be audited. Until then events are kept.
+- Retention: removing events older than the configured period needs a separate maintenance role and must itself be audited. The periods are decided (events a year, a question's text six months); how is proposed in [ADR 0022](../adr/0022-audit-retention.md). Until then events are kept.

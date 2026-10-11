@@ -37,3 +37,4 @@
 | [0019](adr/0019-page-ocr.md) | Page OCR: PP-OCRv6 with a Turkish language model |
 | [0020](adr/0020-ocr-vote.md) | Page OCR: a vote of three readings |
 | [0021](adr/0021-backups.md) | Backups are taken from the host, into a restic repository |
+| [0022](adr/0022-audit-retention.md) | Audit retention: events for a year, a question's text for six months (proposed) |
