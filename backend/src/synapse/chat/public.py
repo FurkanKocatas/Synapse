@@ -24,6 +24,7 @@ from synapse.chat.conversations import (
     Started,
     StoredSource,
     StoredTurn,
+    delete_conversations_of,
 )
 
 __all__ = [
@@ -48,4 +49,5 @@ __all__ = [
     "StoredSource",
     "StoredTurn",
     "Turn",
+    "delete_conversations_of",
 ]

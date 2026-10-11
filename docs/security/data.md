@@ -37,5 +37,5 @@ What each level requires:
 - How long the audit log is kept, and whether a question's text should stay in it for that long.
 - Whether a conversation's answers should go when a document they cite is deleted.
 - Whether backups keep six months.
-- A person's own data on request (KVKK article 11): finding and exporting or deleting one person's conversations and audit entries is not a feature yet.
+- A person's own data on request (KVKK article 11): finding and exporting one person's conversations and audit entries is not a feature yet (after v1, decided 2026-10-07). Until then an administrator deletes every conversation of a user on request (`DELETE /api/admin/users/{id}/conversations`, or `synapse user delete-conversations`); the audit log and the backups keep theirs for their own periods.
 - Encryption on the host's disk: the installer does not check for it.

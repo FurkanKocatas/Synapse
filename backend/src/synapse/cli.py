@@ -25,9 +25,35 @@ from synapse import (
 from synapse.dbadmin import bootstrap, migrate
 from synapse.identity.public import PasswordPolicyError
 from synapse.jobs.queue import Queue
-from synapse.kernel.config import get_settings
+from synapse.kernel.config import Settings, get_settings
 from synapse.kernel.logging import configure_logging
 from synapse.kernel.secrets import read_secret
+
+
+def _add_user_commands(user: argparse.ArgumentParser) -> None:
+    user_commands = user.add_subparsers(dest="user_command", required=True)
+    new_user = user_commands.add_parser("create", help="Create an account in SYNAPSE_TENANT_ID.")
+    new_user.add_argument("--email", required=True)
+    new_user.add_argument("--name", required=True, help="Display name")
+    new_user.add_argument("--role", required=True, choices=["admin", "editor", "member", "auditor"])
+    new_user.add_argument("--locale", default="tr", choices=["tr", "en"])
+    new_user.add_argument(
+        "--password-file", type=Path, help="Read the password from a file instead of prompting"
+    )
+    new_user.add_argument(
+        "--unless-admin-exists",
+        action="store_true",
+        help="Do nothing if the tenant already has an active administrator (for the installer)",
+    )
+
+    user_commands.add_parser(
+        "admins", help="Print how many active administrators SYNAPSE_TENANT_ID has."
+    )
+    erase = user_commands.add_parser(
+        "delete-conversations",
+        help="Delete every conversation of an account (a person's request); print how many.",
+    )
+    erase.add_argument("--email", required=True)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -84,25 +110,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Succeed without changes if a tenant with this ID and slug exists (needs --id)",
     )
 
-    user = commands.add_parser("user", help="Account administration.")
-    user_commands = user.add_subparsers(dest="user_command", required=True)
-    new_user = user_commands.add_parser("create", help="Create an account in SYNAPSE_TENANT_ID.")
-    new_user.add_argument("--email", required=True)
-    new_user.add_argument("--name", required=True, help="Display name")
-    new_user.add_argument("--role", required=True, choices=["admin", "editor", "member", "auditor"])
-    new_user.add_argument("--locale", default="tr", choices=["tr", "en"])
-    new_user.add_argument(
-        "--password-file", type=Path, help="Read the password from a file instead of prompting"
-    )
-    new_user.add_argument(
-        "--unless-admin-exists",
-        action="store_true",
-        help="Do nothing if the tenant already has an active administrator (for the installer)",
-    )
-
-    user_commands.add_parser(
-        "admins", help="Print how many active administrators SYNAPSE_TENANT_ID has."
-    )
+    _add_user_commands(commands.add_parser("user", help="Account administration."))
 
     knowledge = commands.add_parser("knowledge", help="Knowledge base maintenance.")
     knowledge_commands = knowledge.add_subparsers(dest="knowledge_command", required=True)
@@ -205,8 +213,16 @@ def _run_admin_command(args: argparse.Namespace) -> int:
                 settings, args.slug, args.name, tenant_id=args.id, if_missing=args.if_missing
             )
         )
-    elif args.user_command == "admins":
+    else:
+        _run_user_command(args, settings)
+    return 0
+
+
+def _run_user_command(args: argparse.Namespace, settings: Settings) -> None:
+    if args.user_command == "admins":
         print(accounts_cli.active_admins(settings))
+    elif args.user_command == "delete-conversations":
+        print(accounts_cli.delete_conversations(settings, args.email))
     elif args.unless_admin_exists and accounts_cli.active_admins(settings) > 0:
         print("skipped: an active administrator exists")
     else:
@@ -219,7 +235,6 @@ def _run_admin_command(args: argparse.Namespace) -> int:
             password=accounts_cli.read_new_password(args.password_file),
         )
         print(user_id)
-    return 0
 
 
 def _run_api() -> int:

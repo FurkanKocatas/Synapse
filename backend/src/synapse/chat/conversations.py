@@ -54,6 +54,39 @@ class Asker:
     ip: str | None
 
 
+async def delete_conversations_of(
+    connection: AsyncConnection,
+    tenant_id: UUID,
+    user_id: UUID,
+    *,
+    actor: Asker | None,
+    via: Literal["admin", "cli"],
+    now: datetime,
+) -> int | None:
+    """Every conversation of ``user_id``, of both kinds, with their turns, the deletion audited:
+    the administrator's tool for a person who asks for theirs to go, until one person's data can
+    be found and exported whole (KVKK article 11). None when the tenant has no such user."""
+    cursor = await connection.execute("SELECT 1 FROM users WHERE id = %s", (user_id,))
+    if await cursor.fetchone() is None:
+        return None
+    deleted = await connection.execute("DELETE FROM conversations WHERE user_id = %s", (user_id,))
+    await audit.record(
+        connection,
+        tenant_id,
+        AuditEvent(
+            "chat.conversation.delete_all",
+            "success",
+            actor_user_id=actor.user_id if actor else None,
+            actor_ip=actor.ip if actor else None,
+            target_type="user",
+            target_id=str(user_id),
+            details={"count": deleted.rowcount, "via": via},
+        ),
+        now,
+    )
+    return deleted.rowcount
+
+
 @dataclass(frozen=True)
 class _Turn:
     """The turn being answered: who asks, where it is stored, the question and the scope."""
@@ -425,6 +458,13 @@ class Conversations:
                     target_id=str(conversation_id),
                 ),
                 now,
+            )
+
+    async def delete_all_of(self, user_id: UUID, *, actor: Asker) -> int | None:
+        """Every conversation of ``user_id``, for an administrator (``delete_conversations_of``)."""
+        async with self._db.tenant_transaction(self._tenant_id) as connection:
+            return await delete_conversations_of(
+                connection, self._tenant_id, user_id, actor=actor, via="admin", now=self._now()
             )
 
     async def feedback(

@@ -340,3 +340,30 @@ def test_resetting_a_second_factor(admin: TestClient, setup: Setup) -> None:
     with new_client(setup) as target:
         assert sign_in(target, email)["auth_level"] == "enroll_mfa"
     assert admin.delete(f"/api/admin/users/{uuid.uuid4()}/mfa").status_code == 404
+
+
+def test_an_administrator_deletes_every_conversation_of_a_user(
+    admin: TestClient, member: TestClient, setup: Setup, test_database: TestDatabase
+) -> None:
+    for question in ("Meclis kaç üyeli?", "Bütçe ne kadar?"):
+        assert member.post("/api/chat", json={"question": question}).status_code == 200
+    assert len(member.get("/api/conversations").json()) == 2
+    member_id = member.get("/api/auth/session").json()["user"]["id"]
+    path = f"/api/admin/users/{member_id}/conversations"
+    assert member.delete(path).json() == {"error": "forbidden"}
+    assert admin.delete(path).json() == {"deleted": 2}
+    assert member.get("/api/conversations").json() == []
+    assert admin.delete(f"/api/admin/users/{uuid.uuid4()}/conversations").status_code == 404
+
+    # The same from the command line, by the address as typed.
+    assert member.post("/api/chat", json={"question": "Bir soru daha"}).status_code == 200
+    assert accounts_cli.delete_conversations(setup.settings, f" {setup.member.upper()} ") == 1
+    with pytest.raises(accounts_cli.CommandError):
+        accounts_cli.delete_conversations(setup.settings, "nobody@example.org")
+    with test_database.admin() as connection:
+        audited = connection.execute(
+            "SELECT actor_user_id IS NOT NULL, details FROM audit_events "
+            "WHERE action = 'chat.conversation.delete_all' AND target_id = %s ORDER BY seq",
+            (member_id,),
+        ).fetchall()
+    assert audited == [(True, {"count": 2, "via": "admin"}), (False, {"count": 1, "via": "cli"})]

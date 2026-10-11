@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from synapse.api.deps import ApiError, client_ip, require
 from synapse.authz import public as authz
+from synapse.chat.public import Asker, Conversations
 from synapse.identity.public import (
     Account,
     AccountExistsError,
@@ -179,6 +180,23 @@ async def reset_mfa(user_id: UUID, session: ManageUsers, request: Request) -> No
         raise ApiError(status.HTTP_409_CONFLICT, "own_account") from error
     if not found:
         raise ApiError(status.HTTP_404_NOT_FOUND, "not_found")
+
+
+class DeletedView(BaseModel):
+    deleted: int
+
+
+@router.delete("/users/{user_id}/conversations")
+async def delete_conversations(
+    user_id: UUID, session: ManageUsers, request: Request
+) -> DeletedView:
+    """Every conversation of the user, for a person who asks for theirs to go (KVKK)."""
+    conversations: Conversations = request.app.state.conversations
+    actor = Asker(session.user_id, client_ip(request))
+    deleted = await conversations.delete_all_of(user_id, actor=actor)
+    if deleted is None:
+        raise ApiError(status.HTTP_404_NOT_FOUND, "not_found")
+    return DeletedView(deleted=deleted)
 
 
 # Groups

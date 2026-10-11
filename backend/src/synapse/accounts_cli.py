@@ -7,9 +7,10 @@ would be open until someone uses it (ADR 0006).
 import asyncio
 import getpass
 import uuid
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from synapse.chat.public import delete_conversations_of
 from synapse.identity.public import (
     IdentityService,
     NewAccount,
@@ -119,6 +120,40 @@ async def _create_user(
         )
     finally:
         await database.close()
+
+
+async def _delete_conversations(settings: Settings, email: str) -> int:
+    if settings.tenant_id is None:
+        raise CommandError("SYNAPSE_TENANT_ID is not set")
+    database = Database(settings.database(application_name="synapse-cli"), max_size=1)
+    await database.open()
+    try:
+        async with database.tenant_transaction(settings.tenant_id) as connection:
+            cursor = await connection.execute(
+                "SELECT id FROM users WHERE email = %s", (email.strip().lower(),)
+            )
+            row = await cursor.fetchone()
+            user_id = None if row is None else uuid.UUID(str(row[0]))
+            deleted = None
+            if user_id is not None:
+                deleted = await delete_conversations_of(
+                    connection,
+                    settings.tenant_id,
+                    user_id,
+                    actor=None,
+                    via="cli",
+                    now=datetime.now(UTC),
+                )
+    finally:
+        await database.close()
+    if deleted is None:
+        raise CommandError(f"no account with the address {email}")
+    return deleted
+
+
+def delete_conversations(settings: Settings, email: str) -> int:
+    """Every conversation of the account with ``email``, audited; how many went."""
+    return asyncio.run(_delete_conversations(settings, email))
 
 
 def create_user(

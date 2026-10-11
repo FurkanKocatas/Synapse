@@ -84,7 +84,7 @@ Conversations: `GET /api/conversations` (the user's, newest first, at most 200),
 - A turn is written `pending` before anything is searched and finished with its answer, or `cancelled` when the stream closes first; finishing is shielded from the cancellation, so a closed tab leaves no pending turn. A failure inside the turn finishes it `failed`.
 - Sources are kept as references (document, version, chunk, title, pages), never as text. Reading a conversation again fetches each source's text through `accessible_documents`: a source the user may no longer read, or whose document is deleted, comes back without text or title. The answer's own text is the user's history and is kept.
 - Details for evaluation (the best score, the claims checked, retries, removed sentences, timings) are stored with the turn and never shown.
-- Audit (ADR 0008): `chat.question` when a turn finishes, with the question, its status, the documents retrieved and cited, and the answer's SHA-256, never its text; `chat.conversation.delete`; `kb.document.view` for every page the viewer opens.
+- Audit (ADR 0008): `chat.question` when a turn finishes, with the question, its status, the documents retrieved and cited, and the answer's SHA-256, never its text; `chat.conversation.delete`; `chat.conversation.delete_all` when an administrator deletes every conversation of a user ([identity.md](identity.md)); `kb.document.view` for every page the viewer opens.
 
 ## The chat screen
 
