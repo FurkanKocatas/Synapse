@@ -25,6 +25,7 @@ from synapse.api import (
     settings_routes,
 )
 from synapse.api.deps import ApiError, public_endpoint
+from synapse.api.limits import UserLimits
 from synapse.chat.public import Answerer, Conversations
 from synapse.dbadmin import migrate
 from synapse.identity.public import (
@@ -216,6 +217,7 @@ def _attach_services(app: FastAPI, settings: Settings, database: Database, model
         classic=settings.chat_classic,
     )
     app.state.classic_chat = settings.chat_classic
+    app.state.limits = UserLimits()
     app.state.accounts = AccountService(database, tenant_id=tenant_id)
     app.state.profile = ProfileService(database, tenant_id=tenant_id)
     app.state.organization = SettingsService(database, tenant_id=tenant_id)

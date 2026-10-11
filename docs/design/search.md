@@ -31,7 +31,7 @@ An administrator lists phrases that mean the same, abbreviations among them: `PA
 
 ## API
 
-`POST /api/search` with `{"query", "limit" (1 to 50, default 10), "rerank" (default true), "scope" (optional: `{"collections": [...], "documents": [...]}`)}`, for a signed-in user (POST so the question stays out of URLs and access logs). The answer has the hits (document, title, version, pages, kind, heading path, text, and each hit's rank in the lexical and dense lists), whether they were reranked, the warnings, and the milliseconds of each stage. With `rerank` false it returns the fused first stage, in tens of milliseconds; the chat screen (step 8) asks for that first and the reranked order after.
+`POST /api/search` with `{"query", "limit" (1 to 50, default 10), "rerank" (default true), "scope" (optional: `{"collections": [...], "documents": [...]}`)}`, for a signed-in user (POST so the question stays out of URLs and access logs). The answer has the hits (document, title, version, pages, kind, heading path, text, and each hit's rank in the lexical and dense lists), whether they were reranked, the warnings, and the milliseconds of each stage. With `rerank` false it returns the fused first stage, in tens of milliseconds; the chat screen (step 8) asks for that first and the reranked order after. A user may search twenty times a minute ([api/limits.py](../../backend/src/synapse/api/limits.py)); past that the answer is 429 `too_many_requests` with `Retry-After`. The chat's own searches are not counted: a question is limited as a question.
 
 ## Measured
 

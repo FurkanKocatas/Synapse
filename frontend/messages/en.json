@@ -32,6 +32,7 @@
   "home_next": "Ask a question about your documents; every answer shows the page it rests on.",
   "error_invalid_credentials": "The email or password is incorrect.",
   "error_too_many_attempts": "Too many attempts. Try again in {seconds} seconds.",
+  "error_too_many_requests": "Please wait a little and try again.",
   "error_invalid_code": "The code is invalid or has expired.",
   "error_session_expired": "Your session has expired. Please sign in again.",
   "error_network": "Cannot reach the server. Check your connection.",

@@ -3,6 +3,7 @@
 ``POST`` so the question stays out of URLs and access logs. With ``rerank`` false the fused
 first stage comes back at once (tens of milliseconds); with it true the reranker orders the
 first 15 too, which takes seconds on a CPU (knowledge/search.py, docs/benchmarks/embeddings.md).
+A user may search twenty times a minute (api/limits.py).
 """
 
 from uuid import UUID
@@ -11,6 +12,7 @@ from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
 
 from synapse.api.deps import ApiError, FullSession
+from synapse.api.limits import SEARCHES, check
 from synapse.knowledge.public import (
     MAX_COLLECTIONS,
     MAX_DOCUMENTS,
@@ -79,6 +81,7 @@ async def search(body: SearchRequest, session: FullSession, request: Request) ->
     query = body.query.strip()
     if not query:
         raise ApiError(status.HTTP_422_UNPROCESSABLE_CONTENT, "empty_query")
+    check(request.app.state.limits, SEARCHES, session.user_id)
     service = _search(request)
     found: Found
     scope = body.scope.scope()

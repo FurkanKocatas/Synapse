@@ -8,7 +8,8 @@ second, then reranked), ``queued`` (the chat model is busy:
 the position), ``generating``, ``delta`` (the answer as it is written), ``retrying`` (the text
 so far is discarded: it stated a number no source holds), and ``answer`` last, the verified
 answer. Closing the connection cancels the turn. A failure after the stream has started is an
-``error`` event, since the status code has been sent.
+``error`` event, since the status code has been sent. A user has at most two questions
+answered at once (api/limits.py): a third is refused with 429 before anything is stored.
 """
 
 import json
@@ -25,6 +26,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import AwareDatetime, BaseModel, Field
 
 from synapse.api.deps import ApiError, FullSession, client_ip
+from synapse.api.limits import QUESTION_RETRY, UserLimits, too_many
 from synapse.api.search_routes import ScopeModel
 from synapse.chat.public import (
     Answer,
@@ -129,6 +131,10 @@ async def ask(body: AskRequest, session: FullSession, request: Request) -> Strea
     question = body.question.strip()
     if not question:
         raise ApiError(status.HTTP_422_UNPROCESSABLE_CONTENT, "empty_query")
+    limits: UserLimits = request.app.state.limits
+    slot = limits.question(session.user_id)
+    if slot is None:
+        raise too_many("question", QUESTION_RETRY)
     events = _conversations(request).ask(
         Asker(session.user_id, client_ip(request)),
         question,
@@ -137,14 +143,19 @@ async def ask(body: AskRequest, session: FullSession, request: Request) -> Strea
         now=body.now,
         scope=body.scope.scope() if body.scope is not None else None,
     )
+    streaming = False
     try:
         first = await anext(events)  # the turn is stored, or the conversation is not the user's
+        streaming = True
     except ConversationNotFoundError as error:
         await events.aclose()
         raise ApiError(status.HTTP_404_NOT_FOUND, "not_found") from error
     except ClassicChatDisabledError as error:
         await events.aclose()
         raise ApiError(status.HTTP_403_FORBIDDEN, "classic_chat_disabled") from error
+    finally:
+        if not streaming:  # no stream will run to give the slot back
+            slot.release()
 
     async def stream() -> AsyncIterator[str]:
         try:
@@ -158,6 +169,7 @@ async def ask(body: AskRequest, session: FullSession, request: Request) -> Strea
         finally:
             with anyio.CancelScope(shield=True):
                 await events.aclose()
+            slot.release()
 
     return StreamingResponse(
         stream(),

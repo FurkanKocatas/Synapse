@@ -13,6 +13,9 @@ describe("errorMessage", () => {
     expect(errorMessage(new ApiError(429, "too_many_attempts", 12))).toBe(
       m.error_too_many_attempts({ seconds: "12" }),
     );
+    expect(errorMessage(new ApiError(429, "too_many_requests", 10))).toBe(
+      m.error_too_many_requests(),
+    );
     expect(errorMessage(new NetworkError(null))).toBe(m.error_network());
   });
 

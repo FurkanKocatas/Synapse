@@ -2,7 +2,9 @@
 
 Uploads are the raw file as the request body, with the original name in the ``filename`` query
 parameter. The body is written to disk as it arrives, with the size limit enforced on the way,
-and only after the permission check, so a user who may not upload cannot fill the disk.
+and only after the permission check, so a user who may not upload cannot fill the disk. A user
+may upload a hundred files an hour, new documents and new versions together (api/limits.py),
+counted before the body is read.
 """
 
 import asyncio
@@ -17,6 +19,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
 from synapse.api.deps import ApiError, FullSession, client_ip
+from synapse.api.limits import UPLOADS, check
 from synapse.knowledge.public import (
     BlobStore,
     DocumentService,
@@ -140,6 +143,7 @@ async def upload(
     documents = _documents(request)
     if not await documents.may_upload(session.user_id, collection_id):
         raise ApiError(status.HTTP_404_NOT_FOUND, "not_found")
+    check(request.app.state.limits, UPLOADS, session.user_id)
     incoming = await _receive(request)
     try:
         uploaded = await documents.upload(
@@ -158,6 +162,7 @@ async def add_version(
     documents = _documents(request)
     if not await documents.may_add_version(session.user_id, document_id):
         raise ApiError(status.HTTP_404_NOT_FOUND, "not_found")
+    check(request.app.state.limits, UPLOADS, session.user_id)
     incoming = await _receive(request)
     try:
         uploaded = await documents.add_version(

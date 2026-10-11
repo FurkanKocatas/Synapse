@@ -32,6 +32,7 @@
   "home_next": "Belgelerinizle ilgili bir soru sorun; her cevap dayandığı sayfayı gösterir.",
   "error_invalid_credentials": "E-posta ya da parola hatalı.",
   "error_too_many_attempts": "Çok fazla deneme yapıldı. {seconds} saniye sonra tekrar deneyin.",
+  "error_too_many_requests": "Biraz bekleyip tekrar deneyin.",
   "error_invalid_code": "Kod geçersiz ya da süresi dolmuş.",
   "error_session_expired": "Oturumunuzun süresi doldu. Lütfen yeniden giriş yapın.",
   "error_network": "Sunucuya ulaşılamıyor. Bağlantınızı kontrol edin.",

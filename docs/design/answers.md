@@ -53,6 +53,8 @@ The page sends the user's clock with each question (`now`, with its offset); the
 
 ## The queue and cancelling
 
+A user has at most two questions answered at once ([api/limits.py](../../backend/src/synapse/api/limits.py), decided 2026-10-07): a third is refused with 429 `too_many_requests` and `Retry-After: 10` before anything is stored, and the page says to wait a little and try again. A question gives its slot back when its stream ends; one whose stream never began is free again after ten minutes.
+
 The chat server runs two slots (`--parallel 2`). Each turn takes one for its rewriting and its generation, first come first served, in the API process; a turn that finds both busy waits and the page shows its position, refreshed every two seconds. Closing the connection (the page's Stop button, or a closed tab) cancels the turn: the iterators are closed in order down to the HTTP stream to the chat server, which stops generating for a client that has gone, and the slot is handed on.
 
 ## API

@@ -16,6 +16,8 @@ export function errorMessage(error: unknown): string {
       return m.error_invalid_credentials();
     case "too_many_attempts":
       return m.error_too_many_attempts({ seconds: String(error.retryAfterSeconds ?? 60) });
+    case "too_many_requests":
+      return m.error_too_many_requests();
     case "invalid_code":
       return m.error_invalid_code();
     case "not_authenticated":
