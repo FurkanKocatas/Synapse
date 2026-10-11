@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "@/App";
 import { rememberCsrfToken } from "@/lib/api";
@@ -337,6 +337,10 @@ function card(title: string): HTMLElement {
 }
 
 describe("system page", () => {
+  // Each run's age is measured against the clock: held at the fixtures' morning, or they go stale.
+  beforeEach(() => void vi.useFakeTimers({ now: NOW, toFake: ["Date"] }));
+  afterEach(() => void vi.useRealTimers());
+
   function serve(operations: Operations) {
     return fakeApi((call) => {
       if (call.path === "/api/auth/session") {
