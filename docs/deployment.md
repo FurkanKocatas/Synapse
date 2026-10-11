@@ -17,6 +17,19 @@ Why Caddy is rebuilt: the published Caddy 2.11.4 binary was built with Go 1.26.3
 
 Why gosu is gone: the official PostgreSQL entrypoint uses gosu to drop from root to `postgres`. Starting the container as `postgres` makes that step unnecessary, so the binary (the scan's largest finding) is removed and the database never runs as root.
 
+## Fixing vulnerabilities
+
+Time frames count from the day a finding is known (the CI scan, an advisory, a report) and go by the severity the scanner or the advisory gives (decided 2026-10-07):
+
+| Severity | Fixed in a release within |
+|---|---|
+| Critical | 7 days |
+| High | 30 days |
+| Medium | 90 days |
+| Low | the next release |
+
+A finding in our three images fails CI once it has a fix, so it is fixed first (a newer base image digest, Debian's update, a dependency bump) and nothing else merges before it. The llama.cpp images' findings are listed, not gated: they count from the day the scan first lists them and are fixed by a newer llama.cpp build. Libraries without findings are updated once a month (`uv lock --upgrade`, `pnpm update`, the base images' digests), through the full CI and the golden harness. A fix that cannot ship in time is written down with the release: the finding, why it is not reachable here or what limits it, and when it is checked again.
+
 ## Container hardening
 
 Applied in [deploy/compose.stack.yml](../deploy/compose.stack.yml) and required for customer installs:

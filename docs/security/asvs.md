@@ -6,9 +6,9 @@ The requirements' text is OWASP's, not copied here: see the [OWASP Application S
 
 | Status | Requirements |
 |---|---|
-| met | 127 |
+| met | 128 |
 | partly | 44 |
-| not yet | 9 |
+| not yet | 8 |
 | not applicable | 73 |
 | **all, levels 1 and 2** | **253** |
 
@@ -24,10 +24,9 @@ Every requirement still "not yet" and the larger "partly" gaps, with what each n
 | 4 | No limits per user on chat, search or uploads | V2.4.1, V15.2.2 | The limits, and how the screen says one was reached |
 | 5 | Adding a passkey or TOTP asks for nothing again; no "end all sessions" | V7.5.1, V7.4.3, V7.4.5, V7.5.2 | Screens to design |
 | 6 | The second-factor pages have no sign-out | V7.4.4 | A screen change |
-| 7 | No time frames for fixing vulnerable dependencies | V15.1.1 | A policy (for example critical in 7 days, high in 30) |
-| 8 | Plain HTTP to /api is redirected, not refused | V4.1.2 | Caddy configuration for the HTTPS installs |
-| 9 | No TLS between the containers | V12.3.3, V12.3.4 | An internal CA; low priority with everything on one host |
-| 10 | Uploads are not scanned for malware | V5.4.3 | ClamAV in the worker, or a decision not to |
+| 7 | Plain HTTP to /api is redirected, not refused | V4.1.2 | Caddy configuration for the HTTPS installs |
+| 8 | No TLS between the containers | V12.3.3, V12.3.4 | An internal CA; low priority with everything on one host |
+| 9 | Uploads are not scanned for malware | V5.4.3 | ClamAV in the worker, or a decision not to |
 
 ## V1 Encoding and Sanitization
 
@@ -298,10 +297,10 @@ Every requirement still "not yet" and the larger "partly" gaps, with what each n
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
-| V12.1.1 | 1 | General TLS Security Guidance | met | synapsectl/src/synapsectl/render.py:401-409; deploy/web/Caddyfile:22; docs/deployment.md:99 | Nothing overrides the protocols, and Caddy's defaults allow only TLS 1.2 and 1.3, preferring 1.3. deployment.md still lists "TLS configuration" as not done. |
+| V12.1.1 | 1 | General TLS Security Guidance | met | synapsectl/src/synapsectl/render.py:401-409; deploy/web/Caddyfile:22; docs/deployment.md:128 | Nothing overrides the protocols, and Caddy's defaults allow only TLS 1.2 and 1.3, preferring 1.3. deployment.md still lists "TLS configuration" as not done. |
 | V12.1.2 | 2 | General TLS Security Guidance | met | synapsectl/src/synapsectl/render.py:401-409; deploy/web/Caddyfile:22 | Caddy/Go default suites are forward-secret ECDHE AEAD only, and Go sets the order. This comes from defaults; nothing is pinned explicitly. |
 | V12.1.3 | 2 | General TLS Security Guidance | not applicable | deploy/web/Caddyfile; backend/src/synapse/api/deps.py | Nothing uses mTLS or client-certificate authentication. |
-| V12.2.1 | 1 | HTTPS Communication with External Facing Services | met | deploy/web/Caddyfile:9-12,20-22; synapsectl/src/synapsectl/render.py:365-409; docs/deployment.md:41 | The installer always renders an HTTPS site, and the HTTP port only redirects. The plain-HTTP default is for local testing only. |
+| V12.2.1 | 1 | HTTPS Communication with External Facing Services | met | deploy/web/Caddyfile:9-12,20-22; synapsectl/src/synapsectl/render.py:365-409; docs/deployment.md:57 | The installer always renders an HTTPS site, and the HTTP port only redirects. The plain-HTTP default is for local testing only. |
 | V12.2.2 | 1 | HTTPS Communication with External Facing Services | partly | synapsectl/src/synapsectl/config.py:36-53; synapsectl/src/synapsectl/render.py:401-409; docs/installer.md:25 | ACME mode gives a public certificate, but the default is Caddy's internal CA. "Provided" mode uses the customer's own PKI, which may not be publicly trusted. |
 | V12.3.1 | 2 | General Service to Service Communication Security | partly | backend/src/synapse/kernel/database.py:34-42; synapsectl/src/synapsectl/render.py:350-356; deploy/web/Caddyfile:37; docs/adr/0013-secrets-and-network-security.md:34 | User traffic and model downloads use TLS. Database, model-server and Caddy-to-API connections are unencrypted on the internal Docker network. |
 | V12.3.2 | 2 | General Service to Service Communication Security | partly | synapsectl/src/synapsectl/models.py:230-234; backend/src/synapse/models/llama.py:67-72; backend/src/synapse/kernel/database.py:34-42 | urllib and httpx verify certificates by default. PostgreSQL connections set no sslmode or root certificate, so libpq "prefer" would not verify the server. |
@@ -326,7 +325,7 @@ Every requirement still "not yet" and the larger "partly" gaps, with what each n
 | V13.4.2 | 2 | Unintended Information Leakage | met | backend/src/synapse/kernel/config.py:7-8,34,43-45; backend/src/synapse/api/app.py:91-99; deploy/web/Caddyfile:8 | No debug switch exists, logging defaults to INFO, API docs are off, and the Caddy admin API is off. The SPA is a production build. |
 | V13.4.3 | 2 | Unintended Information Leakage | met | deploy/web/Caddyfile:43-53 | file_server runs without browse, and unknown paths fall back to index.html, so no directory listings are exposed. |
 | V13.4.4 | 2 | Unintended Information Leakage | met | deploy/web/Caddyfile:36-53; backend/src/synapse/api/*_routes.py (route decorators) | No component implements TRACE: static files serve GET/HEAD and the API defines no TRACE routes. It is not explicitly blocked or tested. |
-| V13.4.5 | 2 | Unintended Information Leakage | met | backend/src/synapse/kernel/config.py:43-45; backend/src/synapse/api/app.py:95-98,131-160; backend/tests/test_health.py:41-45; deploy/web/Caddyfile:8,15-18,36; docs/deployment.md:39,41 | API docs are off by default (tested). /healthz and /readyz sit outside /api so are not proxied. Caddy admin is off and the health port is not published. |
+| V13.4.5 | 2 | Unintended Information Leakage | met | backend/src/synapse/kernel/config.py:43-45; backend/src/synapse/api/app.py:95-98,131-160; backend/tests/test_health.py:41-45; deploy/web/Caddyfile:8,15-18,36; docs/deployment.md:55 | API docs are off by default (tested). /healthz and /readyz sit outside /api so are not proxied. Caddy admin is off and the health port is not published. |
 
 ## V14 Data Protection
 
@@ -346,14 +345,14 @@ Every requirement still "not yet" and the larger "partly" gaps, with what each n
 
 ## V15 Secure Coding and Architecture
 
-8 met, 4 partly, 1 not yet.
+9 met, 4 partly.
 
 | Requirement | Level | Section | Status | Evidence | Note |
 |---|---|---|---|---|---|
-| V15.1.1 | 1 | Secure Coding and Architecture Documentation | not yet | docs/deployment.md:14-16; .github/workflows/ci.yml:151-157,175-184 | CI blocks known or fixable HIGH/CRITICAL vulnerabilities. No documented risk-based remediation time frames or general library update schedule. |
-| V15.1.2 | 2 | Secure Coding and Architecture Documentation | partly | .github/workflows/ci.yml:197-217; backend/uv.lock; frontend/pnpm-lock.yaml; docs/deployment.md:14,97; docs/development.md:110 | Each CI run makes SPDX SBOMs per image (kept 90 days), and dependencies are hash-locked. SBOMs are not kept with releases, and there is no trusted-repository policy. |
+| V15.1.1 | 1 | Secure Coding and Architecture Documentation | met | docs/deployment.md:14,20-31; .github/workflows/ci.yml:151-157,175-184 | Fix time frames by severity (critical 7 days, high 30, medium 90, low the next release) and a monthly update of the other libraries are documented; CI blocks fixable HIGH/CRITICAL findings in our images. |
+| V15.1.2 | 2 | Secure Coding and Architecture Documentation | partly | .github/workflows/ci.yml:197-217; backend/uv.lock; frontend/pnpm-lock.yaml; docs/deployment.md:14,126; docs/development.md:110 | Each CI run makes SPDX SBOMs per image (kept 90 days), and dependencies are hash-locked. SBOMs are not kept with releases, and there is no trusted-repository policy. |
 | V15.1.3 | 2 | Secure Coding and Architecture Documentation | partly | docs/design/answers.md:56; docs/design/knowledge-base.md:23,102,119; docs/adr/0002-process-topology.md:31-32; docs/adr/0004-job-queue.md:21 | Heavy work (chat, OCR, parsing, embedding) is documented with queues, streaming, timeouts and memory limits. No per-user or per-application limits are documented. |
-| V15.2.1 | 1 | Security Architecture and Dependencies | partly | .github/workflows/ci.yml:151-157,175-196; docs/deployment.md:14 | Our images and dependencies are gated on known vulnerabilities. llama.cpp images ship with ungated findings, and there are no documented time frames to measure against. |
+| V15.2.1 | 1 | Security Architecture and Dependencies | partly | .github/workflows/ci.yml:151-157,175-196; docs/deployment.md:14,20-31 | Our images and dependencies are gated on known vulnerabilities and held to documented time frames. The llama.cpp images ship with ungated findings, to be fixed by a newer build within the same frames. |
 | V15.2.2 | 2 | Security Architecture and Dependencies | partly | backend/src/synapse/chat/answering.py:225-249; backend/src/synapse/dbadmin/roles.py:17-26; backend/src/synapse/kernel/config.py:64,87; backend/src/synapse/knowledge/parsing.py:52-53; synapsectl/src/synapsectl/render.py:38-42 | Upload size, page, OCR and statement limits and memory caps exist. No per-user limits on chat, search or upload; the chat queue is unbounded; ADR 0002's circuit breaker is missing. |
 | V15.2.3 | 2 | Security Architecture and Dependencies | met | deploy/app/Dockerfile:19-21,29; deploy/web/Dockerfile:40; backend/src/synapse/api/app.py:95-98; synapsectl/src/synapsectl/render.py (_SERVER) | Images exclude tests, dev dependencies and pip, and API docs are off. llama-server runs with --no-webui, so its built-in web page is off. |
 | V15.3.1 | 1 | Defensive Coding | met | backend/src/synapse/api/admin_routes.py:77-96; backend/src/synapse/api/document_routes.py:49-102; backend/src/synapse/api/audit_routes.py:164-168; backend/src/synapse/api/chat_routes.py:66-111 | Routes return explicit Pydantic view models or narrow dataclasses. Internal fields such as hashes and secrets are never serialized. |
