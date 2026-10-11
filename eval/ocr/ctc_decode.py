@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 from synapse.knowledge.charlm import CharLM
-from synapse.knowledge.ctc import LanguageScore, Search, beam, greedy
+from synapse.knowledge.ctc import LanguageScore, Search, beam, greedy, respelled
 from synapse.knowledge.reading import reading_order
 
 
@@ -41,7 +41,7 @@ def main() -> None:
             if lm is None and search.width <= 1:
                 texts.append(greedy(idx, chars))
             else:
-                texts.append(beam(idx, prob, chars, score, search))
+                texts.append(respelled(beam(idx, prob, chars, score, search), score))
         lines = reading_order(list(zip(boxes.tolist(), texts, strict=True)))
         (args.out / f"{f.stem}.txt").write_text("\n".join(lines), encoding="utf-8")
     print("decoded", len(pages), "pages to", args.out)

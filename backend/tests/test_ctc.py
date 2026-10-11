@@ -5,9 +5,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 from synapse.knowledge import charlm
-from synapse.knowledge.ctc import LanguageScore, Search, read_line, top_characters
+from synapse.knowledge.ctc import LanguageScore, Search, read_line, respelled, top_characters
 
-CHARS = ["", "a", "l", "m", "ı", "i", " ", "1", "2"]  # index 0 is the CTC blank
+CHARS = ["", "a", "l", "m", "ı", "i", " ", "1", "2", "f"]  # index 0 is the CTC blank
 PLAIN = Search(alpha=0, beta=0)
 
 
@@ -56,6 +56,23 @@ def test_the_model_does_not_choose_between_digits() -> None:
     lm = charlm.train("12 12 12 12", order=3)
     probs = frames({"1": 1}, {"": 1}, {"1": 0.55, "2": 0.45})
     assert read_line(probs, CHARS, LanguageScore(lm), Search(alpha=1, beta=0)) == "11"
+
+
+def test_the_model_spells_fi_and_fi_dotless_the_image_cannot_tell_apart() -> None:
+    lm = charlm.train("fıkra fıkrası fıkrada film fikir fikri " * 3, order=4)
+    score = LanguageScore(lm)
+    assert respelled("bu fikrası, ve fılm: fikir", score) == "bu fıkrası, ve film: fikir"
+    # read straight from the image, then respelled
+    probs = frames({"f": 1}, {"i": 1}, {"l": 1}, {"m": 1})
+    assert read_line(probs, CHARS, LanguageScore(None), PLAIN) == "film"
+    dotless = LanguageScore(charlm.train("fılm " * 5, order=3))
+    assert read_line(probs, CHARS, dotless, PLAIN) == "fılm"
+
+
+def test_a_spelling_the_model_cannot_settle_stays_as_read() -> None:
+    score = LanguageScore(charlm.train("fıx fix " * 5, order=3))
+    assert respelled("fix fıx", score) == "fix fıx"
+    assert respelled("fikra", LanguageScore(None)) == "fikra"
 
 
 def test_the_likeliest_characters_come_first() -> None:

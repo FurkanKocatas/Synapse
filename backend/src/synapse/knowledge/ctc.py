@@ -5,9 +5,15 @@ score(prefix) = log P_ctc + alpha * log P_lm + beta * characters. A digit is sco
 probability of any digit in its place: whether a number fits there ("Sayı", not "Say1"), not
 which number is common (a number is what the image shows). On pages of old books the language
 model took the fine-tuned PP-OCRv6 from 92.5% of words to 94.8%, the stock model to 94.9%.
+
+In many typefaces "fı" and "fi" look alike (the f's hook stands where an i's dot would be), so
+the recognisers read "fıkra" as "fikra" and the image cannot settle it: the language model does,
+over the whole word (``respelled``).
 """
 
+import itertools
 import math
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -18,6 +24,12 @@ from synapse.knowledge.charlm import CharLM
 
 NEG = -1e30
 DIGITS = "0123456789"
+# Nats by which a word's other spelling of "fi" or "fı" must be likelier to replace it. On the
+# corpus benchmark it changed 133 of the fine-tuned PP-OCRv6's words, 127 to the truth's and one
+# away from it; at 4 it changed half as many, at 0 one more the wrong way.
+RESPELL_MARGIN = 2.0
+_FI = re.compile(r"f[iı]")
+_LETTERS = re.compile(r"[^\W\d_]+")
 
 
 @dataclass(frozen=True)
@@ -128,4 +140,34 @@ def read_line(
     idx, kept = top_characters(probs, search.top)
     if score.lm is None and search.width <= 1:
         return greedy(idx, chars)
-    return beam(idx, kept.astype(np.float32), chars, score, search)
+    return respelled(beam(idx, kept.astype(np.float32), chars, score, search), score)
+
+
+def word_score(score: LanguageScore, word: str) -> float:
+    """log P_lm of ``word`` as a whole word: from a word's start to the space after it."""
+    text = word + " "
+    return sum(score(text[:i], ch) for i, ch in enumerate(text))
+
+
+def respelled(text: str, score: LanguageScore) -> str:
+    """``text`` with each word's "fi" and "fı" spelled as the language model finds the word
+    likelier, by more than RESPELL_MARGIN; as read without a model."""
+    if score.lm is None:
+        return text
+
+    def best(match: re.Match[str]) -> str:
+        word = match.group(0)
+        spots = [found.start() + 1 for found in _FI.finditer(word)]
+        if not spots:
+            return word
+        spellings = []
+        for letters in itertools.product("iı", repeat=len(spots)):
+            chars = list(word)
+            for spot, letter in zip(spots, letters, strict=True):
+                chars[spot] = letter
+            spellings.append("".join(chars))
+        scored = {spelling: word_score(score, spelling) for spelling in spellings}
+        top = max(spellings, key=scored.__getitem__)
+        return top if scored[top] - scored[word] > RESPELL_MARGIN else word
+
+    return _LETTERS.sub(best, text)
