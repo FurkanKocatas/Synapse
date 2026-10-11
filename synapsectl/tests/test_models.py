@@ -11,6 +11,7 @@ import pytest
 import yaml
 
 from synapsectl import cli, models, render
+from synapsectl.config import SynapseConfig
 from synapsectl.models import Accelerator, Conversion, Download, ModelFile
 
 
@@ -185,6 +186,19 @@ def test_the_development_stack_runs_what_installations_run() -> None:
         tail = ["--api-key-file", f"/run/secrets/{key}"]
         assert cpu_command[2:] == [*arguments, *tail], name
         assert gpu_command[2:] == [*arguments, "-ngl", "99", *tail], name
+
+
+def test_the_development_stack_restarts_what_installations_restart(
+    config: SynapseConfig,
+) -> None:
+    # The stack's database once had none: after a power cut it stayed down for a day and a half
+    # while the API, the worker and the scheduler restarted against it.
+    stack = yaml.safe_load((DEPLOY / "compose.stack.yml").read_text(encoding="utf-8"))["services"]
+    installed = render.compose(config)["services"]
+    shared = sorted(stack.keys() & installed.keys())
+    assert "db" in shared
+    for name in shared:
+        assert stack[name].get("restart", "no") == installed[name].get("restart", "no"), name
 
 
 def test_the_api_queues_for_as_many_chat_slots_as_the_server_has() -> None:

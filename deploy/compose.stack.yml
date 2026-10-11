@@ -67,6 +67,7 @@ services:
     volumes: [db-data:/var/lib/postgresql]
     networks: [internal]
     mem_limit: 2560m
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres"]
       interval: 5s
