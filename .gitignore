@@ -28,6 +28,7 @@ eval/corpus/files/
 
 # OCR benchmark working files (eval/ocr/prepare.py)
 eval/ocr/work/
+eval/ocr/work-masked/
 
 # Parser benchmark working files (eval/parsing/run.py)
 eval/parsing/work/

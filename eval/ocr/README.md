@@ -14,6 +14,7 @@ Born-digital PDF pages whose text layer passes the page quality check ([quality.
 
 ```bash
 uv run --directory backend python ../eval/ocr/prepare.py         # images, truths and real scans in eval/ocr/work/
+uv run --directory backend python ../eval/ocr/prepare.py --masked   # the same pages corrected to what they show, in work-masked/
 docker build -t synapse-ocr-bench eval/ocr                       # the engines, models pinned by checksum
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/eval/ocr:/bench" synapse-ocr-bench   # all engines, or name some
 uv run --directory backend python ../eval/ocr/score.py           # the table
@@ -21,7 +22,9 @@ uv run --directory backend python ../eval/ocr/score.py --worst ENGINE CONDITION
 uv run --directory backend python ../eval/ocr/combine.py         # Tesseract text + RapidOCR identifiers
 ```
 
-`eval/ocr/work/` is git-ignored; it holds rendered pages of corpus documents. `--user` matters on Linux: without it the container writes its output as root into the bind-mounted `work/out/` (Docker Desktop on macOS hides this). The image needs no network at run time.
+The truth is each page's text layer, which is not always what the page shows: an image's words (a map's place names, a logo) are on the page and not in it, and text that leaves no ink (white on white, beyond the page's edge) is in it and not on the page. `--masked` blanks those images and takes that text out of the truth ([masks.py](masks.py)); a page with neither comes out byte for byte the same, so an engine's outputs for the plain set serve for every page the masking left alone.
+
+`eval/ocr/work/` and `eval/ocr/work-masked/` are git-ignored; they hold rendered pages of corpus documents. `--user` matters on Linux: without it the container writes its output as root into the bind-mounted `work/out/` (Docker Desktop on macOS hides this). The image needs no network at run time.
 
 ## Decoding PP-OCRv6 with a language model
 
