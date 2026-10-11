@@ -686,12 +686,26 @@ def _compare_audit(stack: Stack, config: SynapseConfig, manifest: Manifest) -> N
         "SELECT encode(hash, 'hex') FROM synapse.audit_events "  # noqa: S608
         f"WHERE tenant_id = '{tenant}' AND seq = {int(seq)}",
     ).strip()
+    if not live and _removed_by_retention(stack, tenant, int(seq)):
+        stack.echo(f"== audit event {seq} of the backup is past its period, removed by retention")
+        return
     if live != digest:
         change = "is missing from" if not live else "differs in"
         raise BackupError(
             f"audit event {seq} of the backup of {manifest.created} {change} the live audit "
             "log: the log was rewritten since, or an older backup was restored"
         )
+
+
+def _removed_by_retention(stack: Stack, tenant: object, seq: int) -> bool:
+    """Whether the live chain's retention anchor accounts for ``seq`` (ADR 0022)."""
+    through = stack.psql(
+        "Look for the live audit log's retention anchor",
+        DATABASE,
+        "SELECT coalesce(max((details->>'through_seq')::bigint), 0) "  # noqa: S608
+        f"FROM synapse.audit_events WHERE tenant_id = '{tenant}' AND action = 'audit.prune'",
+    ).strip()
+    return seq <= int(through or 0)
 
 
 def _holds_data(stack: Stack) -> bool:

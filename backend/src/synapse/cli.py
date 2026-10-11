@@ -124,6 +124,10 @@ def build_parser() -> argparse.ArgumentParser:
     audit_commands = audit.add_subparsers(dest="audit_command", required=True)
     audit_commands.add_parser("verify", help="Recompute the whole hash chain; exit 1 if broken.")
     audit_commands.add_parser(
+        "prune",
+        help="Remove events and question texts past their periods (as synapse_retention).",
+    )
+    audit_commands.add_parser(
         "checkpoint", help="Print a signed checkpoint of the chain head, for export off the box."
     )
 
@@ -181,13 +185,22 @@ def _run_admin_command(args: argparse.Namespace) -> int:
                 read_secret(args.admin_conninfo_file), settings.db_name, args.secrets_dir
             )
         else:
-            migrate.upgrade(settings.database(application_name="synapse-migrate"))
+            migrator = settings.database(application_name="synapse-migrate")
+            migrate.upgrade(migrator)
+            migrate.set_audit_periods(
+                migrator,
+                events_days=settings.audit_keep_events_days,
+                question_days=settings.audit_keep_question_days,
+            )
     elif args.command == "audit":
         if args.audit_command == "verify":
             intact, report = audit_cli.verify(settings)
             print(report)
             return 0 if intact else 1
-        print(audit_cli.checkpoint(settings))
+        if args.audit_command == "prune":
+            print(audit_cli.prune(settings))
+        else:
+            print(audit_cli.checkpoint(settings))
     elif args.command == "operations":
         operations_cli.record(
             settings,

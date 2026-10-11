@@ -137,6 +137,20 @@ class Backup(Strict):
         return self
 
 
+class Audit(Strict):
+    """How long the audit log keeps its events, and a chat question's text (ADR 0022). The
+    floors are the database's own: 90 days for events, 30 for a question's text."""
+
+    keep_events_days: int = Field(default=365, ge=90, le=3650)
+    keep_question_days: int = Field(default=183, ge=30, le=3650)
+
+    @model_validator(mode="after")
+    def _question_within_events(self) -> Self:
+        if self.keep_question_days > self.keep_events_days:
+            raise ValueError("audit.keep_question_days must not exceed audit.keep_events_days")
+        return self
+
+
 class SynapseConfig(Strict):
     instance: Instance
     hardware: Tier = Tier.CPU_16
@@ -147,6 +161,7 @@ class SynapseConfig(Strict):
     models: Models = Models()
     modules: Modules = Modules()
     backup: Backup = Backup()
+    audit: Audit = Audit()
 
 
 def load(path: Path) -> SynapseConfig:

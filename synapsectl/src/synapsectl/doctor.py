@@ -238,6 +238,30 @@ def check_backup(config: SynapseConfig, now: datetime | None = None) -> Check:
     return Check("backup", Status.OK, f"last good backup {good:%Y-%m-%d %H:%M}")
 
 
+# Audit retention runs every night (ADR 0022); a week without a good run is reported.
+RETENTION_AGE = timedelta(days=7)
+
+
+def check_retention(config: SynapseConfig, now: datetime | None = None) -> Check:
+    """Whether the audit log's periods are kept. Warnings only, as for backups."""
+    from synapsectl import backup, retention  # noqa: PLC0415  (backup imports apply, doctor)
+
+    good = backup.last_good(config, retention.KIND)
+    if good is None:
+        return Check(
+            "audit retention",
+            Status.WARN,
+            "has not run yet; it runs every night (or: synapsectl audit prune)",
+        )
+    latest = backup.read_status(config).get(retention.KIND, {})
+    if not latest.get("ok"):
+        return Check("audit retention", Status.WARN, f"the last run failed: {latest.get('detail')}")
+    age = (now or datetime.now(UTC)) - good
+    if age > RETENTION_AGE:
+        return Check("audit retention", Status.WARN, f"the last good run is {age.days} days old")
+    return Check("audit retention", Status.OK, f"last run {good:%Y-%m-%d %H:%M}")
+
+
 def run_checks(config: SynapseConfig, *, stack_running: bool = False) -> list[Check]:
     checks: list[Callable[[], Check]] = [
         check_docker,
@@ -252,5 +276,6 @@ def run_checks(config: SynapseConfig, *, stack_running: bool = False) -> list[Ch
         lambda: check_models(config),
         lambda: check_gpu(config),
         lambda: check_backup(config),
+        lambda: check_retention(config),
     ]
     return [check() for check in checks]

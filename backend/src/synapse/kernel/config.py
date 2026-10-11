@@ -11,9 +11,10 @@ the same code paths run in development and production (ADR 0006).
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
+from typing import Self
 from uuid import UUID
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from synapse.kernel.database import ConnectionSettings
@@ -57,6 +58,11 @@ class Settings(BaseSettings):
     totp_key_file: Path = Path("/run/secrets/totp_key")
     # Ed25519 seed that signs audit checkpoints (ADR 0008).
     audit_signing_key_file: Path = Path("/run/secrets/audit_signing_key")
+    # Audit retention (ADR 0022): events, and a chat question's text, are kept this many days.
+    # synapse db migrate writes them where audit_prune() reads them; the floors are the
+    # database's own too.
+    audit_keep_events_days: int = Field(default=365, ge=90, le=3650)
+    audit_keep_question_days: int = Field(default=183, ge=30, le=3650)
     session_idle_minutes: int = Field(default=30, ge=5, le=24 * 60)
     session_absolute_hours: int = Field(default=12, ge=1, le=24 * 30)
     # Uploaded files (ADR 0003): a local directory, normally a Docker volume.
@@ -120,6 +126,12 @@ class Settings(BaseSettings):
     def _empty_means_unset(cls, value: object) -> object:
         # Environment files commonly carry "NAME=" for a value not filled in yet.
         return None if value == "" else value
+
+    @model_validator(mode="after")
+    def _question_within_events(self) -> Self:
+        if self.audit_keep_question_days > self.audit_keep_events_days:
+            raise ValueError("audit_keep_question_days must not exceed audit_keep_events_days")
+        return self
 
     def database(self, application_name: str) -> ConnectionSettings:
         return ConnectionSettings(

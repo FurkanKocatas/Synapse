@@ -29,6 +29,7 @@ sudo synapsectl apply --admin-email admin@example.org --admin-name "Admin"
 | `[models]` | `dir`, `accelerator`, `gpu_groups` | Where the model files are (default `/var/lib/synapse/models`); `cpu` or `vulkan` (a GPU, integrated ones included); for `vulkan`, the host groups that own `/dev/dri`'s devices. The wizard proposes `vulkan` with those groups when it finds a GPU |
 | `[modules]` | `enabled` | Optional modules; see below |
 | `[backup]` | `repository`, `staging_dir`, `time`, `keep_daily`, `keep_weekly`, `keep_monthly` | Where restic keeps the snapshots (an absolute path: a mounted NAS share or disk; unset, no backups are taken), where the dump waits on its way there (default `/var/lib/synapse/backup`), when the nightly backup runs (default 02:30) and how many snapshots are kept (7, 4, 6). See [Backups](#backups) |
+| `[audit]` | `keep_events_days`, `keep_question_days` | How long the audit log keeps its events (default 365, at least 90) and a chat question's text (default 183, at least 30, never longer than the events). See [Audit retention](#audit-retention) |
 
 Unknown keys, unknown modules and incomplete TLS settings are rejected, so a typo never falls back to a default silently.
 
@@ -36,12 +37,12 @@ Unknown keys, unknown modules and incomplete TLS settings are rejected, so a typ
 
 `apply` brings the machine to the state `synapse.toml` describes. Every step is safe to repeat, so the same command installs, repairs, and (after `[images] version` is changed) upgrades; `upgrade` below does that with a backup first:
 
-1. Renders the files again and runs the doctor checks. Any FAIL stops here, before anything starts. If the services are already running, their ports count as in use by Synapse.
+1. Creates any secret a new release adds (a new database role's password; existing files are kept), renders the files again and runs the doctor checks. Any FAIL stops here, before anything starts. If the services are already running, their ports count as in use by Synapse.
 2. Starts the database, then runs bootstrap (creates or repairs roles and schema) and the migrations.
 3. Creates the tenant with the ID from `synapse.toml` (`synapse tenant create --if-missing`; an existing tenant with another slug is an error).
 4. Creates the first administrator only if the tenant has no active one. The first run therefore needs `--admin-email` and `--admin-name`; later runs do not. The password is prompted in the terminal, or read from `--admin-password-file` for scripted installs (the file is mounted read-only into the one container that reads it, so it must be readable by uid 10001).
 5. Starts every service, waits until each is healthy, and runs the checks again.
-6. With `[backup] repository` set, installs the systemd timers of the nightly backup and the quarterly verification (as root on a systemd machine; otherwise it prints the commands to schedule).
+6. With `[backup] repository` set, installs the systemd timers of the nightly backup and the quarterly verification, and always the nightly audit retention's (as root on a systemd machine; otherwise it prints the commands to schedule).
 
 A failed step stops `apply` with the step's name and its output; running it again continues from wherever the installation is. Tested by [tests/test_apply.py](../synapsectl/tests/test_apply.py) with a scripted Docker, and by hand on a fresh install: install, then a second run with nothing to do.
 
@@ -113,6 +114,14 @@ sudo synapsectl restore [--snapshot ID] [--replace]   # then: synapsectl apply
 
 A backup is one encrypted restic snapshot of the database dump, the uploaded files, `synapse.toml` and the secrets, with a manifest of every table's rows. A restore checks the dump, the rows and the image version, and replaces the database and the files; on a new machine `restore --configuration-from REPOSITORY --password-file FILE` first brings back `synapse.toml` and the secrets. How it works, what is checked and the steps on a new machine: [design/backup.md](design/backup.md).
 
+## Audit retention
+
+```bash
+sudo synapsectl audit prune    # now (the timer runs it every night, an hour after the backup's time)
+```
+
+Runs the one-shot `retention` container, the only one with the `synapse_retention` password, which removes the audit events and the chat questions' texts past `[audit]`'s periods; the removal is recorded in the audit log itself. Its outcome is kept in `status.json` beside the backups' for `doctor`. How the log stays verifiable: [design/audit.md](design/audit.md#retention).
+
 ## Secrets
 
 `init` creates every secret with a cryptographic random generator: database role passwords, the superuser connection for bootstrap, the CSRF key, the TOTP encryption key, the audit signing key, one API key per model server (`embed_key`, `rerank_key`, `chat_key`), read by the server and by the processes that call it, and with backups set up the key of the backup repository (`backup_password`; `backup init` creates it on an installation that had no backups). Existing files are never overwritten, so running `init` again on the same secrets directory is harmless.
@@ -149,6 +158,7 @@ Two details that matter for non-standard ports:
 | models | A model file the accelerator needs is missing or has the wrong size (`synapsectl models check --verify` compares digests) | |
 | gpu | `vulkan` without a GPU, `models.gpu_groups` missing a group that owns `/dev/dri`'s devices, or the Vulkan server image, run as the servers run, not seeing the GPU | A GPU is present but the models run on the CPU (the detail gives the settings to change) |
 | backup | | Backups are not set up, the repository is missing (disk not mounted?), the last backup failed, or the last good one is more than 2 days old |
+| audit retention | | It has not run yet, the last run failed, or the last good one is more than 7 days old |
 
 `doctor --running` accepts the ports being in use, for checks on a running installation. The exit code is 1 if any check fails.
 

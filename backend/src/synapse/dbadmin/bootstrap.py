@@ -4,8 +4,8 @@ Creates what is missing and brings everything else to the expected state, so it 
 on every install and upgrade:
 
 1. the database, with ``CONNECT`` revoked from ``PUBLIC``;
-2. the migrator, the runtime group and the runtime login roles, with passwords (re)set from the
-   secret files as SCRAM verifiers;
+2. the migrator, the runtime group, the runtime login roles and the retention role, with
+   passwords (re)set from the secret files as SCRAM verifiers;
 3. the ``synapse`` schema owned by the migrator, extensions, and default privileges so that
    every table the migrator creates is usable by the runtime group and nothing else.
 
@@ -21,6 +21,7 @@ from synapse.dbadmin.roles import (
     ALL_LOGIN_ROLES,
     IDLE_IN_TRANSACTION_TIMEOUT,
     MIGRATOR,
+    RETENTION,
     RUNTIME_GROUP,
     RUNTIME_ROLES,
     SCHEMA,
@@ -81,6 +82,7 @@ def _ensure_roles(admin: psycopg.Connection, secrets_dir: Path) -> None:
                 sql.Identifier(RUNTIME_GROUP), sql.Identifier(role.name)
             )
         )
+    for role in (*RUNTIME_ROLES, RETENTION):
         admin.execute(
             sql.SQL("ALTER ROLE {} SET statement_timeout = {}").format(
                 sql.Identifier(role.name), sql.Literal(role.statement_timeout)
@@ -109,14 +111,18 @@ def _configure_database(target: psycopg.Connection, database: str) -> None:
     schema = sql.Identifier(SCHEMA)
     migrator = sql.Identifier(MIGRATOR)
     runtime = sql.Identifier(RUNTIME_GROUP)
+    retention = sql.Identifier(RETENTION.name)
     statements: list[sql.SQL | sql.Composed] = [
         sql.SQL("REVOKE ALL ON DATABASE {} FROM PUBLIC").format(db),
         sql.SQL("GRANT CONNECT, TEMPORARY ON DATABASE {} TO {}, {}").format(db, migrator, runtime),
+        # The retention role reaches the schema to call audit_prune(), which migration 0028
+        # grants it; it holds no table.
+        sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(db, retention),
         sql.SQL("REVOKE ALL ON SCHEMA public FROM PUBLIC"),
         sql.SQL("CREATE SCHEMA IF NOT EXISTS {} AUTHORIZATION {}").format(schema, migrator),
         sql.SQL("ALTER SCHEMA {} OWNER TO {}").format(schema, migrator),
         sql.SQL("REVOKE ALL ON SCHEMA {} FROM PUBLIC").format(schema),
-        sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(schema, runtime),
+        sql.SQL("GRANT USAGE ON SCHEMA {} TO {}, {}").format(schema, runtime, retention),
         sql.SQL("ALTER DATABASE {} SET search_path = {}").format(db, schema),
         # What the migrator creates is usable by the runtime group; functions are not
         # executable by PUBLIC (PostgreSQL's default), only by the runtime group.

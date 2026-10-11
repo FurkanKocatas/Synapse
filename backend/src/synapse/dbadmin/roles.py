@@ -20,7 +20,11 @@ RUNTIME_ROLES = (
     LoginRole("synapse_scheduler", statement_timeout="30min"),
 )
 
-ALL_LOGIN_ROLES = (MIGRATOR, *(role.name for role in RUNTIME_ROLES))
+# Runs audit_prune() and nothing else (ADR 0022): not in the runtime group, so it holds no
+# table, and it logs in only from the retention container synapsectl runs each night.
+RETENTION = LoginRole("synapse_retention", statement_timeout="30min")
+
+ALL_LOGIN_ROLES = (MIGRATOR, *(role.name for role in RUNTIME_ROLES), RETENTION.name)
 
 # A transaction left open by a crashed or stuck client is closed after this long.
 IDLE_IN_TRANSACTION_TIMEOUT = "60s"

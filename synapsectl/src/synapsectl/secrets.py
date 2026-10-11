@@ -26,7 +26,14 @@ class SecretFile:
     owner_uid: int
 
 
-DATABASE_ROLES = ("synapse_migrator", "synapse_api", "synapse_worker", "synapse_scheduler")
+# synapse_retention runs audit_prune() only, from the retention container (ADR 0022).
+DATABASE_ROLES = (
+    "synapse_migrator",
+    "synapse_api",
+    "synapse_worker",
+    "synapse_scheduler",
+    "synapse_retention",
+)
 # One API key per model server (ADR 0009), read by the server and by the processes calling it,
 # all running as APP_UID.
 MODEL_KEYS = ("embed_key", "rerank_key", "chat_key")

@@ -3,7 +3,8 @@
 Every step is safe to repeat, so the same command installs, repairs and (with a new image
 version) upgrades:
 
-1. render the files again and run the doctor checks; stop on any failure;
+1. create the secrets a release added (a new database role's password), render the files
+   again and run the doctor checks; stop on any failure;
 2. start the database, then bootstrap (creates or repairs roles and schema) and migrate;
 3. create the tenant with the ID from synapse.toml, unless it exists;
 4. create the first administrator, unless one exists (needed only on the first run);
@@ -22,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from synapsectl import doctor, render
+from synapsectl import doctor, render, secrets
 from synapsectl.config import SynapseConfig
 
 # Inside the application container; the host file is mounted here read-only.
@@ -75,6 +76,9 @@ def apply(
             raise ApplyError(f"{title}: failed (exit {result.returncode})\n{output}".rstrip())
         return result.stdout or ""
 
+    created = [name for name in secrets.generate(config) if not name.startswith("tls_")]
+    if created:
+        echo(f"== Created the secrets this release adds: {', '.join(created)}")
     echo("== Render and check")
     render.write(config, render.render(config))
     running = bool(step("Look for running services", "ps", "--status", "running", "-q").strip())

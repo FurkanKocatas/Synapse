@@ -8,6 +8,9 @@ outcome. Two exports of the same filter, oldest event first:
   hashes included, so that whoever holds the public key can check away from the machine that
   the file is the one Synapse wrote (the signature over the manifest, whose ``events_sha256``
   covers each event's canonical form) and recompute each event's hash (``chain.event_hash``).
+
+An event's text (a chat question) comes back with it while it is kept; once retention has
+removed it, ``text`` is None and the details still name its SHA-256 (ADR 0022).
 """
 
 import base64
@@ -44,6 +47,7 @@ CSV_COLUMNS = (
     "target_id",
     "outcome",
     "details",
+    "text",
     "hash",
 )
 
@@ -51,7 +55,9 @@ CSV_COLUMNS = (
 _SELECT = (
     "SELECT e.seq, e.id, e.occurred_at, e.actor_user_id, u.display_name, u.email, e.actor_ip, "
     "e.action, e.target_type, e.target_id, e.outcome, e.details, e.schema_version, "
-    "e.prev_hash, e.hash FROM audit_events e LEFT JOIN users u ON u.id = e.actor_user_id "
+    "e.prev_hash, e.hash, t.text FROM audit_events e "
+    "LEFT JOIN users u ON u.id = e.actor_user_id "
+    "LEFT JOIN audit_texts t ON t.tenant_id = e.tenant_id AND t.event_id = e.id "
     "WHERE e.tenant_id = %(tenant)s "
 )
 
@@ -126,6 +132,8 @@ class StoredEvent:
     schema_version: int
     prev_hash: str
     hash: str
+    # The text the details name by hash, while retention keeps it.
+    text: str | None = None
 
     def as_json(self) -> dict[str, JsonValue]:
         return {
@@ -141,6 +149,7 @@ class StoredEvent:
             "target_id": self.target_id,
             "outcome": self.outcome,
             "details": dict(self.details),
+            "text": self.text,
             "schema_version": self.schema_version,
             "prev_hash": self.prev_hash,
             "hash": self.hash,
@@ -283,4 +292,5 @@ def _event(row: Sequence[Any]) -> StoredEvent:
         schema_version=int(row[12]),
         prev_hash=bytes(row[13]).hex(),
         hash=bytes(row[14]).hex(),
+        text=row[15],
     )

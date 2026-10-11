@@ -1,6 +1,6 @@
 # 0022. Audit retention: events for a year, a question's text for six months
 
-- Status: proposed
+- Status: accepted (Furkan, 2026-10-11; floors included)
 - Date: 2026-10-11
 
 ## Context
@@ -16,13 +16,15 @@ ADR 0008 already says how retention may run: "only as a separate, audited mainte
 
 ## Decision
 
-1. **A question's text moves out of the hashed event.** A `chat.question` event's details keep `question_sha256` and the question's length; the text goes into `audit_texts` (tenant, event ID, text), insert and select only, like the events. The chain covers the hash, so the text cannot be changed unseen, only removed. The auditor's endpoints and exports join the text back while it is there and say "removed after six months" once it is not; `synapse audit verify` checks every text still present against its hash. Events written before the change keep their text in their details, until they are a year old and go whole.
+1. **A question's text moves out of the hashed event.** An event may carry a text (a `chat.question` event, its question): its details keep `text_sha256` and `text_length`, and the text goes into `audit_texts` (tenant, event ID, text), insert and select only, like the events. The chain covers the hash, so the text cannot be changed unseen, only removed. The auditor's endpoints and exports join the text back while it is there (`text`, None once removed, its hash still in the details); `synapse audit verify` checks every text still present against its hash. Events written before the change keep their text in their details, until they are a year old and go whole.
 2. **Old events go from the start of the chain, with an anchor.** Retention removes the events older than the period, oldest first and never from the middle, and in the same transaction appends an `audit.prune` event to the chain with the last removed event's sequence and hash, the count and the cutoff. Verification starts from the newest anchor: the first remaining event must link to the anchor's hash and follow its sequence. Checkpoints for removed events go with them. A removal that did not go through retention leaves no anchor and is reported as before.
 3. **Only a role of its own can run it.** A new database role, `synapse_retention`, can execute one function, `audit_prune()`, and nothing else; the function (security definer, owned by the table owner) is the only path past the trigger. The periods come from `audit_settings`, a row only the migrator writes (from `synapse.toml`'s `[audit]` section through `synapsectl`), not from the caller, and the function refuses periods under a floor: 90 days for events, 30 for a question's text.
-4. **It runs from the host, as backups do** ([ADR 0021](0021-backups.md)): `synapsectl audit prune` every night after the backup, through a one-shot `retention` container in the rendered compose file's `backup` profile, the only container with the `synapse_retention` password. The API, the worker and the scheduler never hold it.
+4. **It runs from the host, as backups do** ([ADR 0021](0021-backups.md)): `synapsectl audit prune` every night, an hour after the backup's time, through a one-shot `retention` container in the rendered compose file's `backup` profile, the only container with the `synapse_retention` password. The API, the worker and the scheduler never hold it.
 5. **Defaults:** `[audit] keep_events_days = 365`, `keep_question_days = 183`. Backups keep what they hold for their own six months, so an event can outlive its period by up to that long in the oldest monthly snapshot; data.md says so.
 
 ## Consequences
+
+Built on 2026-10-11: migration [0028](../../backend/src/synapse/migrations/versions/0028_audit_retention.py), [chain.py](../../backend/src/synapse/audit/chain.py), [retention.py](../../synapsectl/src/synapsectl/retention.py), tested in [test_audit_retention.py](../../backend/tests/db/test_audit_retention.py) (the prune event's hash, written in SQL, verified by the Python verifier) and [test_retention.py](../../synapsectl/tests/test_retention.py). A backup verification that no longer finds the backup's last event in the live chain accepts it when the retention anchor accounts for it.
 
 - The log keeps proving what it holds: an event removed by retention is accounted for by a chained, signed anchor; any other gap is still evidence.
 - A compromised API, worker or scheduler cannot shorten the log, and a compromised host shortens it only to the floors, recorded.

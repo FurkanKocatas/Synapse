@@ -14,7 +14,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from synapsectl import backup, cli, doctor, render, secrets
+from synapsectl import backup, cli, doctor, render, retention, secrets
 from synapsectl.config import Backup, SynapseConfig, save
 
 SNAPSHOT = "4f3c2b1a" + "0" * 56
@@ -61,25 +61,6 @@ class ScriptedDocker:
 
 def quiet(_: str) -> None:
     pass
-
-
-@pytest.fixture
-def setup(config: SynapseConfig, tmp_path: Path) -> tuple[SynapseConfig, Path]:
-    """An installation with backups set up: an initialised repository, the secrets, its file."""
-    repository = tmp_path / "repository"
-    repository.mkdir()
-    (repository / "config").write_text("restic", encoding="utf-8")
-    configured = SynapseConfig(
-        instance=config.instance,
-        paths=config.paths,
-        backup=Backup(repository=repository, staging_dir=tmp_path / "staging"),
-    )
-    config.paths.secrets_dir.mkdir(parents=True)
-    for name in ("postgres_superuser", "backup_password", "audit_signing_key"):
-        (config.paths.secrets_dir / name).write_text(f"{name}-value\n", encoding="utf-8")
-    config_file = tmp_path / "synapse.toml"
-    save(configured, config_file)
-    return configured, config_file
 
 
 def write_dump(config: SynapseConfig) -> Callable[[list[str]], None]:
@@ -635,6 +616,7 @@ def test_apply_schedules_the_backups_as_root_under_systemd(
     scheduled: list[Path] = []
     monkeypatch.setattr(cli, "apply", lambda _loaded, admin: None)
     monkeypatch.setattr(backup, "install_schedule", lambda _loaded, path: scheduled.append(path))
+    monkeypatch.setattr(retention, "install_schedule", lambda _loaded, path: None)
     monkeypatch.setattr(cli, "SYSTEMD_RUNTIME", tmp_path)
     monkeypatch.setattr(os, "geteuid", lambda: 1000)
     assert cli.main(["--config", str(config_file), "apply"]) == 0

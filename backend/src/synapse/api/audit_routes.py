@@ -35,6 +35,8 @@ class ChainStatus(BaseModel):
     problem: str | None
     # Signed checkpoints compared with the chain; 0 when the signing key cannot be read here.
     checkpoints_checked: int = 0
+    # The last event retention removed; the chain starts after it (0: none removed).
+    removed_through: int = 0
 
 
 class EventView(BaseModel):
@@ -50,6 +52,8 @@ class EventView(BaseModel):
     target_id: str | None
     outcome: str
     details: dict[str, object]
+    # A chat question's text, kept beside its event; None once retention removed it.
+    text: str | None
 
 
 class EventPage(BaseModel):
@@ -92,7 +96,10 @@ async def chain_status(request: Request) -> ChainStatus:
         result = await audit.verify(connection, tenant_id)
         if not result.ok or key is None:
             return ChainStatus(
-                ok=result.ok, events_checked=result.events_checked, problem=result.problem
+                ok=result.ok,
+                events_checked=result.events_checked,
+                problem=result.problem,
+                removed_through=result.removed_through,
             )
         kept = await audit.verify_checkpoints(connection, tenant_id, key.public_key())
     return ChainStatus(
@@ -100,6 +107,7 @@ async def chain_status(request: Request) -> ChainStatus:
         events_checked=result.events_checked,
         problem=kept.problem,
         checkpoints_checked=kept.checked,
+        removed_through=result.removed_through,
     )
 
 

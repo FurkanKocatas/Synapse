@@ -3,7 +3,7 @@
 from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL
 
 from synapse.kernel.database import ConnectionSettings
@@ -35,6 +35,26 @@ def alembic_config(settings: ConnectionSettings) -> Config:
 
 def upgrade(settings: ConnectionSettings, revision: str = "head") -> None:
     command.upgrade(alembic_config(settings), revision)
+
+
+def set_audit_periods(
+    settings: ConnectionSettings, *, events_days: int, question_days: int
+) -> None:
+    """How long audit events and a chat question's text are kept (ADR 0022), where
+    audit_prune() reads them. The migrator alone writes them, from the installation's settings;
+    the table's constraints keep the floors."""
+    engine = create_engine(alembic_config(settings).attributes["sqlalchemy_url"])
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE audit_settings SET keep_events_days = :events, "
+                    "keep_question_days = :questions"
+                ),
+                {"events": events_days, "questions": question_days},
+            )
+    finally:
+        engine.dispose()
 
 
 def current_revision(settings: ConnectionSettings) -> str | None:

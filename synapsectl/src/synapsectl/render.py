@@ -167,6 +167,9 @@ def compose(config: SynapseConfig) -> dict[str, Any]:
                     **database,
                     "SYNAPSE_DB_USER": "synapse_migrator",
                     "SYNAPSE_DB_PASSWORD_FILE": "/run/secrets/db_synapse_migrator",
+                    # Written where audit_prune() reads them (ADR 0022).
+                    "SYNAPSE_AUDIT_KEEP_EVENTS_DAYS": str(config.audit.keep_events_days),
+                    "SYNAPSE_AUDIT_KEEP_QUESTION_DAYS": str(config.audit.keep_question_days),
                 },
                 "secrets": ["db_synapse_migrator"],
                 "depends_on": {"bootstrap": {"condition": "service_completed_successfully"}},
@@ -250,6 +253,25 @@ def compose(config: SynapseConfig) -> dict[str, Any]:
                 "depends_on": {"migrate": {"condition": "service_completed_successfully"}},
                 "mem_limit": memory["scheduler"],
                 "restart": "unless-stopped",
+                "tmpfs": CONTAINER_TMP,
+            }
+        ),
+        # synapsectl audit prune runs it each night (ADR 0022); "up" never starts it. The only
+        # container with the retention role's password, which runs audit_prune() and no more.
+        "retention": _hardened(
+            {
+                "image": app,
+                "profiles": ["backup"],
+                "command": ["audit", "prune"],
+                "environment": {
+                    **database,
+                    "SYNAPSE_TENANT_ID": str(config.instance.tenant_id),
+                    "SYNAPSE_DB_USER": "synapse_retention",
+                    "SYNAPSE_DB_PASSWORD_FILE": "/run/secrets/db_synapse_retention",
+                },
+                "secrets": ["db_synapse_retention"],
+                "depends_on": {"db": {"condition": "service_healthy"}},
+                "restart": "no",
                 "tmpfs": CONTAINER_TMP,
             }
         ),

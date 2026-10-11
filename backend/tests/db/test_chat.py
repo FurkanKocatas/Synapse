@@ -6,6 +6,7 @@ a stand-in too (tests/test_chat.py covers the answering rules themselves).
 """
 
 import asyncio
+import hashlib
 import json
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator, Mapping, Sequence
@@ -183,7 +184,15 @@ async def test_a_question_is_answered_stored_and_audited(
 
     ((action, outcome, details),) = audited(world, started.conversation_id)
     assert (action, outcome) == ("chat.question", "success")
-    assert details["question"] == "Meclis kaç üyeli?"
+    # The question beside the event, its hash in the chain (ADR 0022).
+    assert "question" not in details
+    assert details["text_sha256"] == hashlib.sha256("Meclis kaç üyeli?".encode()).hexdigest()
+    (kept,) = world.db.execute(
+        "SELECT t.text FROM synapse.audit_texts t JOIN synapse.audit_events e ON e.id = t.event_id "
+        "WHERE e.target_id = %s",
+        (str(started.conversation_id),),
+    ).fetchall()
+    assert kept == ("Meclis kaç üyeli?",)
     assert details["retrieved"] == details["cited"] == [document["id"]]
     assert len(details["answer_sha256"]) == 64
     assert "7 üyeden" not in json.dumps(details)  # the answer itself is not in the log

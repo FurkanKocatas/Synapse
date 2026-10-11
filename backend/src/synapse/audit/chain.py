@@ -4,11 +4,17 @@ Each event's hash covers every stored column except the hash itself, in canonica
 includes the previous event's hash. Verification recomputes each hash from the row's contents;
 comparing stored hashes with each other would prove nothing, because a forger can store any
 value they like.
+
+An event may carry a text kept beside it in ``audit_texts`` (a chat question), which its hashed
+details name by SHA-256 and length: the text can then be removed after its period without
+touching the chain, and cannot be changed unseen while it is there (ADR 0022). Old events are
+removed from the start of the chain by ``audit_prune()``, which appends an ``audit.prune`` event
+naming the last one removed; verification starts from the newest such anchor.
 """
 
 import hashlib
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from ipaddress import IPv4Address, IPv6Address
 from typing import Literal
@@ -34,6 +40,8 @@ class AuditEvent:
     target_type: str | None = None
     target_id: str | None = None
     details: Mapping[str, JsonValue] = field(default_factory=dict)
+    # Kept in audit_texts, the details naming it (``text_sha256``, ``text_length``).
+    text: str | None = None
 
 
 @dataclass(frozen=True)
@@ -50,6 +58,8 @@ class VerificationResult:
     problem: str | None = None
     # Signed checkpoints compared with the chain (synapse audit verify, with the signing key).
     checkpoints_checked: int = 0
+    # The last event removed by retention, which the chain now starts after (0: none removed).
+    removed_through: int = 0
 
 
 def _timestamp(moment: datetime) -> str:
@@ -106,6 +116,12 @@ async def record(
     # Python and PostgreSQL both keep microseconds, so the stored value hashes identically.
     occurred_at = now.astimezone(UTC)
     event_id = uuid4()
+    if event.text is not None:
+        named: dict[str, JsonValue] = {
+            "text_sha256": text_digest(event.text),
+            "text_length": len(event.text),
+        }
+        event = replace(event, details={**event.details, **named})
     digest = event_hash(
         tenant_id=tenant_id,
         seq=seq,
@@ -136,7 +152,35 @@ async def record(
             digest,
         ),
     )
+    if event.text is not None:
+        await connection.execute(
+            "INSERT INTO audit_texts (tenant_id, event_id, text) VALUES (%s, %s, %s)",
+            (tenant_id, event_id, event.text),
+        )
     return ChainHead(tenant_id=tenant_id, seq=seq, hash=digest)
+
+
+def text_digest(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class Anchor:
+    """Where retention last cut the chain: the last removed event's sequence and hash."""
+
+    seq: int
+    hash: bytes
+
+
+async def anchor(connection: AsyncConnection, tenant_id: UUID) -> Anchor | None:
+    cursor = await connection.execute(
+        "SELECT details->>'through_seq', details->>'through_hash' FROM audit_events "
+        "WHERE tenant_id = %s AND action = 'audit.prune' AND details->>'through_seq' IS NOT NULL "
+        "ORDER BY seq DESC LIMIT 1",
+        (tenant_id,),
+    )
+    row = await cursor.fetchone()
+    return Anchor(int(row[0]), bytes.fromhex(row[1])) if row else None
 
 
 async def head(connection: AsyncConnection, tenant_id: UUID) -> ChainHead | None:
@@ -148,33 +192,50 @@ async def head(connection: AsyncConnection, tenant_id: UUID) -> ChainHead | None
     return ChainHead(tenant_id, int(row[0]), bytes(row[1])) if row else None
 
 
+async def prune(connection: AsyncConnection, tenant_id: UUID) -> dict[str, JsonValue]:
+    """Remove what is past its period (ADR 0022): ``audit_prune()``, which only the retention
+    role may run. Returns how many events and texts went, and the last event removed."""
+    cursor = await connection.execute("SELECT audit_prune(%s)", (tenant_id,))
+    row = await cursor.fetchone()
+    removed: dict[str, JsonValue] = row[0] if row else {}
+    return removed
+
+
 def _ip_text(value: IPv4Address | IPv6Address | str | None) -> str | None:
     return None if value is None else str(value)
 
 
 async def verify(connection: AsyncConnection, tenant_id: UUID) -> VerificationResult:
-    """Recompute the whole chain. Stops at the first problem and reports where it is."""
-    expected_prev = GENESIS_HASH
+    """Recompute the chain from its start, or from where retention last cut it, with the texts
+    its events name. Stops at the first problem and reports where it is."""
+    cut = await anchor(connection, tenant_id)
+    removed = cut.seq if cut else 0
+    expected_prev = cut.hash if cut else GENESIS_HASH
     checked = 0
+
+    def broken(problem: str) -> VerificationResult:
+        return VerificationResult(
+            ok=False, events_checked=checked, problem=problem, removed_through=removed
+        )
+
     async with connection.cursor(name="audit_verify") as cursor:
         await cursor.execute(
-            "SELECT seq, id, occurred_at, actor_user_id, actor_ip, action, target_type, "
-            "target_id, outcome, details, schema_version, prev_hash, hash "
-            "FROM audit_events WHERE tenant_id = %s ORDER BY seq",
+            "SELECT e.seq, e.id, e.occurred_at, e.actor_user_id, e.actor_ip, e.action, "
+            "e.target_type, e.target_id, e.outcome, e.details, e.schema_version, e.prev_hash, "
+            "e.hash, t.text FROM audit_events e LEFT JOIN audit_texts t "
+            "ON t.tenant_id = e.tenant_id AND t.event_id = e.id "
+            "WHERE e.tenant_id = %s ORDER BY e.seq",
             (tenant_id,),
         )
         async for row in cursor:
             seq = int(row[0])
-            if seq != checked + 1:
-                return VerificationResult(
-                    ok=False, events_checked=checked, problem=f"sequence gap before event {seq}"
-                )
+            if seq != removed + checked + 1:
+                return broken(f"sequence gap before event {seq}")
             if bytes(row[11]) != expected_prev:
-                return VerificationResult(
-                    ok=False,
-                    events_checked=checked,
-                    problem=f"event {seq} does not link to {seq - 1}",
-                )
+                return broken(f"event {seq} does not link to {seq - 1}")
+            text, named = row[13], row[9].get("text_sha256")
+            if text is not None and named != text_digest(text):
+                return broken(f"the text of event {seq} was modified")
             recomputed = event_hash(
                 tenant_id=tenant_id,
                 seq=seq,
@@ -193,9 +254,7 @@ async def verify(connection: AsyncConnection, tenant_id: UUID) -> VerificationRe
                 prev_hash=bytes(row[11]),
             )
             if recomputed != bytes(row[12]):
-                return VerificationResult(
-                    ok=False, events_checked=checked, problem=f"event {seq} was modified"
-                )
+                return broken(f"event {seq} was modified")
             expected_prev = recomputed
             checked += 1
-    return VerificationResult(ok=True, events_checked=checked)
+    return VerificationResult(ok=True, events_checked=checked, removed_through=removed)

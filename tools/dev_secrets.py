@@ -25,6 +25,8 @@ SECRET_FILES = (
     "db_synapse_api",
     "db_synapse_worker",
     "db_synapse_scheduler",
+    # Runs audit_prune() only (ADR 0022); bootstrap creates the role with it.
+    "db_synapse_retention",
     "csrf_key",
     "totp_key",
     "audit_signing_key",

@@ -6,12 +6,13 @@ here even if no test ever queries it.
 
 import psycopg
 
-from synapse.dbadmin.roles import SCHEMA
+from synapse.dbadmin.roles import RETENTION, SCHEMA
 from tests.db.conftest import TestDatabase
 
 # Tables that are deliberately not tenant-scoped, with the reason.
 NOT_TENANT_SCOPED = {
     "alembic_version": "migration bookkeeping; holds no tenant data",
+    "audit_settings": "the retention periods (migration 0028): one row for the installation",
     "role_permissions": "the same catalogue for every tenant; read-only for runtime roles",
     # The job queue (migration 0009). Job rows hold identifiers only; the task wrapper sets the
     # tenant from them before touching tenant data.
@@ -83,6 +84,7 @@ SHARED = {
     "alembic_version",
     "audit_checkpoints",
     "audit_events",
+    "audit_texts",
     "blobs",
     "chunk_entities",
     "collections",
@@ -96,6 +98,8 @@ SHARED = {
     "procrastinate_periodic_defers",
     "procrastinate_workers",
 }
+# Tables no runtime role may touch: the migrator writes them, audit_prune() reads them.
+NO_RUNTIME = {"audit_settings"}
 _TABLE_NAMES = """
     SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = %s AND c.relkind IN ('r', 'p') ORDER BY c.relname
@@ -123,8 +127,18 @@ def privilege_problems(connection: psycopg.Connection) -> list[str]:
                     problems.append(f"{table}: {role} holds {', '.join(held)}")
             if not holds("synapse_api", table, "SELECT"):
                 problems.append(f"{table}: synapse_api cannot read it")
+        elif table in NO_RUNTIME:
+            for role in ("synapse_api", "synapse_worker", "synapse_scheduler"):
+                if holds(role, table, "SELECT"):
+                    problems.append(f"{table}: {role} can read it")
         elif table not in SHARED:
             problems.append(f"{table}: neither the API's alone nor shared; put it in one set")
+        # The retention role runs audit_prune() and holds no table (ADR 0022).
+        kept = [
+            p for p in ("SELECT", "INSERT", "UPDATE", "DELETE") if holds(RETENTION.name, table, p)
+        ]
+        if kept:
+            problems.append(f"{table}: {RETENTION.name} holds {', '.join(kept)}")
     return problems
 
 

@@ -352,9 +352,11 @@ class Conversations:
                     actor_ip=asker.ip,
                     target_type="conversation",
                     target_id=str(conversation_id),
+                    # The question goes beside the event, named by its hash, so it can be
+                    # removed after its period without touching the chain (ADR 0022).
+                    text=question,
                     details={
                         "turn": ordinal,
-                        "question": question,
                         "status": status,
                         "kind": kind,
                         "retrieved": list(dict.fromkeys(str(h.document_id) for h in sources)),

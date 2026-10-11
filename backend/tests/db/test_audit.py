@@ -156,7 +156,8 @@ async def test_even_the_owner_cannot_change_events(
         for statement in (
             "UPDATE audit_events SET outcome = 'failure'",
             "DELETE FROM audit_events",
-            "TRUNCATE audit_events",
+            # CASCADE: plain TRUNCATE is refused before the trigger, as audit_texts refers to it.
+            "TRUNCATE audit_events CASCADE",
         ):
             # The owner is also bound by forced row-level security, so it must select the
             # tenant first; otherwise it would see no rows and the test would prove nothing.

@@ -89,6 +89,7 @@ services:
       - db_synapse_api
       - db_synapse_worker
       - db_synapse_scheduler
+      - db_synapse_retention
     depends_on:
       db: { condition: service_healthy }
     restart: "no"
@@ -236,6 +237,7 @@ secrets:
   db_synapse_api: { file: ../.dev/secrets/db_synapse_api }
   db_synapse_worker: { file: ../.dev/secrets/db_synapse_worker }
   db_synapse_scheduler: { file: ../.dev/secrets/db_synapse_scheduler }
+  db_synapse_retention: { file: ../.dev/secrets/db_synapse_retention }
   csrf_key: { file: ../.dev/secrets/csrf_key }
   totp_key: { file: ../.dev/secrets/totp_key }
   audit_signing_key: { file: ../.dev/secrets/audit_signing_key }

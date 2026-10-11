@@ -1,4 +1,4 @@
-"""``synapsectl``: init, render, doctor, apply, backup, restore, upgrade, bundle and
+"""``synapsectl``: init, render, doctor, apply, backup, audit, restore, upgrade, bundle and
 support-bundle (ADR 0012)."""
 
 import argparse
@@ -18,6 +18,7 @@ from synapsectl import (
     doctor,
     models,
     render,
+    retention,
     secrets,
     support,
     upgrade,
@@ -74,6 +75,10 @@ def build_parser() -> argparse.ArgumentParser:
         "action", nargs="?", default="run", choices=["run", "init", "list", "verify"]
     )
     saving.add_argument("--snapshot", default="latest", help="verify: this snapshot")
+    auditing = commands.add_parser(
+        "audit", help="Remove the audit events and question texts past their periods (prune)."
+    )
+    auditing.add_argument("action", choices=["prune"])
     back = commands.add_parser(
         "restore", help="Replace this installation's data with a backup's (then run apply)."
     )
@@ -140,6 +145,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "render": lambda: _render(loaded),
         "doctor": lambda: _doctor(loaded, running=args.running),
         "backup": lambda: _backup(loaded, args),
+        "audit": lambda: _audit(loaded),
         "restore": lambda: _restore(loaded, args),
         "upgrade": lambda: _upgrade(loaded, args),
         "bundle": lambda: _bundle(loaded, args),
@@ -221,6 +227,7 @@ def _apply(loaded: config.SynapseConfig, args: argparse.Namespace) -> int:
         apply(loaded, admin=admin)
         if loaded.backup.repository is not None:
             _schedule_backups(loaded, args.config)
+        _schedule_retention(loaded, args.config)
     except (ApplyError, backup.BackupError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
@@ -239,6 +246,25 @@ def _schedule_backups(loaded: config.SynapseConfig, config_file: Path) -> None:
             "== Backups are not scheduled (needs root and systemd): run "
             "synapsectl backup every night and synapsectl backup verify every quarter"
         )
+
+
+def _schedule_retention(loaded: config.SynapseConfig, config_file: Path) -> None:
+    if os.geteuid() == 0 and SYSTEMD_RUNTIME.is_dir():
+        retention.install_schedule(loaded, config_file.resolve())
+    else:
+        print(
+            "== Audit retention is not scheduled (needs root and systemd): run "
+            "synapsectl audit prune every night"
+        )
+
+
+def _audit(loaded: config.SynapseConfig) -> int:
+    try:
+        retention.prune(loaded)
+    except (backup.BackupError, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def _backup(loaded: config.SynapseConfig, args: argparse.Namespace) -> int:

@@ -1,4 +1,5 @@
-"""``synapse audit verify`` and ``synapse audit checkpoint`` for operators and the scheduler."""
+"""``synapse audit verify``, ``checkpoint`` and ``prune`` for operators, the scheduler and the
+retention container."""
 
 import asyncio
 import json
@@ -71,3 +72,23 @@ def verify(settings: Settings) -> tuple[bool, str]:
 def checkpoint(settings: Settings) -> str:
     """A signed checkpoint of the current chain head, as JSON."""
     return asyncio.run(_with_tenant_connection(settings, "checkpoint"))
+
+
+async def _prune(settings: Settings) -> str:
+    if settings.tenant_id is None:
+        raise AuditCommandError("SYNAPSE_TENANT_ID is not set")
+    database = Database(settings.database(application_name="synapse-retention"), max_size=1)
+    await database.open()
+    try:
+        # audit_prune() sets the tenant itself; the retention role reads no table.
+        async with database.system_transaction() as connection:
+            removed = await audit.prune(connection, settings.tenant_id)
+    finally:
+        await database.close()
+    return json.dumps(removed)
+
+
+def prune(settings: Settings) -> str:
+    """Remove the events and question texts past their periods (as the retention role), and
+    say how many went, as JSON."""
+    return asyncio.run(_prune(settings))

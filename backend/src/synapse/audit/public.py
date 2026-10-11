@@ -27,6 +27,7 @@ from synapse.audit.chain import (
     Outcome,
     VerificationResult,
     head,
+    prune,
     record,
     verify,
 )
@@ -50,6 +51,7 @@ __all__ = [
     "head",
     "list_events",
     "load_signing_key",
+    "prune",
     "record",
     "sign_head",
     "signed_export",
