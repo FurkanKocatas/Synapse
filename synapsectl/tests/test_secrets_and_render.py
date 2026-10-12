@@ -193,14 +193,17 @@ def test_vulkan_passes_the_gpu_and_its_groups_in(config: SynapseConfig) -> None:
         Models(accelerator=Accelerator.VULKAN)
 
 
-def test_the_answers_read_eight_sources_only_on_a_gpu(config: SynapseConfig) -> None:
+def test_the_answers_read_as_many_sources_as_the_accelerator_allows(
+    config: SynapseConfig,
+) -> None:
     cpu = config.model_copy(update={"models": Models(accelerator=Accelerator.CPU)})
     gpu = config.model_copy(
         update={"models": Models(accelerator=Accelerator.VULKAN, gpu_groups=(44,))}
     )
-    for setup, sources in ((cpu, "6"), (gpu, "8")):
+    for setup in (cpu, gpu):
         api = render.compose(setup)["services"]["api"]
-        assert api["environment"]["SYNAPSE_CHAT_SOURCES"] == sources
+        sources = render.CHAT_SOURCES[Accelerator(setup.models.accelerator)]
+        assert api["environment"]["SYNAPSE_CHAT_SOURCES"] == str(sources)
 
 
 def test_the_api_and_the_worker_call_the_model_servers(config: SynapseConfig) -> None:

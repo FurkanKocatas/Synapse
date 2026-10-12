@@ -107,11 +107,10 @@ log = structlog.get_logger(__name__)
 
 # The reranked candidates the context is chosen from (knowledge/search.py's RERANK_TOP).
 RERANKED = 15
-# The context's places unless the setting chat_sources says otherwise. With the model on a GPU
-# installations use eight (2026-10-12): in a law firm's file the decision that answers "what
-# did the court decide" ranked seventh and eighth, below the petitions asking for something
-# else, and the model stated the amount asked for as the one decided. On the CPU alone the
-# 775 tokens more would come on top of a first token that already takes a minute
+# The context's places unless the setting chat_sources says otherwise. Eight would bring in a
+# law firm's decision that ranked seventh and eighth, below the petitions asking for something
+# else, whose asked-for amount the model stated as decided; on the golden set eight broke seven
+# answers, and on the CPU alone the first token already takes a minute, so six stays for now
 # (docs/benchmarks/answers.md, "Who asked, who decided").
 SOURCES = 6
 PER_DOCUMENT = 3

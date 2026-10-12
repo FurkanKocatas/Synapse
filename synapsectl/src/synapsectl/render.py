@@ -23,10 +23,11 @@ from synapsectl.config import SynapseConfig, Tier, TlsMode, dump
 from synapsectl.models import SERVER_IMAGES, Accelerator, server_file
 from synapsectl.secrets import APP_UID, DATABASE_ROLES
 
-# The sources an answer is written from (the API's chat_sources): eight with the model on a
-# GPU; six on the CPU alone, where the first token already takes about a minute
-# (docs/benchmarks/answers.md, "Who asked, who decided").
-CHAT_SOURCES = {Accelerator.CPU: 6, Accelerator.VULKAN: 8}
+# The sources an answer is written from (the API's chat_sources): six on the CPU alone, where
+# the first token already takes about a minute. Eight with the model on a GPU is paused: on the
+# golden set they broke seven answers, one past the chat server's context and six on a
+# grammar error of llama.cpp (docs/benchmarks/answers.md, "Who asked, who decided").
+CHAT_SOURCES = {Accelerator.CPU: 6, Accelerator.VULKAN: 6}
 
 # A tmpfs mount point inside the containers, not a file created on the host.
 CONTAINER_TMP = ["/tmp"]  # noqa: S108

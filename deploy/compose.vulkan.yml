@@ -14,11 +14,6 @@ x-gpu: &gpu
     - ${SYNAPSE_VIDEO_GID:?the group of /dev/dri/card0}
 
 services:
-  api:
-    environment:
-      # Eight sources with the model on the GPU, as installations do (synapsectl/render.py).
-      SYNAPSE_CHAT_SOURCES: "8"
-
   llm-embed:
     <<: *gpu
     command:
