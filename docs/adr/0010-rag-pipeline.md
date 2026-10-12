@@ -32,7 +32,7 @@ Research: [03-rag.md](../research/03-rag.md), [02-hardware-inference.md](../rese
 4. Weighted reciprocal rank fusion. **Fusion scores are never thresholded**; a test enforces this.
 5. Rerank the top candidates (count per tier). **Thresholds apply only to calibrated reranker scores**, set per model from the golden set.
 6. **Refuse before generating** if the best calibrated score is below the answerability threshold: reply "not found in your documents" with possibly related documents, and do not call the LLM.
-7. Final context: at most 6 chunks, at most 3 per document, diversity by MMR, top 3 expanded to their parent section, hard token cap per tier.
+7. Final context: at most 6 chunks, at most 3 per document, diversity by MMR, top 3 expanded to their parent section, hard token cap per tier. *Amended 2026-10-12: at most 8 chunks ([benchmarks/answers.md](../benchmarks/answers.md#who-asked-who-decided)).*
 8. Aggregation questions over tables go to a read-only SQL tool on typed tables the user may access. The model never adds numbers itself.
 9. Generate with a structured output (`answer`, `citations`, `sufficient`). Source text is wrapped as data; instructions found inside documents are ignored.
 10. Verify: every number and identifier in the answer must appear in the cited sources or in tool output; otherwise regenerate once, then strip the claim or refuse. Every citation resolves to document, page and region.

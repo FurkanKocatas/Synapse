@@ -105,6 +105,24 @@ Lenient answers four more questions right and breaks none: a council decision's 
 
 The four questions above are gained and u-29 lost, as the comparison said. The sentence is in every answer's prompt, so other answers move too, and these were read by hand: one is mended (g6-14 now gives the limit of both procedures, "üç ay" among them) and three the strict prompt answered right are broken: a table's rate of increase given for its fee (g2-02), a law's number changed ("7579" for "7589", g5-20; verification passes it, the number stands elsewhere in the sources), and a fine said to be missing from sources that state it (g8-06). Two questions refused before now get half their answer (g4-20, g7-17) and one half answer is now refused (g6-17), wrong either way. Three changes are the script's alone (g1-03 and g1-11 were right before, g6-16 is right now, each worded differently from the golden answer). By hand the sentence gains two correct answers and refuses five answerable questions fewer, for one unanswerable question answered; both refusal rates stay inside the harness's gates, the unanswerable one above ADR 0010's 0.90.
 
+## Who asked, who decided
+
+Measured 2026-10-12 with a loop like [prompts.py](../../eval/answers/prompts.py) on a demo stack holding a fictional law firm's archive: 67 documents written for the purpose (petitions and answers, hearing minutes, expert reports, decisions, contracts, letters; 15 of them printed and scanned), beside 7 public laws and court decisions from the corpus, and 32 questions, each with the phrases its answer must and must not state. The archive and its questions are kept outside this repository; they were written for sales demonstrations.
+
+Two answers a law firm counts as critical errors came out of it. Asked what the court decided a rent to be, the model gave the amount the petition asked for (25,000 TL against the decided 22,050 TL). Asked what one witness said, it added the other witness's words. For the rent, the decision's operative part ranked seventh and eighth: the six sources held the petitions and the decision's first page, where the court sums up what was asked, and nothing the court decided.
+
+| Variant | Passed, of 32 |
+|---|---|
+| The prompt until then, six sources | 20 |
+| A sentence on who asked, said or decided what (`answering.ROLES`), six sources | 23 |
+| The same and a sentence on tables (row and column headings) | 23 |
+| The same with explicit cues ("talep etti", "istedi", "ileri sürdü" is no decision; only the named person's words) | 21: two answerable questions refused |
+| `ROLES`, eight sources | 25 |
+
+`ROLES` and eight sources were taken: the rent answer is right on both wordings of the question, and none of the 20 the earlier prompt answered broke. `ROLES` alone mended three incomplete answers (both maintenance amounts, the days a penalty counts). The witness answer is not mended by any variant: the expert report sums up both witnesses in one paragraph and the 4B model joins them. That stays open.
+
+Cost: the prompt grows from about 2,460 tokens to about 3,235, and reading it on the integrated GPU from 15.0 to 19.9 seconds, so an answer comes about five seconds later. On the CPU alone (the same machine, the model servers without Vulkan, six sources) five demo questions got their first token after 60.6 to 69.3 seconds and their whole answer after 68 to 104: already past ADR 0009's 60 seconds to the first token, before this change. By the prompt's growth, eight sources add about fifteen seconds there (estimated, not measured). Until that is mended, a customer's machine needs at least an integrated GPU. The golden set's measurement of the change is the harness's run of its commit.
+
 ## Limits
 
 - 75 questions: one answerable question is 1.5 points; the gap between the models is five to ten times that, the gap between contexts is not.

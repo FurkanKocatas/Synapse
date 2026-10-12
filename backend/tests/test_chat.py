@@ -16,8 +16,10 @@ import pytest
 
 from synapse.chat.answering import (
     PER_DOCUMENT,
+    ROLES,
     SOURCE_TOKENS,
     SOURCES,
+    WHEN_TO_REFUSE,
     Answer,
     Answerer,
     Delta,
@@ -277,6 +279,12 @@ def test_the_context_keeps_order_limits_documents_and_drops_duplicates() -> None
     assert picked[:PER_DOCUMENT] == hits[:PER_DOCUMENT]
     assert duplicate not in picked
     assert picked[PER_DOCUMENT:] == others[: SOURCES - PER_DOCUMENT]
+
+
+def test_the_prompt_keeps_who_asked_apart_from_who_decided() -> None:
+    system = prompt("Mahkeme kirayı kaç TL tespit etti?", [hit("metin", n=1)])[0].content
+    assert ROLES in system
+    assert system.index(ROLES) < system.index(WHEN_TO_REFUSE)
 
 
 def test_the_context_stays_within_its_token_budget() -> None:
