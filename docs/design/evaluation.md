@@ -31,3 +31,7 @@ On the reference machine, by a local trigger ([watch.py](../../eval/harness/watc
 - **Failures**: a run that cannot finish (a build, the stack, the deadline) is retried once on the next trigger, then marked `error` on the commit.
 
 A whole run takes about two hours; with a fresh ingestion, about three.
+
+## A customer's own documents
+
+The golden set is a test we built, and its numbers are not the product's performance on a customer's archive. That claim rests only on a blind test there: the customer's people write the questions after the installation, grade the answers themselves against thresholds agreed beforehand, every class counted on its own and every critical error listed, and every raw result is reported. The question sheet, the run, the grading sheet and the report: [eval/pilot/](../../eval/pilot/README.md).
