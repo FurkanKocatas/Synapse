@@ -12,7 +12,8 @@ ADR 0010's query rules, in order (docs/design/answers.md):
    (the setting ``chat_refuse_below``, calibrated on the golden set: docs/benchmarks/refusal.md),
    the answer is "not found" and the chat model is not called. The sources found are still
    shown, as possibly related.
-7. The context: at most eight chunks, at most three of one document, near-duplicates left out, in
+7. The context: at most six chunks (eight with the model on a GPU: the setting
+   ``chat_sources``), at most three of one document, near-duplicates left out, in
    the reranker's order, within a token budget.
 9. The chat model answers under a JSON schema the server enforces: the answer as a list of
    sentences, each with the numbers of the sources it rests on (at least one, and only numbers
@@ -99,11 +100,13 @@ log = structlog.get_logger(__name__)
 
 # The reranked candidates the context is chosen from (knowledge/search.py's RERANK_TOP).
 RERANKED = 15
-# Eight, not ADR 0010's six (2026-10-12): in a law firm's file the decision that answers
-# "what did the court decide" ranked seventh and eighth, below the petitions asking for
-# something else, and the model stated the amount asked for as the one decided
+# The context's places unless the setting chat_sources says otherwise. With the model on a GPU
+# installations use eight (2026-10-12): in a law firm's file the decision that answers "what
+# did the court decide" ranked seventh and eighth, below the petitions asking for something
+# else, and the model stated the amount asked for as the one decided. On the CPU alone the
+# 775 tokens more would come on top of a first token that already takes a minute
 # (docs/benchmarks/answers.md, "Who asked, who decided").
-SOURCES = 8
+SOURCES = 6
 PER_DOCUMENT = 3
 # Words shared with an earlier source, of the smaller set, above which a source is a duplicate.
 DUPLICATE = 0.8
@@ -309,8 +312,8 @@ def source_text(hit: Hit) -> str:
     return "\n".join(part for part in parts if part)
 
 
-def assemble(hits: Sequence[Hit]) -> list[Hit]:
-    """The context: the best hits in order, at most ``SOURCES``, no near-duplicate of one
+def assemble(hits: Sequence[Hit], sources: int = SOURCES) -> list[Hit]:
+    """The context: the best hits in order, at most ``sources``, no near-duplicate of one
     already in, within ``SOURCE_TOKENS``; at most ``PER_DOCUMENT`` of one document while other
     documents' hits are there to take the places. Places left free then take the hits passed
     over for that limit, in order: when all the candidates are one document's, the answer sees
@@ -336,14 +339,14 @@ def assemble(hits: Sequence[Hit]) -> list[Hit]:
         tokens += cost
 
     for index, hit in enumerate(hits):
-        if len(picked) == SOURCES:
+        if len(picked) == sources:
             break
         if per_document[hit.document_id] == PER_DOCUMENT:
             passed.append((index, hit))
             continue
         take(index, hit)
     for index, hit in passed:
-        if len(picked) == SOURCES:
+        if len(picked) == sources:
             break
         take(index, hit)
     return [hit for _, hit in sorted(picked, key=lambda pair: pair[0])]
@@ -402,12 +405,14 @@ class Answerer:
         *,
         refuse_below: float,
         general: bool = True,
+        sources: int = SOURCES,
         gate: Gate | None = None,
     ) -> None:
         self._search = search
         self._chat = chat
         self._refuse_below = refuse_below
         self._general = general
+        self._sources = sources
         self._gate = gate or Gate()
 
     async def answer(
@@ -500,12 +505,12 @@ class Answerer:
             user_id, standalone, limit=RERANKED, scope=steps.scope
         )
         seconds["candidates"] = steps.since()
-        if first := assemble(found.hits):
+        if first := assemble(found.hits, self._sources):
             yield Sources(first, found.warnings, ranked=False)
         found = await self._search.rerank(standalone, found, limit=RERANKED)
         seconds["search"] = steps.since()
         best = _best(found)
-        context = assemble(found.hits)
+        context = assemble(found.hits, self._sources)
         yield Sources(context, found.warnings)
         if not context or (best is not None and best < self._refuse_below):
             async with aclosing(self._unfounded(standalone, best, steps)) as events:

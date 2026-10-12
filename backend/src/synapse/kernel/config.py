@@ -97,6 +97,11 @@ class Settings(BaseSettings):
     # model's own refusals, 31 of the 34 unanswerable questions are refused and no correct
     # answer is lost.
     chat_refuse_below: float = Field(default=1.0, ge=-100, le=100)
+    # The sources an answer is written from (ADR 0010, query rule 7): six on the CPU alone,
+    # where the first token already takes about a minute, and eight with the model on a GPU,
+    # where a decision that ranked below the petitions comes in (docs/benchmarks/answers.md,
+    # "Who asked, who decided"). The installer sets it by the accelerator.
+    chat_sources: int = Field(default=6, ge=1, le=12)
     # A message whose search finds nothing good enough and that the chat model judges to be a
     # question of general knowledge (not about the organisation) or a request for help with
     # writing is answered from general knowledge, marked as not resting on the documents. Off:

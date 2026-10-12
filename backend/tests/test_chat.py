@@ -281,6 +281,12 @@ def test_the_context_keeps_order_limits_documents_and_drops_duplicates() -> None
     assert picked[PER_DOCUMENT:] == others[: SOURCES - PER_DOCUMENT]
 
 
+def test_the_context_takes_as_many_sources_as_set() -> None:
+    hits = [hit(f"başka {i} belge", n=i) for i in range(10)]
+    assert assemble(hits) == hits[:SOURCES]
+    assert assemble(hits, 8) == hits[:8]
+
+
 def test_the_prompt_keeps_who_asked_apart_from_who_decided() -> None:
     system = prompt("Mahkeme kirayı kaç TL tespit etti?", [hit("metin", n=1)])[0].content
     assert ROLES in system

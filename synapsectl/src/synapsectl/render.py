@@ -23,6 +23,11 @@ from synapsectl.config import SynapseConfig, Tier, TlsMode, dump
 from synapsectl.models import SERVER_IMAGES, Accelerator, server_file
 from synapsectl.secrets import APP_UID, DATABASE_ROLES
 
+# The sources an answer is written from (the API's chat_sources): eight with the model on a
+# GPU; six on the CPU alone, where the first token already takes about a minute
+# (docs/benchmarks/answers.md, "Who asked, who decided").
+CHAT_SOURCES = {Accelerator.CPU: 6, Accelerator.VULKAN: 8}
+
 # A tmpfs mount point inside the containers, not a file created on the host.
 CONTAINER_TMP = ["/tmp"]  # noqa: S108
 
@@ -192,6 +197,9 @@ def compose(config: SynapseConfig) -> dict[str, Any]:
                     "SYNAPSE_TOTP_KEY_FILE": "/run/secrets/totp_key",
                     "SYNAPSE_AUDIT_SIGNING_KEY_FILE": "/run/secrets/audit_signing_key",
                     "SYNAPSE_TRUSTED_PROXY_IPS": config.network.subnet,
+                    "SYNAPSE_CHAT_SOURCES": str(
+                        CHAT_SOURCES[Accelerator(config.models.accelerator)]
+                    ),
                     # Passkeys are bound to this address (docs/design/identity.md).
                     "SYNAPSE_PUBLIC_URL": f"https://{site_address(config)}",
                 },
