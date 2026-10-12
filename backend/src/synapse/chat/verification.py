@@ -70,6 +70,31 @@ def stands_in(claim: str, folded_source: str) -> bool:
     return re.search(rf"(?<![\w]){re.escape(claim)}(?![\w])", folded_source) is not None
 
 
+# The digits a number needs to pick out a document; a year does not.
+NAMING_DIGITS = 3
+_YEAR = re.compile(r"(?:19|20)\d\d")
+
+
+def _names_something(claim: str) -> bool:
+    return sum(ch.isdigit() for ch in claim) >= NAMING_DIGITS and not _YEAR.fullmatch(claim)
+
+
+def anchored(question: str, sources: Sequence[str]) -> bool:
+    """Whether ``question`` names a number or identifier that stands word for word in a source:
+    "2025/412", "984.500 TL". The reranker scores a question asking why low however plainly
+    its source answers it (a law firm's "alacak neden 984.500 TL'den 888.200 TL'ye indi" scored
+    -0.55, below every threshold worth having); such a question goes to the model, which says
+    "not found" itself when the sources do not answer it. None of the golden set's questions
+    refused before generation names such a number (docs/benchmarks/refusal.md)."""
+    texts = [fold(source) for source in sources]
+    return any(
+        stands_in(claim, text)
+        for claim in claims(question)
+        if _names_something(claim)
+        for text in texts
+    )
+
+
 def cited(text: str) -> list[int]:
     """The source numbers ``text`` cites, each once, in order."""
     numbers: dict[int, None] = {}

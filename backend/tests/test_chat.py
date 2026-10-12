@@ -409,6 +409,20 @@ async def test_an_answer_streams_after_its_sources_and_is_verified() -> None:
     assert messages[1].content.endswith("Soru: Kurul kaç üyeden oluşur?")
 
 
+async def test_a_low_score_naming_a_number_its_source_holds_goes_to_the_model() -> None:
+    text = "Heyet alacağı iade faturası nedeniyle 984.500 TL'den 888.200 TL'ye indirdi."
+    hits = [hit(text, score=REFUSE_BELOW - 0.1)]
+    reply = says(("İade faturası nedeniyle 888.200 TL'ye indirdi.", [1]))
+    question = "Alacak neden 984.500 TL'den 888.200 TL'ye indi?"
+    answer = final(await events_of(answerer(hits, StandInChat(reply)), question))
+    assert answer.status == "answered"
+    # A year names nothing: the low score still refuses.
+    yearly = [hit("2025 yılı bütçesi kabul edildi.", score=REFUSE_BELOW - 0.1)]
+    chat = StandInChat(route="documents")
+    refused = final(await events_of(answerer(yearly, chat), "2025 yılında konser ne zaman?"))
+    assert refused.status == "not_found"
+
+
 async def test_a_low_score_about_the_organisation_is_refused_without_an_answer() -> None:
     chat = StandInChat(route="documents")
     hits = [hit("İlgisiz bir metin.", score=REFUSE_BELOW - 0.1)]

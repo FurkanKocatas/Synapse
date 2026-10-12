@@ -11,7 +11,8 @@ ADR 0010's query rules, in order (docs/design/answers.md):
 6. **Refusal before generation**: when the reranker's best score is below ``refuse_below``
    (the setting ``chat_refuse_below``, calibrated on the golden set: docs/benchmarks/refusal.md),
    the answer is "not found" and the chat model is not called. The sources found are still
-   shown, as possibly related.
+   shown, as possibly related. A question that names a number or identifier a source of the
+   context holds word for word (``anchored``) goes to the model whatever the score.
 7. The context: at most six chunks (eight with the model on a GPU: the setting
    ``chat_sources``), at most three of one document, near-duplicates left out, in
    the reranker's order, within a token budget.
@@ -82,6 +83,7 @@ from synapse.chat.talk import (
 from synapse.chat.verification import (
     CITATION,
     Checked,
+    anchored,
     check,
     cited,
     claims,
@@ -522,7 +524,8 @@ class Answerer:
         best = _best(found)
         context = assemble(found.hits, self._sources)
         yield Sources(context, found.warnings)
-        if not context or (best is not None and best < self._refuse_below):
+        low = best is not None and best < self._refuse_below
+        if not context or (low and not anchored(standalone, [source_text(h) for h in context])):
             async with aclosing(self._unfounded(standalone, best, steps)) as events:
                 async for event in events:
                     yield event

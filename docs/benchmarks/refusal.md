@@ -71,6 +71,10 @@ Since 2026-10-02 a message below the threshold is not refused at once: the chat 
 
 No unanswerable question is sent the general way, so refusal on them is unchanged; the one general message judged a question to the documents (how to write a leave request) is refused, the safe side. Greetings, thanks and farewells do not reach the route: they are answered as conversation without a search.
 
+## A question that names its source
+
+2026-10-12. On a fictional law firm's archive (docs/benchmarks/answers.md, "Who asked, who decided"), "Lacivert davasında bilirkişi heyeti alacağı neden 984.500 TL'den 888.200 TL'ye indirdi?" got a best score of -0.55 and was refused before generation, though its sources answered it and the model, given them, answered right. Its unanswerable questions scored 0.89, -0.31 and -1.92: no threshold separates them. Since then a question that names a number or identifier of three digits or more, a year aside, which a source of the context holds word for word, goes to the model whatever the score (`answering.anchored`). On the harness's run of 9c24e03, none of the 18 golden questions refused before generation (16 unanswerable, 2 answerable) names such a number, so the golden set's numbers do not move; and the model refused all 18 unanswerable questions it was given itself.
+
 ## Limits
 
 - 34 unanswerable questions: one is 3 points. The threshold sits between two of them (0.96 and 1.19) and below every answerable question but two (g7-06 at -0.14, which the model refuses anyway, and g8-24 at 0.88); on a customer's golden set it is calibrated again.
