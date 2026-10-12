@@ -26,7 +26,10 @@ ADR 0010's query rules, in order (docs/design/answers.md):
 10. Verification (verification.py): every number and identifier in the answer must stand in a
     cited source. One that stands only in a source shown but not cited adds that citation; one
     that stands in none makes the model answer once more, told which; still unsupported, the
-    sentences stating it are removed, and an answer left with nothing is no answer.
+    sentences stating it are removed, and an answer left with nothing is no answer. A sentence
+    that reports what a person said is checked for whose words its numbers are
+    (attribution.py): one that gives a person a number the source gives someone else is
+    treated the same way, the model told which.
 
 Each turn takes one of the chat server's slots; a turn that finds them busy waits its turn and
 says where it stands in the queue (``Queued``).
@@ -59,6 +62,7 @@ from uuid import UUID
 
 import structlog
 
+from synapse.chat.attribution import Misattributed, misattributed
 from synapse.chat.reply import AnswerStream, curly, parse, schema
 from synapse.chat.talk import (
     CLASSIC_CHARS,
@@ -82,6 +86,7 @@ from synapse.chat.verification import (
     cited,
     claims,
     fold,
+    sentences,
     stands_in,
     strip_unsupported,
 )
@@ -152,6 +157,11 @@ SYSTEM = (
 RETRY = (
     "Cevabındaki şu sayılar ya da numaralar kaynaklarda geçmiyor: {claims}. Cevabı yalnızca "
     "kaynaklarda yazanlarla yeniden yaz; kaynaklar yetmiyorsa sufficient alanını false yap."
+)
+# A sentence that gives a person numbers the source gives someone else (attribution.py).
+MISATTRIBUTED = (
+    "Cevabındaki şu sayıları kaynak başka bir kişinin sözü olarak veriyor: {claims}. Her "
+    "sözü yalnız kaynakta onu söyleyen kişiye bağla."
 )
 REWRITE_SYSTEM = (
     "Bir konuşmanın son sorusunu, önceki konuşmayı bilmeyen birinin anlayacağı tek başına bir "
@@ -691,14 +701,15 @@ class Answerer:
                     return
                 citations = [n for n in cited(text) if 1 <= n <= len(sources)]
                 checked = check(text, sources, citations)
-                if checked.ok or retried:
+                wrong = misattributed(sentences(text), sources, citations)
+                if (checked.ok and not wrong) or retried:
                     break
                 retried = True
-                yield Retrying(checked.unsupported)
+                yield Retrying((*checked.unsupported, *(c for w in wrong for c in w.claims)))
                 messages = [
                     *messages,
                     ChatMessage("assistant", reply.content),
-                    ChatMessage("user", RETRY.format(claims=", ".join(checked.unsupported))),
+                    ChatMessage("user", _retry(checked, wrong)),
                 ]
         except ModelError as error:
             log.warning("chat.answer_failed", error=str(error))
@@ -707,8 +718,11 @@ class Answerer:
             )
             return
         stripped: tuple[str, ...] = ()
-        if not checked.ok:
+        if not checked.ok or wrong:
             text, stripped = strip_unsupported(text, checked.unsupported)
+            gone = {w.sentence for w in wrong}
+            stripped = (*stripped, *(s for s in sentences(text) if s in gone))
+            text = " ".join(s for s in sentences(text) if s not in gone)
             # Nothing left to read, citation markers aside, is no answer.
             if not CITATION.sub("", text).strip():
                 seconds["answer"] = _since(started)
@@ -741,6 +755,17 @@ class Answerer:
             uncertain_in(text, [context[n - 1] for n in numbers]),
             seconds=seconds,
         )
+
+
+def _retry(checked: Checked, wrong: Sequence[Misattributed]) -> str:
+    """What the model is told when its answer did not pass verification."""
+    notes = []
+    if checked.unsupported:
+        notes.append(RETRY.format(claims=", ".join(checked.unsupported)))
+    if wrong:
+        given = ", ".join(f"{', '.join(w.claims)} ({w.person})" for w in wrong)
+        notes.append(MISATTRIBUTED.format(claims=given))
+    return " ".join(notes)
 
 
 def _best(found: Found) -> float | None:
