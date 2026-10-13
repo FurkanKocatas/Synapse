@@ -13,14 +13,24 @@ words. A number before anyone speaks, or a source without people speaking, decid
 People are found by their names: two or three words with capitals ("Aydın Kocabey", "EROL
 TUNÇBİLEK" in an OCR'd minute), roles, places, days and months left out. In a source a name is
 a speaker when a verb of saying follows it closely ("..." demiş, beyan etti). Only numbers are
-checked, as verification checks only numbers: a misattributed "yarım gün" is not found.
+checked, and two words in a row: "yarım gün" that stands only in the other witness's words,
+in a sentence none of whose numbers or pairs of words stands in the person's own, is
+misattributed too.
 """
 
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 
-from synapse.chat.verification import Checked, claims, fold, sentences, strip_unsupported
+from synapse.chat.verification import (
+    Checked,
+    claims,
+    fold,
+    sentences,
+    stands_in,
+    strip_unsupported,
+)
 
 # Saying, in the past forms Turkish reports words with: dedi, demiş, söylemiştir, beyan etti,
 # ifade etmiştir, belirtti, anlatmış. Read on folded text.
@@ -48,9 +58,20 @@ _NOT_NAMES = frozenset(
 )  # fmt: skip
 
 
+# Words that say nothing of whose words a sentence holds: joining words and the verbs of saying.
+_PLAIN = frozenset(
+    {
+        "ve", "ile", "da", "de", "bir", "bu", "şu", "için", "gibi", "olarak",
+        "olduğunu", "olduğu", "ise", "veya", "çok", "daha", "her", "kadar", "tanığı",
+        "tanık", "davacı", "davalı", "beyan", "etmiştir", "etti", "ifade", "belirtmiştir",
+        "belirtti", "söylemiştir", "söyledi", "demiştir", "dedi", "anlatmıştır",
+    }
+)  # fmt: skip
+
+
 @dataclass(frozen=True)
 class Misattributed:
-    """A sentence of the answer that gives ``person`` numbers someone else said."""
+    """A sentence of the answer that gives ``person`` numbers or words someone else said."""
 
     sentence: str
     person: str
@@ -107,11 +128,58 @@ def _owners(claim: str, source: str, person: str) -> set[str | None]:
     return owners
 
 
+def _stem(word: str) -> str:
+    """A word's first letters, enough to find it under another suffix."""
+    return word[: max(3, len(word) - 3)]
+
+
+def _pairs(sentence: str, person: str) -> list[tuple[str, str]]:
+    """Two words of ``sentence`` in a row, its person's name and plain words left out."""
+    words = [
+        w
+        for w in _WORD.findall(fold(sentence))
+        if len(w) > 2 and w not in _PLAIN and w not in person.split()  # noqa: PLR2004
+    ]
+    return list(pairwise(words))
+
+
+def _holds(pair: tuple[str, str], text: str) -> bool:
+    first, second = (re.escape(_stem(word)) for word in pair)
+    return re.search(rf"(?<!\w){first}\w*\s+{second}\w*", text) is not None
+
+
+def _said_by(source: str, person: str) -> dict[str | None, str]:
+    """``source`` by who says it: each person's words run from where it names them to where it
+    names the next person who says something (None: before anyone speaks)."""
+    folded = fold(source)
+    mentions = _speakers(source, folded, person)
+    parts: dict[str | None, list[str]] = {None: [folded[: mentions[0][0]] if mentions else folded]}
+    ends = [at for at, _ in mentions[1:]] + [len(folded)]
+    for (at, name), end in zip(mentions, ends, strict=True):
+        parts.setdefault(name, []).append(folded[at:end])
+    return {owner: " ".join(texts) for owner, texts in parts.items()}
+
+
+def _words_of_another(sentence: str, holding: Sequence[str], person: str) -> tuple[str, ...]:
+    """The pairs of words ``sentence`` gives ``person`` that stand only in someone else's words,
+    when nothing of the sentence (a pair, a number) stands in the person's own."""
+    said = [_said_by(source, person) for source in holding]
+    own = " ".join(parts.get(person, "") for parts in said)
+    others = " ".join(
+        text for parts in said for owner, text in parts.items() if owner not in {person, None}
+    )
+    pairs = _pairs(sentence, person)
+    if any(_holds(pair, own) for pair in pairs) or any(stands_in(c, own) for c in claims(sentence)):
+        return ()
+    return tuple(" ".join(pair) for pair in pairs if _holds(pair, others))
+
+
 def misattributed(
     sentences: Sequence[str], sources: Sequence[str], citations: Sequence[int]
 ) -> tuple[Misattributed, ...]:
-    """The sentences that put a number in the mouth of someone the cited sources do not give it
-    to. ``sources`` are numbered from 1; ``citations`` are the numbers the answer cites."""
+    """The sentences that put numbers or words in the mouth of someone the cited sources do not
+    give them to. ``sources`` are numbered from 1; ``citations`` are the numbers the answer
+    cites."""
     cited_sources = [sources[n - 1] for n in citations if 1 <= n <= len(sources)]
     wrong = []
     for sentence in sentences:
@@ -127,6 +195,8 @@ def misattributed(
                 owners = set().union(*(_owners(claim, s, person) for s in holding))
                 if owners and person not in owners and None not in owners:
                     given.append(claim)
+            if not given:
+                given = list(_words_of_another(sentence, holding, person))
             if given:
                 wrong.append(Misattributed(sentence, person, tuple(given)))
                 break

@@ -173,7 +173,7 @@ RETRY = (
 )
 # A sentence that gives a person numbers the source gives someone else (attribution.py).
 MISATTRIBUTED = (
-    "Cevabındaki şu sayıları kaynak başka bir kişinin sözü olarak veriyor: {claims}. Her "
+    "Cevabındaki şu bilgileri kaynak başka bir kişinin sözü olarak veriyor: {claims}. Her "
     "sözü yalnız kaynakta onu söyleyen kişiye bağla."
 )
 REWRITE_SYSTEM = (

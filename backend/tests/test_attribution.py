@@ -38,6 +38,16 @@ def test_a_number_given_to_the_wrong_witness_is_misattributed() -> None:
         )
 
 
+def test_words_given_to_the_wrong_witness_are_misattributed() -> None:
+    wrong = "Aydın Kocabey, cumartesi çalışmasının yarım gün olduğunu ifade etmiştir. [1]"
+    own = "Aydın Kocabey, öğle arasının yarım saat olduğunu beyan etmiştir. [1]"
+    numbers = "Aydın Kocabey, cumartesi 08:00 ile 14:00 arası çalıştıklarını söylemiştir. [1]"
+    right = "Erol Tunçbilek, cumartesi çalışmasının yarım gün olduğunu söylemiştir. [1]"
+    found = misattributed([wrong, own, numbers, right], [REPORT], [1])
+    assert [(m.sentence, m.person) for m in found] == [(wrong, "aydın kocabey")]
+    assert "yarım gün" in found[0].claims
+
+
 def test_only_sentences_reporting_words_are_read_for_whose_they_are() -> None:
     plain = "Aydın Kocabey davasında cumartesi çıkış saati 13:00'tür. [1]"
     assert misattributed([plain], [REPORT], [1]) == ()
