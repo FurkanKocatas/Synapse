@@ -125,6 +125,19 @@ Cost: the prompt grows from about 2,460 tokens to about 3,235, and reading it on
 
 On the golden set (the harness's run of c7fb109, `ROLES` and eight sources) six answers came out right that were wrong, two went wrong, two unanswerable questions were answered (32 of 34 refused), and seven answers failed: one prompt went past the chat server's 8,192 tokens a slot (`estimate_tokens` counted the eight chunks well under what the model reads), and six stopped on a llama.cpp error mid-answer ("Unexpected empty grammar stack after accepting piece"), which no run with six sources had. Eight sources are paused on a GPU too, the setting staying, until both are understood; `ROLES` stays.
 
+2026-10-13. The context's budget counted characters as bge-m3 does (3.6 a token); llama-server's own count on the 1,229 sources of the golden run gives the chat model 2.73 at the median, 2.03 at the densest tenth and 1.27 in a table of figures, so eight chunks of "4,000 tokens" read as up to 7,000 and more. The budget is now 5,600 of the chat model's tokens at 2.0 characters a token. The grammar error did not come back when the seven questions were sent by hand as the product sends them (streamed, under the schema), with six or eight sources, with or without `ROLES`: the hand-made requests lack the documents' opening words, and its cause is not found. An answer written from more than six sources that the chat server breaks is now written again from the first six, once, so it costs a retry rather than the answer, and eight sources are back with the model on a GPU.
+
+The harness's run of 88c1c5f (six sources and `ROLES`) also answered two unanswerable questions the run before refused: a council decision the corpus does not hold, answered with another decision, and a yearbook the corpus has not, answered from the year before. Four wordings of the sentence on the questions it could move (every unanswerable one, every one whose outcome changed between the two runs, the refused ones and 26 answered right, written and scanned: 86), each sent the same sources, verification not applied:
+
+| Sentence | answerable right, of 49 | answerable refused | unanswerable refused, of 37 |
+|---|---|---|---|
+| none | 29 | 8 | 31 |
+| `ROLES` as it was (who asked, said and decided what; a decision's value from the decision) | 30 | 5 | 30 |
+| narrowed: what is asked for or put forward is not written as decided; each person's words stay theirs | **31** | **5** | **31** |
+| narrowed, and a number, date or year the question asks that only another stands for is not written as it | 30 | 8 | 33 |
+
+The narrowed sentence was taken. The last refuses more unanswerable questions but refused two answerable ones the others answered, and a law firm writes the same file's number in more than one way.
+
 ## Limits
 
 - 75 questions: one answerable question is 1.5 points; the gap between the models is five to ten times that, the gap between contexts is not.

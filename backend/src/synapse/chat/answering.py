@@ -52,6 +52,7 @@ search, no sources, a system prompt that only says when it is.
 
 import asyncio
 import json
+import math
 import time
 from collections import Counter, deque
 from collections.abc import AsyncGenerator, Sequence
@@ -63,7 +64,7 @@ from uuid import UUID
 
 import structlog
 
-from synapse.chat.attribution import Misattributed, misattributed
+from synapse.chat.attribution import Misattributed, misattributed, without_wrong
 from synapse.chat.reply import AnswerStream, curly, parse, schema
 from synapse.chat.talk import (
     CLASSIC_CHARS,
@@ -86,11 +87,9 @@ from synapse.chat.verification import (
     anchored,
     check,
     cited,
-    claims,
     fold,
     sentences,
-    stands_in,
-    strip_unsupported,
+    uncertain_in,
 )
 from synapse.knowledge.public import (
     EVERYTHING,
@@ -98,28 +97,39 @@ from synapse.knowledge.public import (
     Hit,
     Scope,
     Search,
-    estimate_tokens,
     lower,
 )
-from synapse.models.public import ChatDelta, ChatMessage, ChatModel, ChatReply, ModelError
+from synapse.models.public import (
+    ChatDelta,
+    ChatMessage,
+    ChatModel,
+    ChatReply,
+    ModelError,
+    ModelTimeoutError,
+)
 
 log = structlog.get_logger(__name__)
 
 # The reranked candidates the context is chosen from (knowledge/search.py's RERANK_TOP).
 RERANKED = 15
-# The context's places unless the setting chat_sources says otherwise. Eight would bring in a
+# The context's places unless the setting chat_sources says otherwise, and what an answer falls
+# back to when more break it. Installations with the model on a GPU use eight: they bring in a
 # law firm's decision that ranked seventh and eighth, below the petitions asking for something
-# else, whose asked-for amount the model stated as decided; on the golden set eight broke seven
-# answers, and on the CPU alone the first token already takes a minute, so six stays for now
-# (docs/benchmarks/answers.md, "Who asked, who decided").
+# else, whose asked-for amount the model stated as decided. On the CPU alone the first token
+# already takes a minute (docs/benchmarks/answers.md, "Who asked, who decided").
 SOURCES = 6
 PER_DOCUMENT = 3
 # Words shared with an earlier source, of the smaller set, above which a source is a duplicate.
 DUPLICATE = 0.8
-# The 16 GB tier's budget for the sources: about 2,800 tokens in the answer benchmark for six
-# chunks, so eight usually fit; the chat server has 8,192 tokens per slot (synapsectl's
-# render.py).
-SOURCE_TOKENS = 4000
+# Characters per token of the chat model's tokenizer on the sources it reads, counted with
+# llama-server's /tokenize on the 1,229 sources of a golden run (2026-10-13): 2.73 at the
+# median, 2.03 at the densest tenth, 1.27 in a table of figures. The 3.6 that suits bge-m3
+# counted eight chunks well under what the chat model reads, and one prompt went past its
+# slot. The budget counts the densest tenth's way.
+CHAT_CHARS_PER_TOKEN = 2.0
+# The sources' budget in the chat model's tokens: a slot holds 8,192 (synapsectl's render.py),
+# and the instructions, the question, the answer and a retry take about 2,000 of them.
+SOURCE_TOKENS = 5600
 ANSWER_TOKENS = 600
 QUERY_TOKENS = 120
 # Turns of the conversation the rewriting sees, and how much of each answer.
@@ -139,11 +149,13 @@ WHEN_TO_REFUSE = (
 )
 # Who asked for a value, who said it and who decided it, as the source has it: a petition's
 # amount came back as the court's decision, and a witness's words as another's.
+# Narrowed on the golden set (docs/benchmarks/answers.md): the wider sentence ("keep who asked,
+# said and decided what", "take a decision's value from the decision") had the model answer
+# unanswerable questions about a decision the corpus does not hold.
 ROLES = (
-    "Kimin ne istediğini, ne söylediğini ve neye karar verdiğini kaynakta yazdığı gibi koru. "
-    "İstenen, önerilen ya da ileri sürülen bir değeri kabul edilmiş ya da karara bağlanmış "
-    "gibi yazma; soru bir kararı soruyorsa değeri kararın kendisinden al. Bir kaynakta "
-    "birden çok kişinin sözü varsa her cümleyi yalnız o sözü söyleyen kişiye bağla. "
+    "İstenen, önerilen ya da ileri sürülen bir değeri kabul edilmiş ya da karara bağlanmış gibi "
+    "yazma. Bir kaynakta birden çok kişinin sözü varsa her cümleyi yalnız o sözü söyleyen "
+    "kişiye bağla. "
 )
 SYSTEM = (
     "Sen bir kurumun belgelerinden soru cevaplayan bir asistansın. Yalnızca verilen "
@@ -341,7 +353,7 @@ def assemble(hits: Sequence[Hit], sources: int = SOURCES) -> list[Hit]:
         these = set(lower(hit.text).split())
         if any(_overlap(these, other) >= DUPLICATE for other in words):
             return
-        cost = estimate_tokens(source_text(hit))
+        cost = math.ceil(len(source_text(hit)) / CHAT_CHARS_PER_TOKEN)
         if tokens + cost > SOURCE_TOKENS:
             return
         picked.append((index, hit))
@@ -361,21 +373,6 @@ def assemble(hits: Sequence[Hit], sources: int = SOURCES) -> list[Hit]:
             break
         take(index, hit)
     return [hit for _, hit in sorted(picked, key=lambda pair: pair[0])]
-
-
-def uncertain_in(text: str, sources: Sequence[Hit]) -> tuple[str, ...]:
-    """The identifiers ``text`` states that OCR read on a page of ``sources`` without its second
-    reading agreeing (knowledge-base.md, OCR): verification finds them in the source, since the
-    source is what OCR read, yet the document may say otherwise; the reader checks them."""
-    folded = fold(text)
-    return tuple(
-        dict.fromkeys(
-            identifier
-            for hit in sources
-            for identifier in hit.uncertain
-            if (said := claims(identifier)) and all(stands_in(c, folded) for c in said)
-        )
-    )
 
 
 def _overlap(a: set[str], b: set[str]) -> float:
@@ -666,6 +663,22 @@ class Answerer:
             return
         yield Answer("answered", text.strip(), [], message, best, seconds=seconds, kind=kind)
 
+    async def _attempt(
+        self, messages: list[ChatMessage], sources: int, started: float, seconds: dict[str, float]
+    ) -> AsyncGenerator[Delta | ChatReply]:
+        """One reply of the chat model: its answer's text as it comes, then the reply."""
+        assert self._chat is not None  # noqa: S101  (the caller checks)
+        shown = AnswerStream()
+        stream = self._chat.stream(messages, schema=schema(sources), max_tokens=ANSWER_TOKENS)
+        async with aclosing(stream) as parts:
+            async for part in parts:
+                if isinstance(part, ChatDelta):
+                    seconds.setdefault("first_token", _since(started))
+                    if text := shown.feed(part.text):
+                        yield Delta(text)
+                else:
+                    yield part
+
     async def _generate(
         self,
         question: str,
@@ -681,18 +694,27 @@ class Answerer:
         try:
             while True:
                 reply: ChatReply | None = None
-                shown = AnswerStream()
-                stream = self._chat.stream(
-                    messages, schema=schema(len(sources)), max_tokens=ANSWER_TOKENS
-                )
-                async with aclosing(stream) as parts:
-                    async for part in parts:
-                        if isinstance(part, ChatDelta):
-                            seconds.setdefault("first_token", _since(started))
-                            if text := shown.feed(part.text):
-                                yield Delta(text)
-                        else:
-                            reply = part
+                attempt = self._attempt(messages, len(sources), started, seconds)
+                try:
+                    async with aclosing(attempt) as parts:
+                        async for part in parts:
+                            if isinstance(part, ChatReply):
+                                reply = part
+                            else:
+                                yield part
+                except ModelError as error:
+                    # More sources than the default can break an answer the default would
+                    # give (docs/benchmarks/answers.md): the answer is written again from the
+                    # first six, once. A timeout is not tried twice.
+                    if len(context) <= SOURCES or isinstance(error, ModelTimeoutError):
+                        raise
+                    log.warning("chat.fewer_sources", error=str(error), sources=len(context))
+                    context = context[:SOURCES]
+                    sources = [source_text(h) for h in context]
+                    messages = prompt(question, context)
+                    retried = False
+                    yield Retrying(())
+                    continue
                 assert reply is not None  # noqa: S101  (stream ends with the reply)
                 text, sufficient = parse(reply.content)
                 if not sufficient or not text or NOT_FOUND in fold(text):
@@ -719,12 +741,8 @@ class Answerer:
                 "failed", "", [], question, best, error="chat_unavailable", seconds=seconds
             )
             return
-        stripped: tuple[str, ...] = ()
-        if not checked.ok or wrong:
-            text, stripped = strip_unsupported(text, checked.unsupported)
-            gone = {w.sentence for w in wrong}
-            stripped = (*stripped, *(s for s in sentences(text) if s in gone))
-            text = " ".join(s for s in sentences(text) if s not in gone)
+        text, stripped = without_wrong(text, checked, wrong)
+        if stripped:
             # Nothing left to read, citation markers aside, is no answer.
             if not CITATION.sub("", text).strip():
                 seconds["answer"] = _since(started)

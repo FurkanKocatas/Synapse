@@ -40,7 +40,13 @@ from synapse.chat.reply import AnswerStream, curly, parse, schema, written
 from synapse.chat.talk import CLASSIC_TURNS, moment, small_talk
 from synapse.chat.verification import check, cited, claims, sentences, strip_unsupported
 from synapse.knowledge.public import EVERYTHING, Folder, Found, Hit, Listed, Overview, Scope
-from synapse.models.public import ChatDelta, ChatMessage, ChatReply, ModelUnavailableError
+from synapse.models.public import (
+    ChatDelta,
+    ChatMessage,
+    ChatReply,
+    ModelResponseError,
+    ModelUnavailableError,
+)
 
 USER = uuid4()
 REFUSE_BELOW = -1.0
@@ -291,6 +297,21 @@ def test_the_prompt_keeps_who_asked_apart_from_who_decided() -> None:
     system = prompt("Mahkeme kirayı kaç TL tespit etti?", [hit("metin", n=1)])[0].content
     assert ROLES in system
     assert system.index(ROLES) < system.index(WHEN_TO_REFUSE)
+
+
+async def test_an_answer_eight_sources_break_is_written_again_from_six() -> None:
+    hits = [hit(f"Kurul {n} üyedir.", n=n) for n in range(1, 9)]
+    chat = StandInChat(ModelResponseError("chat", "grammar"), says(("Kurul 1 üyedir.", [1])))
+    search = StandInSearch(hits)
+    source = Answerer(search, chat, refuse_below=REFUSE_BELOW, sources=8)  # type: ignore[arg-type]
+    events = await events_of(source, "Kurul kaç üyedir?")
+    assert Retrying(()) in events
+    assert final(events).status == "answered"
+    assert chat.schemas[-1] == schema(SOURCES)
+    # With the default's six there is nothing to fall back to: the answer fails.
+    failing = StandInChat(ModelResponseError("chat", "grammar"))
+    answer = final(await events_of(answerer(hits, failing), "Kurul kaç üyedir?"))
+    assert answer.status == "failed"
 
 
 def test_the_context_stays_within_its_token_budget() -> None:

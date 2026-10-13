@@ -20,7 +20,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from synapse.chat.verification import claims, fold
+from synapse.chat.verification import Checked, claims, fold, sentences, strip_unsupported
 
 # Saying, in the past forms Turkish reports words with: dedi, demiş, söylemiştir, beyan etti,
 # ifade etmiştir, belirtti, anlatmış. Read on folded text.
@@ -131,3 +131,15 @@ def misattributed(
                 wrong.append(Misattributed(sentence, person, tuple(given)))
                 break
     return tuple(wrong)
+
+
+def without_wrong(
+    text: str, checked: Checked, wrong: Sequence[Misattributed]
+) -> tuple[str, tuple[str, ...]]:
+    """``text`` without the sentences verification found wrong, and those sentences."""
+    if checked.ok and not wrong:
+        return text, ()
+    text, removed = strip_unsupported(text, checked.unsupported)
+    gone = {w.sentence for w in wrong}
+    kept = [s for s in sentences(text) if s not in gone]
+    return " ".join(kept), (*removed, *(s for s in sentences(text) if s in gone))

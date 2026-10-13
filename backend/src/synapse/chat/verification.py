@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from synapse.chat.numerals import numeric
-from synapse.knowledge.public import lower
+from synapse.knowledge.public import Hit, lower
 
 PLAIN = str.maketrans(
     {chr(c): "'" for c in (0x2018, 0x2019, 0x02BC)}
@@ -149,3 +149,18 @@ def strip_unsupported(answer: str, unsupported: Sequence[str]) -> tuple[str, tup
     for sentence in sentences(answer):
         (removed if bad.intersection(claims(sentence)) else kept).append(sentence)
     return " ".join(kept), tuple(removed)
+
+
+def uncertain_in(text: str, sources: Sequence[Hit]) -> tuple[str, ...]:
+    """The identifiers ``text`` states that OCR read on a page of ``sources`` without its second
+    reading agreeing (knowledge-base.md, OCR): verification finds them in the source, since the
+    source is what OCR read, yet the document may say otherwise; the reader checks them."""
+    folded = fold(text)
+    return tuple(
+        dict.fromkeys(
+            identifier
+            for hit in sources
+            for identifier in hit.uncertain
+            if (said := claims(identifier)) and all(stands_in(c, folded) for c in said)
+        )
+    )
