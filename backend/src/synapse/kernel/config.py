@@ -102,6 +102,11 @@ class Settings(BaseSettings):
     # where a decision that ranked below the petitions comes in (docs/benchmarks/answers.md,
     # "Who asked, who decided"). The installer sets it by the accelerator.
     chat_sources: int = Field(default=6, ge=1, le=12)
+    # The sources' budget in the chat model's tokens (chat/answering.py, SOURCE_TOKENS). On the
+    # CPU alone the model reads a prompt at about 65 tokens a second, so the first token waits on
+    # the sources' length; the default keeps it within ADR 0009's minute there, and the installer
+    # writes 5,600 with the model on a GPU (docs/benchmarks/answers.md, "On the CPU alone").
+    chat_source_tokens: int = Field(default=2400, ge=500, le=5600)
     # A message whose search finds nothing good enough and that the chat model judges to be a
     # question of general knowledge (not about the organisation) or a request for help with
     # writing is answered from general knowledge, marked as not resting on the documents. Off:

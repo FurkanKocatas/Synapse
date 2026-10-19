@@ -15,7 +15,7 @@ ADR 0010's query rules, in order (docs/design/answers.md):
    context holds word for word (``anchored``) goes to the model whatever the score.
 7. The context: at most six chunks (eight with the model on a GPU: the setting
    ``chat_sources``), at most three of one document, near-duplicates left out, in
-   the reranker's order, within a token budget.
+   the reranker's order, within a token budget (``chat_source_tokens``; smaller on the CPU).
 9. The chat model answers under a JSON schema the server enforces: the answer as a list of
    sentences, each with the numbers of the sources it rests on (at least one, and only numbers
    of sources shown), then ``sufficient``. Told in the prompt only, a 4B model put a citation
@@ -128,7 +128,8 @@ DUPLICATE = 0.8
 # slot. The budget counts the densest tenth's way.
 CHAT_CHARS_PER_TOKEN = 2.0
 # The sources' budget in the chat model's tokens: a slot holds 8,192 (synapsectl's render.py),
-# and the instructions, the question, the answer and a retry take about 2,000 of them.
+# and the instructions, the question, the answer and a retry take about 2,000 of them. The
+# setting chat_source_tokens lowers it where the model reads the prompt on the CPU alone.
 SOURCE_TOKENS = 5600
 ANSWER_TOKENS = 600
 QUERY_TOKENS = 120
@@ -335,9 +336,9 @@ def source_text(hit: Hit) -> str:
     return "\n".join(part for part in parts if part)
 
 
-def assemble(hits: Sequence[Hit], sources: int = SOURCES) -> list[Hit]:
+def assemble(hits: Sequence[Hit], sources: int = SOURCES, budget: int = SOURCE_TOKENS) -> list[Hit]:
     """The context: the best hits in order, at most ``sources``, no near-duplicate of one
-    already in, within ``SOURCE_TOKENS``; at most ``PER_DOCUMENT`` of one document while other
+    already in, within ``budget`` tokens; at most ``PER_DOCUMENT`` of one document while other
     documents' hits are there to take the places. Places left free then take the hits passed
     over for that limit, in order: when all the candidates are one document's, the answer sees
     more of it (the evidence was on the first-ranked page and three chunks of that document
@@ -354,7 +355,7 @@ def assemble(hits: Sequence[Hit], sources: int = SOURCES) -> list[Hit]:
         if any(_overlap(these, other) >= DUPLICATE for other in words):
             return
         cost = math.ceil(len(source_text(hit)) / CHAT_CHARS_PER_TOKEN)
-        if tokens + cost > SOURCE_TOKENS:
+        if tokens + cost > budget:
             return
         picked.append((index, hit))
         words.append(these)
@@ -406,7 +407,7 @@ class _Steps:
 
 
 class Answerer:
-    def __init__(
+    def __init__(  # noqa: PLR0913  (one argument per setting, as app.py passes them)
         self,
         search: Search,
         chat: ChatModel | None,
@@ -414,6 +415,7 @@ class Answerer:
         refuse_below: float,
         general: bool = True,
         sources: int = SOURCES,
+        source_tokens: int = SOURCE_TOKENS,
         gate: Gate | None = None,
     ) -> None:
         self._search = search
@@ -421,6 +423,7 @@ class Answerer:
         self._refuse_below = refuse_below
         self._general = general
         self._sources = sources
+        self._source_tokens = source_tokens
         self._gate = gate or Gate()
 
     async def answer(
@@ -513,12 +516,12 @@ class Answerer:
             user_id, standalone, limit=RERANKED, scope=steps.scope
         )
         seconds["candidates"] = steps.since()
-        if first := assemble(found.hits, self._sources):
+        if first := assemble(found.hits, self._sources, self._source_tokens):
             yield Sources(first, found.warnings, ranked=False)
         found = await self._search.rerank(standalone, found, limit=RERANKED)
         seconds["search"] = steps.since()
         best = _best(found)
-        context = assemble(found.hits, self._sources)
+        context = assemble(found.hits, self._sources, self._source_tokens)
         yield Sources(context, found.warnings)
         low = best is not None and best < self._refuse_below
         if not context or (low and not anchored(standalone, [source_text(h) for h in context])):

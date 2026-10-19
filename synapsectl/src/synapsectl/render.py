@@ -28,6 +28,10 @@ from synapsectl.secrets import APP_UID, DATABASE_ROLES
 # first token already takes about a minute (docs/benchmarks/answers.md, "Who asked, who
 # decided").
 CHAT_SOURCES = {Accelerator.CPU: 6, Accelerator.VULKAN: 8}
+# Their budget in the chat model's tokens (the API's chat_source_tokens): on the CPU alone the
+# model reads the prompt at about 65 tokens a second, and a smaller budget keeps the first
+# token within ADR 0009's minute (docs/benchmarks/answers.md, "On the CPU alone").
+CHAT_SOURCE_TOKENS = {Accelerator.CPU: 2400, Accelerator.VULKAN: 5600}
 
 # A tmpfs mount point inside the containers, not a file created on the host.
 CONTAINER_TMP = ["/tmp"]  # noqa: S108
@@ -200,6 +204,9 @@ def compose(config: SynapseConfig) -> dict[str, Any]:
                     "SYNAPSE_TRUSTED_PROXY_IPS": config.network.subnet,
                     "SYNAPSE_CHAT_SOURCES": str(
                         CHAT_SOURCES[Accelerator(config.models.accelerator)]
+                    ),
+                    "SYNAPSE_CHAT_SOURCE_TOKENS": str(
+                        CHAT_SOURCE_TOKENS[Accelerator(config.models.accelerator)]
                     ),
                     # Passkeys are bound to this address (docs/design/identity.md).
                     "SYNAPSE_PUBLIC_URL": f"https://{site_address(config)}",

@@ -121,7 +121,7 @@ Two answers a law firm counts as critical errors came out of it. Asked what the 
 
 `ROLES` and eight sources were taken, eight with the model on a GPU only, then paused there too (below): on this archive the rent answer is right on both wordings of the question, and none of the 20 the earlier prompt answered broke. `ROLES` alone mended three incomplete answers (both maintenance amounts, the days a penalty counts). The witness answer is not mended by any variant: the expert report sums up both witnesses in one paragraph and the 4B model joins them. Verification now reads whose words a number is ([attribution.py](../../backend/src/synapse/chat/attribution.py)): a sentence that says a person said something and gives them a number that stands only in someone else's words is sent back to the model once, then removed. In that answer it removes the sentence giving the first witness the other's 13:00. Since 2026-10-13 it also reads two words in a row, when nothing of the sentence (a pair, a number) stands in the person's own words: "yarım gün", the other witness's, goes too, while "öğle arası yarım saat", the first witness's own, stays. It flags none of the 413 answers of the harness's runs of 88c1c5f and c7fb109.
 
-Cost: the prompt grows from about 2,460 tokens to about 3,235, and reading it on the integrated GPU from 15.0 to 19.9 seconds, so an answer comes about five seconds later. On the CPU alone (the same machine, the model servers without Vulkan, six sources) five demo questions got their first token after 60.6 to 69.3 seconds and their whole answer after 68 to 104: already past ADR 0009's 60 seconds to the first token, before this change. By the prompt's growth, eight sources would add about fifteen seconds there (estimated, not measured), so on the CPU alone the context stays at six (the setting `chat_sources`, which the installer writes by the accelerator). Until the CPU's first token is mended, a customer's machine needs at least an integrated GPU.
+Cost: the prompt grows from about 2,460 tokens to about 3,235, and reading it on the integrated GPU from 15.0 to 19.9 seconds, so an answer comes about five seconds later. On the CPU alone (the same machine, the model servers without Vulkan, six sources) five demo questions got their first token after 60.6 to 69.3 seconds and their whole answer after 68 to 104: already past ADR 0009's 60 seconds to the first token, before this change. By the prompt's growth, eight sources would add about fifteen seconds there (estimated, not measured), so on the CPU alone the context stays at six (the setting `chat_sources`, which the installer writes by the accelerator). The CPU's first token was mended on 2026-10-19 with a smaller budget for the sources ([On the CPU alone](#on-the-cpu-alone)).
 
 On the golden set (the harness's run of c7fb109, `ROLES` and eight sources) six answers came out right that were wrong, two went wrong, two unanswerable questions were answered (32 of 34 refused), and seven answers failed: one prompt went past the chat server's 8,192 tokens a slot (`estimate_tokens` counted the eight chunks well under what the model reads), and six stopped on a llama.cpp error mid-answer ("Unexpected empty grammar stack after accepting piece"), which no run with six sources had. Eight sources are paused on a GPU too, the setting staying, until both are understood; `ROLES` stays.
 
@@ -137,6 +137,22 @@ The harness's run of 88c1c5f (six sources and `ROLES`) also answered two unanswe
 | narrowed, and a number, date or year the question asks that only another stands for is not written as it | 30 | 8 | 33 |
 
 The narrowed sentence was taken. The last refuses more unanswerable questions but refused two answerable ones the others answered, and a law firm writes the same file's number in more than one way.
+
+## On the CPU alone
+
+2026-10-19. An installation without a GPU must answer within ADR 0009's 60 seconds to the first token too. On the CPU alone the chat model reads a prompt at 57 to 68 tokens a second on the reference machine (Qwen3.5-4B Q4_K_M in a llama-server of its own with the stack's CPU image and flags, Turkish documents' text, the faster of two sends with the cache off): 25.0 seconds for 1,700 tokens, 39.3 for 2,500. No setting read faster: six or twelve threads for the batch and the generation, flash attention, and micro-batches of 256 or 1,024 tokens each came out 1 to 4 seconds slower than the defaults. The first token is therefore about the 8 seconds that search and reranking take there plus the prompt's tokens over 57, and the prompt is mostly the sources.
+
+Through the product (the demo stack with the model servers on the CPU, six sources at most, six demo questions):
+
+| Sources' budget | Sources | Prompt, tokens | First token | Whole answer |
+|---|---|---|---|---|
+| 5,600 | 6 | 2,956 to 3,519 | 63.1 to 72.6 s | 72 to 106 s |
+| 3,200 | 5 or 6 | 2,357 to 2,875 | 51.6 to 60.1 s | 61 to 97 s |
+| 2,400 | 3 or 4 | 1,747 to 2,169 | 40.7 to 47.4 s | 46 to 83 s |
+
+The same five of the six were right at every budget; the rent question (above) was wrong at every one, its decision's operative words ranking seventh and eighth, below the petition's nearly identical request. The setting `chat_source_tokens` (2,400 by default; the installer writes 5,600 with the model on a GPU) keeps the CPU's first token about 13 seconds under the minute on this machine. A retry after verification reads only about 260 new tokens, the rest of the prompt being in the slot's cache.
+
+On the golden set, the API set as a CPU installation sets it (six sources within 2,400 tokens; the model servers on the GPU, where the run takes two hours, not a day: the answer depends on the prompt, not on where it is read), against the harness's run of 7b09a02 (eight within 5,600): correct 0.806 against 0.812 (154 answers right against 155), answerable refused 0.068 against 0.063, scanned documents' answers 0.857 both, and 30 of 34 unanswerable questions refused against 32: three answered from documents that do not hold the answer (a staff count, building densities, a strategic plan's number of aims) and one the eight-source run answered refused. The median first token there was 15.2 seconds against 28.7.
 
 ## Limits
 

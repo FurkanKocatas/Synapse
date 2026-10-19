@@ -214,6 +214,7 @@ def _attach_services(app: FastAPI, settings: Settings, database: Database, model
             refuse_below=settings.chat_refuse_below,
             general=settings.chat_general_answers,
             sources=settings.chat_sources,
+            source_tokens=settings.chat_source_tokens,
         ),
         classic=settings.chat_classic,
     )

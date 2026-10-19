@@ -204,6 +204,8 @@ def test_the_answers_read_as_many_sources_as_the_accelerator_allows(
         api = render.compose(setup)["services"]["api"]
         sources = render.CHAT_SOURCES[Accelerator(setup.models.accelerator)]
         assert api["environment"]["SYNAPSE_CHAT_SOURCES"] == str(sources)
+        tokens = render.CHAT_SOURCE_TOKENS[Accelerator(setup.models.accelerator)]
+        assert api["environment"]["SYNAPSE_CHAT_SOURCE_TOKENS"] == str(tokens)
 
 
 def test_the_api_and_the_worker_call_the_model_servers(config: SynapseConfig) -> None:

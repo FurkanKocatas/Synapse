@@ -293,6 +293,31 @@ def test_the_context_takes_as_many_sources_as_set() -> None:
     assert assemble(hits, 8) == hits[:8]
 
 
+def long_hits() -> list[Hit]:
+    """Five sources of other documents, about 1,300 of the chat model's tokens each."""
+    return [hit(" ".join(f"söz{i}x{j}" for j in range(300)), n=i) for i in range(5)]
+
+
+def test_the_context_takes_as_many_tokens_as_set() -> None:
+    hits = long_hits()
+    assert assemble(hits) == hits[:4]
+    assert assemble(hits, budget=3000) == hits[:2]
+
+
+async def test_an_answer_reads_its_sources_within_the_budget_set() -> None:
+    hits = long_hits()
+    chat = StandInChat(says(("Kurul 1 üyedir.", [1])))
+    search = StandInSearch(hits)
+    source = Answerer(
+        search,  # type: ignore[arg-type]
+        chat,
+        refuse_below=REFUSE_BELOW,
+        source_tokens=3000,
+    )
+    events = await events_of(source, "Kurul kaç üyedir?")
+    assert [len(e.hits) for e in events if isinstance(e, Sources)] == [2, 2]
+
+
 def test_the_prompt_keeps_who_asked_apart_from_who_decided() -> None:
     system = prompt("Mahkeme kirayı kaç TL tespit etti?", [hit("metin", n=1)])[0].content
     assert ROLES in system
