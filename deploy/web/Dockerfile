@@ -3,7 +3,7 @@
 
 ARG NODE=node:24-trixie-slim@sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584578ca4bb28af31120cffe
 ARG CADDY=caddy:2.11-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b
-ARG GO=golang:1.26.9-alpine3.24@sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec66b295eff4dd87ade
+ARG GO=golang:1.26.10-alpine3.24@sha256:9ce231b28998b32e116927c61aa5c406183061d4f3f2d61b292c88e7f6bdf7ca
 
 FROM ${NODE} AS build
 RUN corepack enable
@@ -21,6 +21,7 @@ ARG CADDY_VERSION=v2.11.4
 ARG XCADDY_VERSION=v0.4.7
 RUN go install github.com/caddyserver/xcaddy/cmd/xcaddy@${XCADDY_VERSION}
 RUN CGO_ENABLED=0 xcaddy build ${CADDY_VERSION} --output /caddy \
+      --replace github.com/klauspost/compress=github.com/klauspost/compress@v1.18.7 \
       --replace golang.org/x/crypto=golang.org/x/crypto@v0.57.0 \
       --replace golang.org/x/net=golang.org/x/net@v0.60.0 \
       --replace golang.org/x/text=golang.org/x/text@v0.42.0 \
