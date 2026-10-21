@@ -110,7 +110,7 @@ from synapse.models.public import (
 
 log = structlog.get_logger(__name__)
 
-# The reranked candidates the context is chosen from (knowledge/search.py's RERANK_TOP).
+# The reranked hits the context is chosen from; the reranker reads ``Search.rerank_top``.
 RERANKED = 15
 # The context's places unless the setting chat_sources says otherwise, and what an answer falls
 # back to when more break it. Installations with the model on a GPU use eight: they bring in a
@@ -513,7 +513,7 @@ class Answerer:
             if standalone != question:
                 yield Rewritten(standalone)
         found = await self._search.candidates(
-            user_id, standalone, limit=RERANKED, scope=steps.scope
+            user_id, standalone, limit=max(RERANKED, self._search.rerank_top), scope=steps.scope
         )
         seconds["candidates"] = steps.since()
         if first := assemble(found.hits, self._sources, self._source_tokens):

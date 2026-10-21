@@ -206,6 +206,8 @@ def test_the_answers_read_as_many_sources_as_the_accelerator_allows(
         assert api["environment"]["SYNAPSE_CHAT_SOURCES"] == str(sources)
         tokens = render.CHAT_SOURCE_TOKENS[Accelerator(setup.models.accelerator)]
         assert api["environment"]["SYNAPSE_CHAT_SOURCE_TOKENS"] == str(tokens)
+        top = render.SEARCH_RERANK_TOP[Accelerator(setup.models.accelerator)]
+        assert api["environment"]["SYNAPSE_SEARCH_RERANK_TOP"] == str(top)
 
 
 def test_the_api_and_the_worker_call_the_model_servers(config: SynapseConfig) -> None:

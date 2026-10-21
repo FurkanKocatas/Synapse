@@ -8,7 +8,7 @@ The golden set's 225 questions ([eval/golden/](../../eval/golden/README.md)): 19
 
 Every question goes through the `synapse-golden` stack's API (the 97 corpus documents ingested, the model servers on the reference machine's integrated GPU, [search.md](../design/search.md#measured)):
 
-1. `POST /api/search`, reranked: the best reranker score of each question (bge-reranker-v2-m3's logit over the fusion's first 15).
+1. `POST /api/search`, reranked: the best reranker score of each question (bge-reranker-v2-m3's logit over the fusion's first 15; 50 with the model on a GPU since 2026-10-21).
 2. `POST /api/chat` with refusal before generation off (`SYNAPSE_CHAT_REFUSE_BELOW=-100`), so every question reaches the model: whether the model itself says the sources do not suffice.
 3. Each threshold applied afterwards to both: a question is refused when its best score is below the threshold or when the model did not answer it.
 

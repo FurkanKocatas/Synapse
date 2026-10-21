@@ -202,7 +202,11 @@ def _attach_services(app: FastAPI, settings: Settings, database: Database, model
     app.state.upload_max_bytes = settings.upload_max_mb * 1024 * 1024
     app.state.documents = DocumentService(database, blobs, tenant_id=tenant_id)
     search = Search(
-        database, tenant_id=tenant_id, embedder=models.embedder, reranker=models.reranker
+        database,
+        tenant_id=tenant_id,
+        embedder=models.embedder,
+        reranker=models.reranker,
+        rerank_top=settings.search_rerank_top,
     )
     app.state.search = search
     app.state.conversations = Conversations(

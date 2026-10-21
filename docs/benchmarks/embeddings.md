@@ -106,6 +106,24 @@ Cutting question and chunk to fewer tokens is no way out. At 384 tokens (5.9 s) 
 
 **Its cost on the CPU is the problem.** Ten candidates take 8.2 s per question under PyTorch on the 6600H, 10.6 s on ONNX Runtime in full precision (a graph exported from the PyTorch weights; it ranks the same) and 6.6 s with int8 weights (whose quality, after the encoders, is not to be trusted without a run of its own). The budget for sources on screen is 3 seconds (ADR 0009). On the integrated GPU it fits (below).
 
+### Reranking more candidates
+
+2026-10-21. The reranker read the fusion's first 15, and a question whose evidence the fusion ranked below them could not be found however well the reranker would have ranked it. On the demo archive two questions about a hearing ("the last hearing of file 2025/412", "Hasan Ergüven's next hearing") had their hearing minutes at fused ranks 16 to 39, below a long expert report and petitions that name the file and the person on every page. On the golden set through the product (eval/retrieval/product.py, the golden stack's API on the development checkout's image, reranked Hit@1 / Hit@10 / MRR@10, and the median seconds of a reranked search on the integrated GPU):
+
+| The reranker reads | As written | Paraphrased | Scanned | Seconds |
+|---|---|---|---|---|
+| the first 15 | 0.764 / 0.969 / 0.850 | 0.545 / 0.812 / 0.638 | 0.929 / 1.000 / 0.964 | 4.4 |
+| the first 30 | 0.780 / 0.979 / 0.861 | 0.581 / 0.864 / 0.679 | the same | 8.5 |
+| **the first 50** | **0.780 / 0.984 / 0.862** | **0.586 / 0.885 / 0.694** | the same | 14.3 |
+| the first 15, at most 3 of one document | 0.738 / 0.921 / 0.810 | 0.466 / 0.660 / 0.536 | 0.964 / 1.000 / 0.982 | |
+| the first 15, at most 4 of one document | 0.754 / 0.942 / 0.829 | 0.482 / 0.702 / 0.563 | 0.929 / 1.000 / 0.964 | |
+
+Reading more lifts every column, most the paraphrased questions' Hit@10 (7.3 points at 50). Making room among the 15 by taking at most three or four chunks of one document instead costs on every set but the scanned one: the golden set's evidence is a page of a long document, and finding the page takes that document's many chunks.
+
+Through the product on the demo archive (eight sources, every demo question asked once, the checks of the earlier tables): 23 right with 15, 24 with 30 and 24 with 50. With 30 the last-hearing question was answered with the hearing before the last (04.02.2026: the last one's minutes, fused 39th, still out of reach), where 15 had refused it; with 50 the date is right (23.09.2026), the hearing's interim decisions still those of the one before. The next-hearing question stays refused: its minutes come first, below the refusal's threshold (0.78). The first token came after 31.4 seconds at the median with 15, 35.6 with 30 and 41.0 with 50 (the longest 46.6).
+
+The reranker reads the first 50 with the model on a GPU (`search_rerank_top`, which the installer writes by the accelerator) and the first 15 on the CPU alone, where reranking 15 already takes about 8 seconds of the minute to the first token ([answers.md](answers.md#on-the-cpu-alone)).
+
 ## llama.cpp on the CPU and on the integrated GPU
 
 llama.cpp, ADR 0009's default engine for chat, also serves encoders (`--embedding`, `--reranking`), on the CPU or on a GPU through Vulkan, which current integrated GPUs support. The reference machine has one: the 6600H's Radeon 680M (12 compute units, no memory of its own: 3 GB of the system memory are reserved for it, and it may use up to 9 GB). bge-m3 and the reranker were converted from the same revisions with llama.cpp's own converter, at the pinned server image's build (b11243), to 16-bit and to 8-bit (Q8_0) weights; the script tokenizes and cuts texts exactly as on the other backends ([llama_encoder.py](../../eval/retrieval/llama_encoder.py)).

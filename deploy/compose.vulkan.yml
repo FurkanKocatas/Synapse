@@ -19,6 +19,7 @@ services:
       # Eight sources with the model on the GPU, as installations do (synapsectl/render.py).
       SYNAPSE_CHAT_SOURCES: "8"
       SYNAPSE_CHAT_SOURCE_TOKENS: "5600"
+      SYNAPSE_SEARCH_RERANK_TOP: "50"
 
   llm-embed:
     <<: *gpu

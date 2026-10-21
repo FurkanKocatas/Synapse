@@ -106,6 +106,12 @@ class Settings(BaseSettings):
     # CPU alone the model reads a prompt at about 65 tokens a second, so the first token waits on
     # the sources' length; the default keeps it within ADR 0009's minute there, and the installer
     # writes 5,600 with the model on a GPU (docs/benchmarks/answers.md, "On the CPU alone").
+    # The fusion's first chunks the reranker reads (knowledge/search.py, RERANK_TOP). More of them
+    # find more of the evidence, most for questions asked in other words, at about 0.3 seconds a
+    # chunk on an integrated GPU and far more on the CPU alone, where it stays at 15; the
+    # installer writes more with the model on a GPU (docs/benchmarks/embeddings.md, "Reranking
+    # more").
+    search_rerank_top: int = Field(default=15, ge=5, le=100)
     chat_source_tokens: int = Field(default=2400, ge=500, le=5600)
     # A message whose search finds nothing good enough and that the chat model judges to be a
     # question of general knowledge (not about the organisation) or a request for help with

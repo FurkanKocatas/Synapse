@@ -16,7 +16,9 @@ measured:
    (``with_synonyms``, ADR 0010 query rule 1), and so does the reranker.
 2. **Fusion** by reciprocal rank (k 60) of the two top-50 lists: ranks only. No score is ever
    compared with a threshold; fused scores have no absolute meaning (ADR 0010).
-3. **Reranking** of the fusion's top 15 by the cross-encoder, the rest following in fused order.
+3. **Reranking** of the fusion's first ``rerank_top`` by the cross-encoder (15 on the CPU alone,
+   more with the model on a GPU: the setting ``search_rerank_top``), the rest following in
+   fused order.
    The fused order is available first (``candidates``), the reranked one when the reranker
    answers (``rerank``), so sources can be shown within the latency budget.
 
@@ -44,6 +46,8 @@ from synapse.models.public import Embedder, ModelError, Reranker
 log = structlog.get_logger(__name__)
 
 CANDIDATES = 50
+# The fusion's first chunks the reranker reads unless the setting search_rerank_top says
+# otherwise.
 RERANK_TOP = 15
 # Lexical terms (``lexical_text``): words cut to their first five letters, a stand-in for
 # Turkish lemmas that ranked above PostgreSQL's Snowball stems on the golden set (Hit@10 0.963
@@ -201,11 +205,13 @@ class Search:
         tenant_id: UUID,
         embedder: Embedder | None = None,
         reranker: Reranker | None = None,
+        rerank_top: int = RERANK_TOP,
     ) -> None:
         self._db = database
         self._tenant_id = tenant_id
         self._embedder = embedder
         self._reranker = reranker
+        self.rerank_top = rerank_top
 
     async def candidates(
         self, user_id: UUID, query: str, *, limit: int = RERANK_TOP, scope: Scope = EVERYTHING
@@ -232,11 +238,11 @@ class Search:
         )
 
     async def rerank(self, query: str, found: Found, *, limit: int) -> Found:
-        """The candidates' first 15 in the reranker's order, then the rest as they were; the
-        reranker reads what the candidates were searched for, synonyms included."""
+        """The candidates' first ``rerank_top`` in the reranker's order, then the rest as they
+        were; the reranker reads what the candidates were searched for, synonyms included."""
         if self._reranker is None or not found.hits:
             return replace(found, hits=found.hits[:limit])
-        top, rest = found.hits[:RERANK_TOP], found.hits[RERANK_TOP:]
+        top, rest = found.hits[: self.rerank_top], found.hits[self.rerank_top :]
         started = time.perf_counter()
         try:
             scores = await self._reranker.rerank(
@@ -261,7 +267,9 @@ class Search:
     async def search(
         self, user_id: UUID, query: str, *, limit: int = 10, scope: Scope = EVERYTHING
     ) -> Found:
-        found = await self.candidates(user_id, query, limit=max(limit, RERANK_TOP), scope=scope)
+        found = await self.candidates(
+            user_id, query, limit=max(limit, self.rerank_top), scope=scope
+        )
         return await self.rerank(query, found, limit=limit)
 
     async def _synonyms(self) -> list[list[str]]:

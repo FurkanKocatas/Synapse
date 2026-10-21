@@ -113,6 +113,7 @@ class StandInSearch:
         self.reranked = reranked
         self.queries: list[str] = []
         self.scopes: list[Scope] = []
+        self.rerank_top = 15
 
     async def candidates(
         self, user_id: UUID, query: str, *, limit: int = 15, scope: Scope = EVERYTHING

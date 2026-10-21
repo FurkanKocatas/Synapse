@@ -11,7 +11,7 @@ flowchart LR
     L --> F["reciprocal rank fusion (k 60)"]
     D --> F
     F --> S["fused order<br/>(sources at once)"]
-    F --> R["reranker on the first 15"] --> O["reranked order<br/>(replaces it)"]
+    F --> R["reranker on the first 15<br/>(50 on a GPU)"] --> O["reranked order<br/>(replaces it)"]
 ```
 
 1. **Who may see what.** Both candidate queries start from the same set: for every document `accessible_documents(user, 'read')` gives, its newest version that is searchable (`parsed`, `embedding` or `ready`). A chunk outside it is never a candidate, however well it scores, and a deleted document or a replaced version drops out at once (nothing is copied into a separate index). This is a pre-filter inside each SQL statement, not a post-filter that could be skipped ([authorization.md](authorization.md)).
@@ -19,7 +19,7 @@ flowchart LR
 2. **By words.** `document_chunks.search` holds the lexical terms (`lexical_text`) of the document's context, the chunk's heading path and its text, written with the chunk: the text lower-cased the Turkish way in Python (`turkish.lower`: PostgreSQL's own `lower` makes "IĞDIR" "iğdir"), every word without a digit cut to its first five letters ("kararları" and "kararı" are "karar"), and every identifier of four characters or more also whole ("2026/16", "e-81912396-105.04"). A chunk on a page read by OCR also has, as terms, the identifiers OCR's second reading found there that the text lacks (`extra_identifiers`, [knowledge-base.md](knowledge-base.md#ocr)): never shown, but a number the text misread is still found. A pg_textsearch BM25 index reads it with the `simple` configuration; the question becomes terms the same way. Five-letter prefixes rank above PostgreSQL's Snowball stems (the `turkish` configuration, migration 0015) on the golden set: measured below. A chunk holding none of the question's terms scores zero and is not a lexical candidate.
 3. **By meaning.** bge-m3's vector of the question against the chunks' (`halfvec(1024)`, HNSW, cosine), with `ef_search` 200 and an iterative scan in strict order, so the permission filter cannot leave the list short.
 4. **Fusion** by reciprocal rank of the two top-50 lists: ranks only, ties in order of first appearance. No score is compared with a threshold anywhere (ADR 0010): fused scores have no absolute meaning.
-5. **Reranking.** bge-reranker-v2-m3 reads the question with each of the fusion's first 15 (the chunk as embedded: context, headings, text) and orders them; the rest follow in fused order. ADR 0018: the fused order is shown at once, the reranked one replaces it when it arrives.
+5. **Reranking.** bge-reranker-v2-m3 reads the question with each of the fusion's first 15 (the chunk as embedded: context, headings, text) and orders them, the first 50 with the model on a GPU (`search_rerank_top`, which the installer writes by the accelerator: on an integrated GPU 50 take about 13 seconds, 15 about 4, and they find more of the evidence, most for questions asked in other words; [embeddings.md](../benchmarks/embeddings.md#reranking-more-candidates)); the rest follow in fused order. ADR 0018: the fused order is shown at once, the reranked one replaces it when it arrives.
 
 The question is searched for with its synonyms ([below](#synonyms)) by all three: words, meaning and the reranker.
 
