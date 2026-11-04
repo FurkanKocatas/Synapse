@@ -21,6 +21,7 @@ ARG CADDY_VERSION=v2.11.4
 ARG XCADDY_VERSION=v0.4.7
 RUN go install github.com/caddyserver/xcaddy/cmd/xcaddy@${XCADDY_VERSION}
 RUN CGO_ENABLED=0 xcaddy build ${CADDY_VERSION} --output /caddy \
+      --replace github.com/go-jose/go-jose/v4=github.com/go-jose/go-jose/v4@v4.1.8 \
       --replace github.com/klauspost/compress=github.com/klauspost/compress@v1.18.7 \
       --replace golang.org/x/crypto=golang.org/x/crypto@v0.57.0 \
       --replace golang.org/x/net=golang.org/x/net@v0.60.0 \
@@ -32,8 +33,10 @@ FROM ${CADDY}
 # 1024, which the kernel refuses once all capabilities are dropped). We listen on 8080.
 COPY --from=caddy /caddy /usr/bin/caddy
 # /data holds Caddy's certificates (including its internal CA) and must persist; /config
-# holds the running configuration. Both belong to the unprivileged user.
-RUN addgroup -S -g 10001 synapse \
+# holds the running configuration. Both belong to the unprivileged user. The base image's
+# packages lag behind Alpine's security fixes as Caddy's modules do, so they are upgraded here.
+RUN apk upgrade --no-cache \
+ && addgroup -S -g 10001 synapse \
  && adduser -S -D -H -u 10001 -G synapse synapse \
  && mkdir -p /data /config /etc/caddy/site.d \
  && chown 10001:10001 /data /config
