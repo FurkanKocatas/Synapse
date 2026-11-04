@@ -28,9 +28,9 @@ ADR 0010's query rules, in order (docs/design/answers.md):
     cited source. One that stands only in a source shown but not cited adds that citation; one
     that stands in none makes the model answer once more, told which; still unsupported, the
     sentences stating it are removed, and an answer left with nothing is no answer. A sentence
-    that reports what a person said is checked for whose words its numbers are
-    (attribution.py): one that gives a person a number the source gives someone else is
-    treated the same way, the model told which.
+    giving a person a number the source gives someone else is treated the same way, the model
+    told which (attribution.py). An answer whose cited sources name another organisation than
+    the one asked about, and never the one asked about, is no answer (subjects.py).
 
 Each turn takes one of the chat server's slots; a turn that finds them busy waits its turn and
 says where it stands in the queue (``Queued``).
@@ -66,6 +66,7 @@ import structlog
 
 from synapse.chat.attribution import Misattributed, misattributed, without_wrong
 from synapse.chat.reply import AnswerStream, curly, parse, schema
+from synapse.chat.subjects import other_organisation
 from synapse.chat.talk import (
     CLASSIC_CHARS,
     CLASSIC_SYSTEM,
@@ -745,24 +746,15 @@ class Answerer:
             )
             return
         text, stripped = without_wrong(text, checked, wrong)
-        if stripped:
-            # Nothing left to read, citation markers aside, is no answer.
-            if not CITATION.sub("", text).strip():
-                seconds["answer"] = _since(started)
-                yield Answer(
-                    "insufficient",
-                    "",
-                    [],
-                    question,
-                    best,
-                    checked,
-                    retried,
-                    stripped,
-                    seconds=seconds,
-                )
-                return
-            citations = [n for n in cited(text) if 1 <= n <= len(sources)]
+        citations = [n for n in cited(text) if 1 <= n <= len(sources)]
         seconds["answer"] = _since(started)
+        # Nothing left to read, citation markers aside, is no answer; nor is one resting on
+        # another organisation's documents than the one asked about (subjects.py).
+        if not CITATION.sub("", text).strip() or other_organisation(question, sources, citations):
+            yield Answer(
+                "insufficient", "", [], question, best, checked, retried, stripped, seconds=seconds
+            )
+            return
         # A claim that stands only in a source shown but not cited is grounded, cited wrongly:
         # the source it stands in is cited for it.
         numbers = sorted({*citations, *checked.lacking})

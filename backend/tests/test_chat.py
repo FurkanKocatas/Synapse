@@ -684,6 +684,18 @@ async def test_a_removed_sentence_leaves_no_citation_behind() -> None:
     assert (answer.status, answer.text) == ("insufficient", "")
 
 
+async def test_an_answer_resting_on_another_organisations_documents_is_no_answer() -> None:
+    # The golden set's u-01: asked about Trabzon's report, the model answered from Ordu's.
+    hits = [hit("ORDU BÜYÜKŞEHİR BELEDİYESİ personel toplamı 2.191 kişidir.")]
+    reply = says(("Toplam personel sayısı 2.191'dir.", [1]))
+    trabzon = "Trabzon Büyükşehir Belediyesi'nin raporuna göre personel sayısı kaçtır?"
+    answer = final(await events_of(answerer(hits, StandInChat(reply)), trabzon))
+    assert (answer.status, answer.text) == ("insufficient", "")
+    ordu = trabzon.replace("Trabzon", "Ordu")
+    answer = final(await events_of(answerer(hits, StandInChat(reply)), ordu))
+    assert (answer.status, answer.text) == ("answered", "Toplam personel sayısı 2.191'dir. [1]")
+
+
 async def test_an_identifier_ocr_was_unsure_of_is_flagged() -> None:
     # Page 1 was read by OCR, whose second reading did not confirm "2026/35" or "2026/40".
     hits = [hit("Karar 2026/35 okundu.", uncertain=("2026/35", "2026/40")), hit("Ek.", n=1)]
