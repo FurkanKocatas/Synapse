@@ -68,7 +68,11 @@ def upload(client: httpx2.Client) -> None:
     documents = {}
     for row in rows:
         name = Path(unquote(urlparse(row["source_url"]).path)).name
-        data = (CORPUS / "files" / f"{row['id']}.{row['format'].lower()}").read_bytes()
+        path = CORPUS / "files" / f"{row['id']}.{row['format'].lower()}"
+        if not path.exists():  # its publisher took it down since (eval/corpus/fetch.py)
+            print(f"{row['id']}: not downloaded, left out")
+            continue
+        data = path.read_bytes()
         response = client.post(
             f"/api/collections/{collection_id}/documents", params={"filename": name}, content=data
         )

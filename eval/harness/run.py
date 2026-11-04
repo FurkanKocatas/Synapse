@@ -82,6 +82,7 @@ SCANNED = QUESTIONS.parent / "scanned.jsonl"
 RETRIEVAL_DROP = 0.01
 RETRIEVAL_DROP_FRESH = 0.02
 ANSWER_DROP = 0.03
+TOO_MANY_REQUESTS = 429
 REFUSAL_SLACK = 1
 TARGETS = {
     "hit@10, as written": ("retrieval.as_written.all.hit@10", ">=", 0.95),
@@ -103,15 +104,25 @@ def parallel[T, R](items: list[T], work: Callable[[T], R], concurrency: int) -> 
         return list(pool.map(work, items))
 
 
+def post(client: Any, path: str, body: dict[str, Any]) -> tuple[Any, float]:
+    """``client.post``, waiting out a refusal as the screen asks a user to (api/limits.py):
+    a fast machine searches past twenty a minute. The seconds are the answered request's."""
+    while True:
+        started = time.perf_counter()
+        response = client.post(path, json=body)
+        if response.status_code != TOO_MANY_REQUESTS:
+            return response, time.perf_counter() - started
+        time.sleep(float(response.headers.get("Retry-After", 1)))
+
+
 def retrieval(
     client: Any, questions: list[dict[str, Any]], documents: dict[str, str], concurrency: int
 ) -> dict[str, Any]:
     answerable = [q for q in questions if q["type"] != "unanswerable"]
 
     def search(question: dict[str, Any]) -> tuple[int | None, float, dict[str, Any]]:
-        started = time.perf_counter()
-        response = client.post(
-            "/api/search", json={"query": question["question"], "limit": 10, "rerank": True}
+        response, seconds = post(
+            client, "/api/search", {"query": question["question"], "limit": 10, "rerank": True}
         )
         response.raise_for_status()
         found = response.json()["hits"]
@@ -129,7 +140,7 @@ def retrieval(
             "best": round(max(scores), 3) if scores else None,
             "hits": [[h["doc"], *h["pages"]] for h in hits],
         }
-        return rank, time.perf_counter() - started, record
+        return rank, seconds, record
 
     results = parallel(answerable, search, concurrency)
     ranks: dict[str, list[int | None]] = defaultdict(list)
